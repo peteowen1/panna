@@ -30,6 +30,11 @@ on:
         description: 'Upload the result to pannadata predictions-latest (main/dev only)'
         default: false
         type: boolean
+      horizon:
+        description: 'month = each refit predicts its own month (one row per match); season = every later match in the season (one row per refit x match, file name gets all_refits_)'
+        default: 'month'
+        type: choice
+        options: ['month', 'season']
 
 concurrency:
   group: league-walkforward-${{ github.ref }}
@@ -38,6 +43,7 @@ concurrency:
 env:
   GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
   R_KEEP_PKG_SOURCE: yes
+  WF_HORIZON: ${{ inputs.horizon || 'month' }}
 
 jobs:
   plan:
@@ -169,31 +175,40 @@ jobs:
           md <- readRDS("md/04_match_dataset.rds")
           files <- list.files("wf-in", pattern = "^walkforward_.*[.]parquet$", full.names = TRUE)
           p <- rbindlist(lapply(files, function(f) as.data.table(arrow::read_parquet(f))), fill = TRUE)
+          horizon <- Sys.getenv("WF_HORIZON", "month")
+          md_date <- as.Date(substr(as.character(md$match_date), 1, 10))
           cov <- rbindlist(lapply(seasons, function(s) {
-            want <- md$match_id[md$split != "fixture" & md$league == league & md$season_end_year == s]
+            sel <- md$split != "fixture" & md$league == league & md$season_end_year == s
+            want <- md$match_id[sel]
+            # month: one row per match; season: one row per (monthly cutoff, match on or after it)
+            cuts <- sort(unique(as.Date(format(md_date[sel], "%Y-%m-01"))))
+            rows_expected <- if (horizon == "season") sum(vapply(cuts, function(c) sum(md_date[sel] >= c), numeric(1))) else length(want)
             got <- p[season_end_year == s]
-            data.table(league = league, season_end_year = s, matches_in_dataset = length(want),
-                       predicted = sum(want %in% got$match_id),
+            data.table(league = league, season_end_year = s, horizon = horizon, matches_in_dataset = length(want),
+                       predicted = sum(want %in% got$match_id), rows_expected = rows_expected, rows = nrow(got),
                        non_na = sum(!is.na(got$pred_home_goals) & !is.na(got$pred_away_goals) & !is.na(got$prob_H)),
                        cutoffs = uniqueN(got$cutoff_date),
                        first_cutoff = if (nrow(got)) min(got$cutoff_date) else NA_character_,
                        last_cutoff = if (nrow(got)) max(got$cutoff_date) else NA_character_)
           }))
-          cov[, complete := predicted == matches_in_dataset & non_na == matches_in_dataset]
+          cov[, complete := predicted == matches_in_dataset & rows == rows_expected & non_na == rows_expected]
           print(cov)
           cov[, source_run_id := Sys.getenv("SOURCE_RUN")]
           # Season range in the name: a rerun of one season must not swap out
           # the file that holds all of them.
           tag <- sprintf("%s_%d_%d", league, min(seasons), max(seasons))
           if (length(seasons) != max(seasons) - min(seasons) + 1L) tag <- paste(league, paste(sort(seasons), collapse = "_"), sep = "_")
+          if (horizon == "season") tag <- paste0("all_refits_", tag)
           out <- sprintf("predictions_walkforward_%s.parquet", tag)
           cov_out <- sprintf("predictions_walkforward_%s_coverage.csv", tag)
-          setorder(p, match_date, match_id)
+          setorder(p, cutoff_date, match_date, match_id)
           arrow::write_parquet(p, out)
           fwrite(cov, cov_out)
-          for (i in seq_len(nrow(cov))) cat(sprintf("::notice::%s %d: %d of %d matches predicted, %d non-NA, %d cutoffs\n",
-            league, cov$season_end_year[i], cov$predicted[i], cov$matches_in_dataset[i], cov$non_na[i], cov$cutoffs[i]))
-          if (!all(cov$complete) || anyDuplicated(p$match_id) > 0) stop("coverage incomplete or duplicate match_ids; nothing published")
+          for (i in seq_len(nrow(cov))) cat(sprintf("::notice::%s %d (%s): %d of %d matches predicted, %d of %d rows, %d non-NA, %d cutoffs\n",
+            league, cov$season_end_year[i], horizon, cov$predicted[i], cov$matches_in_dataset[i], cov$rows[i],
+            cov$rows_expected[i], cov$non_na[i], cov$cutoffs[i]))
+          n_dup <- sum(duplicated(p[, .(match_id, cutoff_date)]))
+          if (!all(cov$complete) || n_dup > 0) stop("coverage incomplete or ", n_dup, " duplicate (match, cutoff) rows; nothing published")
           if (identical(Sys.getenv("PUBLISH"), "true")) {
             for (f in c(out, cov_out)) .vb_safe_upload(f, "peteowen1/pannadata", "predictions-latest")
             cat("Published", out, "and", cov_out, "to pannadata predictions-latest\n")
