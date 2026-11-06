@@ -1,5 +1,24 @@
 # Changelog
 
+## panna 0.3.111
+
+- New one-off backfill of honest pre-match predictions for past league
+  seasons:
+  `data-raw/match-predictions-opta/backfill_league_walkforward.R` refits
+  steps 05-06 at the start of every month on matches played before it
+  and predicts that month with step 07 (`record = "backtest"`).
+  `league-walkforward.yml` runs one job per season from a Predictions
+  Pipeline run’s new `match-dataset` artifact, checks every match is
+  predicted, and can publish
+  `predictions_walkforward_<league>_<first>_<last>.parquet` plus a
+  coverage CSV to pannadata `predictions-latest`. Built for fplverse’s
+  ENG 2021-22 to 2024-25 backtest.
+- Steps 05 and 06 skip validation scoring when a segment has no
+  validation rows (metrics are NA then); a normal run is unchanged.
+  `backfill_wc_walkforward.R` now copies `01_fixture_results.rds` into
+  each work folder, which step 07 needs since
+  [\#411](https://github.com/peteowen1/panna/issues/411).
+
 ## panna 0.3.110
 
 - Skills step 02b’s joint search for each stat’s prior strength and

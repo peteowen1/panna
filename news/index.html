@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.110</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.111</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,11 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.111" id="panna-03111">panna 0.3.111<a class="anchor" aria-label="anchor" href="#panna-03111"></a></h2>
+<ul><li>New one-off backfill of honest pre-match predictions for past league seasons: <code>data-raw/match-predictions-opta/backfill_league_walkforward.R</code> refits steps 05-06 at the start of every month on matches played before it and predicts that month with step 07 (<code>record = "backtest"</code>). <code>league-walkforward.yml</code> runs one job per season from a Predictions Pipeline run’s new <code>match-dataset</code> artifact, checks every match is predicted, and can publish <code>predictions_walkforward_&lt;league&gt;_&lt;first&gt;_&lt;last&gt;.parquet</code> plus a coverage CSV to pannadata <code>predictions-latest</code>. Built for fplverse’s ENG 2021-22 to 2024-25 backtest.</li>
+<li>Steps 05 and 06 skip validation scoring when a segment has no validation rows (metrics are NA then); a normal run is unchanged. <code>backfill_wc_walkforward.R</code> now copies <code>01_fixture_results.rds</code> into each work folder, which step 07 needs since <a href="https://github.com/peteowen1/panna/issues/411" class="external-link">#411</a>.</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.110" id="panna-03110">panna 0.3.110<a class="anchor" aria-label="anchor" href="#panna-03110"></a></h2>
 <ul><li>Skills step 02b’s joint search for each stat’s prior strength and decay rate now actually searches. It used to start the prior at the middle of its bounds on the raw scale, with optim’s default step applied to a decay rate near 0.002, and on flat stats it stopped where it began: production carried prior 50.05 for <code>npg_minus_npxg_per90</code> and <code>placement_added_per90</code>. <code><a href="../reference/optimize_stat_prior.html">optimize_stat_prior()</a></code> now starts from the best point of a log grid, searches log(prior), scales the decay step by its own size, and allows rate-stat priors up to 1000. No published file changes with this release; whether to publish refit values is panna#432.</li>
