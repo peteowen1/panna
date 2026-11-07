@@ -176,3 +176,24 @@ test_that("joint prior + lambda search moves off its start value (2026-11-06 reg
   )
   expect_lt(real$optimal_prior, result$optimal_prior)
 })
+
+test_that("a lambda-only search reaches the best decay on a fine grid (panna#439)", {
+  # Each player's true rate jumps halfway through, so recent matches matter and
+  # the best lambda is well inside c(0, 0.02). With the old tol = 0.01 Brent's
+  # method stopped after a step or two on this interval.
+  ms <- make_optimization_match_stats(n_players = 60, n_matches = 40)
+  set.seed(11)
+  first <- runif(60, 0.1, 1.5); second <- runif(60, 0.1, 1.5)
+  half <- ms$match_idx > 20
+  ms$drift_p90 <- pmax(0, ifelse(half, second[ms$player_id], first[ms$player_id]) +
+                         rnorm(nrow(ms), 0, 0.2))
+  fit_at <- function(lb) optimize_stat_prior(
+    match_stats = ms, stat_name = "drift_p90", prior_bounds = c(2, 2),
+    optimize_lambda = TRUE, lambda_bounds = lb, min_history = 3, sample_n = 60)
+  # A 1e-9-wide interval returns the loss at that lambda, so this is a grid.
+  grid <- seq(0, 0.02 - 1e-9, length.out = 41)
+  grid_loss <- vapply(grid, function(l) fit_at(c(l, l + 1e-9))$loss, numeric(1))
+  full <- fit_at(c(0, 0.02))
+  expect_true(full$optimal_lambda > 0 && full$optimal_lambda < 0.02)
+  expect_lte(full$loss, min(grid_loss) + 1e-6)
+})
