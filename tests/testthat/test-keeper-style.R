@@ -52,7 +52,7 @@ test_that("as-of club style recovers the club habit, and the adjustment recovers
 
   dt <- add_kstyle(data.table::copy(sim$dt), st, verbose = FALSE)
   k <- dt[position == "Goalkeeper" & season_end_year >= 2022L,
-          .(raw = mean(long_balls_p90), adj = mean(long_balls_kadj_p90)), by = player_id]
+          .(raw = mean(long_balls_p90), adj = mean(long_balls_p90_kadj)), by = player_id]
   truth <- sim$keeper_eff[k$player_id]
   # The adjusted value tracks the keeper's own effect better than the raw rate.
   expect_gt(stats::cor(k$adj, truth), stats::cor(k$raw, truth) + 0.2)
@@ -77,13 +77,13 @@ test_that(".add_keeper_style_features is additive and leaves outfield and first-
   st <- fit_keeper_style_asof(sim$dt, stats = "long_balls_p90", verbose = FALSE)
   before <- data.table::copy(sim$dt)
   dt <- add_kstyle(data.table::copy(sim$dt), st, verbose = FALSE)
-  expect_true("long_balls_kadj_p90" %in% names(dt))
+  expect_true("long_balls_p90_kadj" %in% names(dt))
   expect_equal(dt$long_balls_p90, before$long_balls_p90)            # raw column untouched
-  expect_equal(dt[position == "Defender", long_balls_kadj_p90], 3)  # outfield keeps raw
+  expect_equal(dt[position == "Defender", long_balls_p90_kadj], 3)  # outfield keeps raw
   first <- dt[season_end_year == 2021L]
-  expect_equal(first$long_balls_kadj_p90, first$long_balls_p90)     # no earlier season -> raw
+  expect_equal(first$long_balls_p90_kadj, first$long_balls_p90)     # no earlier season -> raw
   later <- dt[position == "Goalkeeper" & season_end_year == 2025L]
-  expect_true(all(later$long_balls_kadj_p90 != later$long_balls_p90))
+  expect_true(all(later$long_balls_p90_kadj != later$long_balls_p90))
 })
 
 test_that("the in-season club term uses only earlier dates of the same season", {
@@ -96,12 +96,12 @@ test_that("the in-season club term uses only earlier dates of the same season", 
   b <- add_kstyle(changed, st, verbose = FALSE)   # same style table: only the in-season term can react
   sel <- a$season_end_year == 2025L & a$match_date <= cut & a$position == "Goalkeeper"
   expect_gt(sum(sel), 100)
-  expect_equal(a$long_balls_kadj_p90[sel], b$long_balls_kadj_p90[sel], tolerance = 1e-10)
+  expect_equal(a$long_balls_p90_kadj[sel], b$long_balls_p90_kadj[sel], tolerance = 1e-10)
   # The first match of each club-season has no earlier matches, so no in-season shift.
   first <- a[position == "Goalkeeper" & season_end_year == 2025L, .SD[which.min(match_date)], by = team_id]
   off <- add_kstyle(data.table::copy(sim$dt), st, in_season_k = Inf, verbose = FALSE)
   first_off <- off[first[, .(match_id)], on = "match_id"]
-  expect_equal(first$long_balls_kadj_p90, first_off$long_balls_kadj_p90, tolerance = 1e-10)
+  expect_equal(first$long_balls_p90_kadj, first_off$long_balls_p90_kadj, tolerance = 1e-10)
 })
 
 test_that("the in-season term removes a club's style change that earlier seasons could not see", {
@@ -112,7 +112,7 @@ test_that("the in-season term removes a club's style change that earlier seasons
   off <- add_kstyle(data.table::copy(sim$dt), st, in_season_k = Inf, verbose = FALSE)
   shifted <- names(sim$club_habit)[1:12]
   late <- function(x) x[position == "Goalkeeper" & season_end_year == 2025L & match_date > as.Date("2024-12-01")]
-  gap <- function(x) late(x)[, mean(long_balls_kadj_p90[team_id %in% shifted]) - mean(long_balls_kadj_p90[!team_id %in% shifted])]
+  gap <- function(x) late(x)[, mean(long_balls_p90_kadj[team_id %in% shifted]) - mean(long_balls_p90_kadj[!team_id %in% shifted])]
   expect_gt(gap(off), 6)        # prior seasons cannot see the change
   expect_lt(abs(gap(on)), 3)    # the in-season term takes most of it out
 })
@@ -124,10 +124,25 @@ test_that("the in-season term asks for match_date instead of guessing", {
   expect_no_error(add_kstyle(data.table::copy(sim$dt)[, !"match_date"], st, in_season_k = Inf, verbose = FALSE))
 })
 
+test_that("as-of keeper effects map to the right keeper and ignore later seasons", {
+  sim <- make_keeper_league(seed = 9)
+  a <- fit_keeper_style_asof(sim$dt, stats = "long_balls_p90", verbose = FALSE)
+  ka <- attr(a, "keeper_effects")[season_end_year == 2025L]
+  expect_gt(nrow(ka), 20)
+  expect_gt(stats::cor(ka$keeper_eff, sim$keeper_eff[ka$player_id]), 0.5)
+  changed <- data.table::copy(sim$dt)
+  changed[season_end_year >= 2024L, long_balls_p90 := long_balls_p90 + 50]
+  kb <- attr(fit_keeper_style_asof(changed, stats = "long_balls_p90", verbose = FALSE), "keeper_effects")
+  k23a <- attr(a, "keeper_effects")[season_end_year == 2023L][order(player_id)]
+  k23b <- kb[season_end_year == 2023L][order(player_id)]
+  expect_gt(nrow(k23a), 0)
+  expect_equal(k23a$keeper_eff, k23b$keeper_eff, tolerance = 1e-8)
+})
+
 test_that("the verbose messages run (the pipeline calls both functions with verbose = TRUE)", {
   sim <- make_keeper_league(seed = 5)
   expect_message(st <- fit_keeper_style_asof(sim$dt, stats = "long_balls_p90"), "keeper style long_balls_p90")
-  expect_message(add_kstyle(data.table::copy(sim$dt), st), "long_balls_kadj_p90: club style applied")
+  expect_message(add_kstyle(data.table::copy(sim$dt), st), "long_balls_p90_kadj: club style applied")
 })
 
 test_that("fit_keeper_style_asof stops on missing inputs instead of returning nothing", {
@@ -136,4 +151,26 @@ test_that("fit_keeper_style_asof stops on missing inputs instead of returning no
   expect_error(fit_keeper_style_asof(sim$dt, stats = "not_a_stat", verbose = FALSE), "None of the keeper")
   expect_error(fit_keeper_style_asof(sim$dt[position != "Goalkeeper"], stats = "long_balls_p90", verbose = FALSE),
                "No keeper rows")
+})
+
+test_that("enrich_match_stats_with_xmetrics stops when the keeper style table is missing, and adds _kadj when present", {
+  ms <- data.frame(player_id = "p1", player_name = "P", match_id = "m1", team_id = "c01",
+                   match_date = as.Date("2024-09-01"), league = "EPL", season = "2024-2025",
+                   position = "Goalkeeper", total_minutes = 90, long_balls_p90 = 20, goals_p90 = 0,
+                   stringsAsFactors = FALSE)
+  testthat::local_mocked_bindings(
+    query_remote_opta_parquet = function(...) data.frame(player_id = "p1", match_id = "m1", xg_per90 = 0, stringsAsFactors = FALSE)
+  )
+  withr::local_options(panna.keeper_style_path = file.path(tempdir(), "no_such_keeper_style.rds"))
+  expect_error(suppressWarnings(enrich_match_stats_with_xmetrics(ms, verbose = FALSE, source = "remote")),
+               "Keeper style table not found")
+  # With a table: club c01's style for 2025 is 5, so the keeper's 20 becomes 15.
+  ks <- data.table::data.table(stat = "long_balls_p90", season_end_year = 2025L, team_id = "c01", club_style = 5)
+  data.table::setattr(ks, "keeper_effects", data.table::data.table(stat = "long_balls_p90", season_end_year = 2025L,
+                                                                   player_id = "p1", keeper_eff = 0))
+  path <- file.path(tempdir(), "keeper_style_test.rds"); saveRDS(ks, path)
+  withr::local_options(panna.keeper_style_path = path)
+  out <- suppressWarnings(enrich_match_stats_with_xmetrics(ms, verbose = FALSE, source = "remote"))
+  expect_equal(out$long_balls_p90_kadj, 15)
+  expect_equal(out$long_balls_p90, 20)
 })

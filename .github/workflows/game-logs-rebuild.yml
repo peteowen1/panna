@@ -179,6 +179,7 @@ jobs:
           opta_data_dir(file.path(pannadata_path, "opta"))
           run_steps <- list(
             step_01_compute_match_stats = TRUE, step_02_estimate_skills = FALSE,
+            step_01c_keeper_style = TRUE,
             step_02b_optimize_params = FALSE, step_03_skill_spm = FALSE,
             step_04_skill_xrapm = FALSE, step_05_skill_panna_ratings = FALSE,
             step_06_seasonal_skill_ratings = FALSE, step_07_train_psr_model = FALSE,

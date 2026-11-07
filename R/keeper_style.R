@@ -8,6 +8,8 @@
 # 13% of keeper-match variation and the movers test barely moved), because
 # keeper distribution is its own club instruction (goal kicks and restarts).
 #
+# Output columns are `<stat>_kadj` (see .keeper_style_col()).
+#
 # Model, per stat, on keeper-matches (minutes-weighted ridge):
 #   value = league-season + club + club-season + keeper + noise
 # The club term carries a club's lasting habit, the club-season term a
@@ -23,12 +25,24 @@
 #' Keeper distribution stats adjusted for club style by default
 #' @keywords internal
 #' @noRd
-.keeper_style_stats <- function() c("long_balls_p90", "passes_accurate_p90", "keeper_throws_p90")
+.keeper_style_stats <- function() c("passes_p90", "passes_accurate_p90", "long_balls_p90", "keeper_throws_p90")
 
-#' Name of the club-adjusted column for a keeper stat ("long_balls_p90" -> "long_balls_kadj_p90")
+#' Name of the club-adjusted column for a keeper stat ("long_balls_p90" -> "long_balls_p90_kadj")
+#'
+#' Deliberately NOT ending in `_p90`: SPM takes every `_p90` column as a
+#' predictor, so a `_kadj_p90` name would quietly change SPM's inputs. The
+#' skill estimator still estimates these because they are registered in
+#' `.get_gk_skill_cols()` (same reason the territory columns end in `_terr`).
 #' @keywords internal
 #' @noRd
-.keeper_style_col <- function(stat) sub("_p90$", "_kadj_p90", stat)
+.keeper_style_col <- function(stat) paste0(stat, "_kadj")
+
+#' Where the as-of keeper style table lives (written by 01c_keeper_style.R)
+#' @keywords internal
+#' @noRd
+.keeper_style_path <- function() {
+  getOption("panna.keeper_style_path", file.path("data-raw", "cache-skills", "keeper_style_asof.rds"))
+}
 
 #' Fit one as-of keeper-style model: club habits from seasons before `cutoff_year`
 #'
@@ -136,7 +150,7 @@ fit_keeper_style_asof <- function(match_stats, stats = .keeper_style_stats(),
 
 #' Add club-adjusted keeper distribution columns
 #'
-#' Writes `<stem>_kadj_p90` for each modelled stat: the raw value minus the
+#' Writes `<stat>_kadj` for each modelled stat: the raw value minus the
 #' as-of club style for that keeper's club and season. ADDITIVE, like
 #' `.add_territory_features()`: the raw columns are untouched. Outfield rows,
 #' and keeper rows whose club has no style yet (first season in the data, or a
@@ -163,7 +177,7 @@ fit_keeper_style_asof <- function(match_stats, stats = .keeper_style_stats(),
 #'   20) but also his own (0.399 -> 0.315), and stayer stability (0.62 -> 0.56):
 #'   within a one-keeper club-season, the club's shift and the keeper's form look
 #'   alike. Kept on so the step 07 retrain can judge it on prediction error.
-#' @return dt by reference, with the `_kadj_p90` columns added.
+#' @return dt by reference, with the `_kadj` columns added.
 #' @keywords internal
 #' @noRd
 .add_keeper_style_features <- function(dt, style, is_gk = NULL, in_season_k = 20, verbose = TRUE) {
@@ -186,6 +200,7 @@ fit_keeper_style_asof <- function(match_stats, stats = .keeper_style_stats(),
     cstyle <- st$club_style[match(key, paste(st$team_id, st$season_end_year))]
     raw <- as.numeric(dt[[s]])
     use <- is_gk & is.finite(cstyle) & is.finite(raw)
+    if (do_season && anyNA(md[use])) cli::cli_abort("{sum(is.na(md[use]))} keeper rows have no match_date; the in-season term would count them as earlier than every match.")
     shift <- rep(0, length(raw))
     if (do_season && any(use)) {
       kf <- kfx[stat == s]
@@ -205,8 +220,9 @@ fit_keeper_style_asof <- function(match_stats, stats = .keeper_style_stats(),
     out[use] <- raw[use] - cstyle[use] - shift[use]
     out_col <- .keeper_style_col(s)
     data.table::set(dt, j = out_col, value = out)
-    n_used <- sum(use); n_gk <- sum(is_gk); n_raw <- n_gk - n_used
-    if (verbose) cli::cli_inform("{out_col}: club style applied to {n_used} of {n_gk} keeper rows; {n_raw} keep the raw value (no earlier season for that club)")
+    n_used <- sum(use); n_gk <- sum(is_gk)
+    n_na <- sum(is_gk & !is.finite(raw)); n_nostyle <- n_gk - n_used - n_na
+    if (verbose) cli::cli_inform("{out_col}: club style applied to {n_used} of {n_gk} keeper rows; {n_nostyle} keep the raw value (no earlier season for that club), {n_na} have no value")
   }
   dt
 }

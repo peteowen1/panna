@@ -987,6 +987,12 @@ load_opta_xmetrics <- function(league, season = NULL, columns = NULL,
 #'   \code{opta_xmetrics_bymatch.parquet} on the \code{opta-latest} release —
 #'   the only option that works on a GHA runner, which never has the local
 #'   per-league/season tree; see \code{\link{load_opta_xmetrics}}).
+#' @param keeper_style Add the club-adjusted keeper distribution columns
+#'   (\code{<stat>_kadj}, panna#429) from the as-of table that
+#'   \code{01c_keeper_style.R} writes. Default \code{TRUE}, and a missing table
+#'   STOPS: keeper PSR is trained on these columns, so scoring without them
+#'   would apply the coefficients to the wrong values. Pass \code{FALSE} only
+#'   where keepers are not scored (SPM panels, tests).
 #'
 #' @return \code{match_stats} (as data.table) with the xMetrics columns added
 #'   (NA-filled to 0 for player-matches with no shots). Returns input unchanged
@@ -999,7 +1005,8 @@ load_opta_xmetrics <- function(league, season = NULL, columns = NULL,
 #' @export
 enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
                                               fail_if_missing_frac = Inf,
-                                              source = c("local", "remote")) {
+                                              source = c("local", "remote"),
+                                              keeper_style = TRUE) {
   source <- match.arg(source)
   # as.data.table() on an already-valid data.table is a FULL deep copy (the
   # panna#128 anti-pattern) — on 08b's ~6GB match_stats that copy alone was a
@@ -1237,6 +1244,20 @@ enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
   if (verbose) {
     nt <- length(grep("_terr$", names(match_stats)))
     cat(sprintf("  territory-adjusted defensive cols: %d\n", nt))
+  }
+
+  # Club-adjusted keeper distribution (panna#429), here for the same train/serve
+  # reason as the territory columns. Additive `<stat>_kadj` columns.
+  if (isTRUE(keeper_style)) {
+    ks_path <- .keeper_style_path()
+    if (!file.exists(ks_path)) {
+      cli::cli_abort(c(
+        "Keeper style table not found at {.path {ks_path}}.",
+        "i" = "Keeper PSR is trained on the club-adjusted {.field _kadj} columns (panna#429), so scoring without them is wrong.",
+        "i" = "Build it with {.file data-raw/estimated-skills/01c_keeper_style.R}, download it with the other skills caches, or pass {.code keeper_style = FALSE} where keepers are not scored."))
+    }
+    ks <- readRDS(ks_path)
+    match_stats <- .add_keeper_style_features(match_stats, ks, verbose = verbose)
   }
   match_stats
 }

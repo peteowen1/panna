@@ -51,6 +51,7 @@ if (!exists("start_step")) start_step <- 1
 
 # Normalize lettered steps to numeric for comparison: "2b" -> 2.5, "8b" -> 8.5
 start_num <- switch(as.character(start_step),
+  "1c" = 1.5,
   "2b" = 2.5,
   "8b" = 8.5,
   as.numeric(start_step)
@@ -59,6 +60,7 @@ start_num <- switch(as.character(start_step),
 if (!exists("run_steps")) {
   run_steps <- list(
     step_01_compute_match_stats    = start_num <= 1,
+    step_01c_keeper_style          = start_num <= 1.5,
     step_02_estimate_skills        = start_num <= 2,
     step_02b_optimize_params       = start_num <= 2.5,
     step_03_skill_spm              = start_num <= 3,
@@ -86,6 +88,7 @@ if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
 # Handle force rebuild
 skills_cache_files <- list(
   "1" = c("01_match_stats.rds", "01_config.rds"),
+  "1c" = "keeper_style_asof.rds",
   "2" = "02_skill_features.rds",
   "2b" = "02b_decay_params.rds",
   "3" = c("03_skill_spm.rds", "03_skill_spm_asof.rds"),
@@ -172,6 +175,15 @@ print_pipeline_banner("ESTIMATED SKILLS PIPELINE", c(
 
 step_results[[1]] <- run_skills_step("compute_match_stats", 1, function() {
   source("data-raw/estimated-skills/01_compute_match_stats.R", local = TRUE)
+})
+
+# 5b. Step 1c: Keeper style table (panna#429) ----
+# Every later step that scores keepers reads it through
+# enrich_match_stats_with_xmetrics(), which stops if it is missing. Stored at
+# index 12 so the fixed indices of the steps below stay as they were.
+
+step_results[[12]] <- run_skills_step("keeper_style", "1c", function() {
+  source("data-raw/estimated-skills/01c_keeper_style.R", local = TRUE)
 })
 
 # 6. Step 2: Estimate Skills ----
