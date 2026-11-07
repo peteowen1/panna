@@ -720,8 +720,11 @@ if (nrow(upcoming) > 0) {
         # run since 2026-07 and the tryCatch below silently fell back to
         # seasonal ratings (codebase review R018). Same call as 08b / skills 02.
         xm_source <- if (identical(Sys.getenv("XMETRICS_SOURCE"), "remote")) "remote" else "local"
+        # keeper_style = FALSE: this table is narrowed without team_id and only the
+        # SPM blend (`_p90` columns) reads it, so keeper _kadj columns are not used.
         match_stats <- enrich_match_stats_with_xmetrics(match_stats, verbose = TRUE,
-                                                        source = xm_source)
+                                                        source = xm_source,
+                                                        keeper_style = FALSE)
       } else {
         message(sprintf("  match_stats has no player_id column — using FULL table (%d rows), NOT filtered",
                         nrow(match_stats)))

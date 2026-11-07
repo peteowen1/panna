@@ -156,8 +156,10 @@ jobs:
           name: stage-out-01
           retention-days: 7
           if-no-files-found: error
+          # keeper_style_asof.rds (step 01c, panna#429): stage 02 enriches and stops without it.
           path: |
             data-raw/cache-skills/01_match_stats.rds
+            data-raw/cache-skills/keeper_style_asof.rds
   s04c:
     runs-on: ubuntu-24.04
     timeout-minutes: 120

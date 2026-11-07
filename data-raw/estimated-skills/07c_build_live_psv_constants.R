@@ -227,6 +227,11 @@ for (lg in INLINE_LEAGUES) {
 ms <- enrich_match_stats_with_xmetrics(ms, verbose = TRUE, source = "remote")
 .xm_new_cols  <- setdiff(names(ms), .ms_cols_before)
 .xm_drop_cols <- setdiff(.xm_new_cols, LIVE_XMETRICS_FEATURES)
+# Keep the club-adjusted keeper columns (`_kadj`, panna#429): the keeper
+# coefficients use them, and 10b/07b score with them. Not live-observable, so
+# .zero_unobservable() zeroes them on the raw side like every other non-live
+# keeper feature. Dropping them here would build K without features 10b uses.
+.xm_drop_cols <- setdiff(.xm_drop_cols, grep("_kadj$", .xm_drop_cols, value = TRUE))
 if (length(.xm_drop_cols) > 0L) ms[, (.xm_drop_cols) := NULL]
 cat(sprintf(
   "[xmetrics] enriched ms with %d col(s): %s\n  keeping live-observable: %s\n  dropping (still not live): %s\n",
