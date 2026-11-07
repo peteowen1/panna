@@ -2348,3 +2348,140 @@ test_that("role_mix fallback without primary_position gives every unmatched row 
   mix <- data.table::data.table(player_id = "x", pos10 = "CB", share = 1)
   expect_equal(apply_psr_calibration(dt, .cal216(), role_mix = mix)$psr, c(1, 1, 1))
 })
+
+# ---------------------------------------------------------------------------
+# .estimate_prematch_skills_batch(as_of = TRUE) must reproduce
+# estimate_player_skills() snapshot by snapshot (panna#442). The default mode
+# fixes position and the player population from the whole history, which is
+# what step 07 trains on; 08b needs the per-date view.
+# ---------------------------------------------------------------------------
+
+make_asof_test_data <- function(n_weeks = 26) {
+  set.seed(11)
+  dates <- seq.Date(as.Date("2024-01-06"), by = "week", length.out = n_weeks)
+  players <- sprintf("q%02d", 1:12)
+  base_pos <- rep(c("Goalkeeper", "Defender", "Midfielder", "Striker"), 3)
+  debut <- c(rep(1L, 6), 4L, 8L, 12L, 16L, 20L, 24L)  # later debuts
+  rows <- do.call(rbind, lapply(seq_along(dates), function(k) {
+    on <- which(debut <= k)
+    data.frame(player_id = players[on], base = base_pos[on], match_date = dates[k],
+               stringsAsFactors = FALSE)
+  }))
+  rows$player_name <- paste0("N_", rows$player_id)
+  rows$total_minutes <- sample(c(NA, 0, 20, 90), nrow(rows), TRUE, prob = c(.05, .05, .3, .6))
+  rows$position <- rows$base
+  # q07 only ever appears as a substitute for its first weeks (position NA in
+  # the single-date estimator), then starts; q02 switches Defender -> Striker.
+  rows$position[rows$player_id == "q07" & rows$match_date < as.Date("2024-04-01")] <- "Substitute"
+  rows$position[rows$player_id == "q02" & rows$match_date > as.Date("2024-03-01")] <- "Striker"
+  rows$position[runif(nrow(rows)) < 0.15] <- "Substitute"
+  rows$base <- NULL
+  rows$goals_p90 <- rgamma(nrow(rows), 1, 3)
+  rows$tackles_won_p90 <- rgamma(nrow(rows), 2, 1)
+  rows$xg_per90 <- rnorm(nrow(rows), 0.2, 0.3)
+  rows$passes <- rpois(nrow(rows), 40)
+  rows$passes_accurate <- rbinom(nrow(rows), rows$passes, 0.8)
+  rows$pass_accuracy <- ifelse(rows$passes > 0, rows$passes_accurate / rows$passes, NA_real_)
+  rows[order(rows$match_date), ]
+}
+
+# The decay_params 08b hands both estimators: cached multipliers and centres.
+make_asof_params <- function(ms) {
+  dp <- get_default_decay_params()
+  sc <- panna:::.detect_skill_stat_cols(data.table::as.data.table(ms))
+  dp$position_multipliers <- compute_position_multipliers(data.table::as.data.table(ms), sc)
+  w <- as.numeric(ms$total_minutes); w[is.na(w)] <- 0
+  dp$prior_centers <- vapply(sc, function(s) {
+    v <- as.numeric(ms[[s]]); v[is.na(v)] <- 0; sum(v * w) / sum(w)
+  }, numeric(1))
+  dp
+}
+
+test_that(".estimate_prematch_skills_batch(as_of = TRUE) matches estimate_player_skills per date", {
+  ms <- make_asof_test_data()
+  dp <- make_asof_params(ms)
+  ref <- as.Date(c("2024-02-10", "2024-04-06", "2024-06-29"))
+  sc <- panna:::.detect_skill_stat_cols(data.table::as.data.table(ms))
+
+  b <- panna:::.estimate_prematch_skills_batch(
+    ms, ref_dates = ref, decay_params = dp, min_weighted_90s = 3,
+    as_of = TRUE, verbose = FALSE)
+  expect_length(b, 3L)
+
+  for (d in as.character(ref)) {
+    single <- suppressMessages(estimate_player_skills(
+      ms, decay_params = dp, target_date = as.Date(d), min_weighted_90s = 3))
+    got <- b[[d]]
+    # Same player set: no one who debuts after the snapshot date.
+    expect_setequal(got$player_id, single$player_id)
+    got <- got[match(single$player_id, player_id)]
+    # Same as-of position, including NA for a substitute-only history.
+    expect_identical(got$primary_position, single$primary_position)
+    expect_equal(got$weighted_90s, single$weighted_90s, tolerance = 1e-10)
+    for (s in sc) expect_equal(got[[s]], single[[s]], tolerance = 1e-10,
+                               label = paste(d, s))
+  }
+  # The fixture really exercises the two things as_of exists for.
+  early <- suppressMessages(estimate_player_skills(
+    ms, decay_params = dp, target_date = ref[1], min_weighted_90s = 3))
+  expect_lt(nrow(early), length(unique(ms$player_id)))
+})
+
+test_that("as_of = FALSE (the default) still uses full-history position and population", {
+  ms <- make_asof_test_data()
+  dp <- make_asof_params(ms)
+  d <- as.Date("2024-02-10")
+  def <- panna:::.estimate_prematch_skills_batch(
+    ms, ref_dates = d, decay_params = dp, verbose = FALSE)[[1]]
+  asof <- panna:::.estimate_prematch_skills_batch(
+    ms, ref_dates = d, decay_params = dp, as_of = TRUE, verbose = FALSE)[[1]]
+  # Default returns everyone (late debuts at weighted_90s 0); as_of does not.
+  expect_equal(nrow(def), length(unique(ms$player_id)))
+  expect_lt(nrow(asof), nrow(def))
+  expect_true(all(def$weighted_90s[!def$player_id %in% asof$player_id] == 0))
+  # q02 switches Defender -> Striker from March and ends up a forward overall:
+  # in February as_of still says DEF, the default already says FWD.
+  expect_identical(asof[player_id == "q02"]$primary_position, "DEF")
+  expect_identical(def[player_id == "q02"]$primary_position, "FWD")
+})
+
+test_that("as_of checkpoint resume reproduces an uninterrupted run", {
+  ms <- make_asof_test_data(n_weeks = 60)
+  dp <- make_asof_params(ms)
+  ref <- seq(as.Date("2024-02-05"), by = "7 days", length.out = 52)  # checkpoint at i = 25
+  full <- panna:::.estimate_prematch_skills_batch(
+    ms, ref_dates = ref, decay_params = dp, as_of = TRUE, verbose = FALSE)
+
+  sdir <- tempfile("asof_stream_"); on.exit(unlink(sdir, recursive = TRUE), add = TRUE)
+  # Kill the first run at the start of date 50 (progress_msg fires there when
+  # verbose): the i = 25 checkpoint -- running sums plus position counts -- is
+  # on disk by then.
+  testthat::local_mocked_bindings(
+    progress_msg = function(msg, ...) if (grepl("Date 50/", msg)) stop("simulated kill")
+  )
+  expect_error(
+    panna:::.estimate_prematch_skills_batch(ms, ref_dates = ref, decay_params = dp,
+                                            as_of = TRUE, stream_dir = sdir, verbose = TRUE),
+    "simulated kill")
+  expect_true(file.exists(file.path(sdir, "_checkpoint.rds")))
+  testthat::local_mocked_bindings(progress_msg = function(msg, ...) invisible(NULL))
+
+  resumed <- panna:::.estimate_prematch_skills_batch(
+    ms, ref_dates = ref, decay_params = dp, as_of = TRUE, stream_dir = sdir, verbose = TRUE)
+  expect_equal(names(resumed), names(full))
+  for (d in names(full)) {
+    expect_equal(panna:::.read_skill_chunk(resumed[[d]]), full[[d]],
+                 tolerance = 1e-12, label = d)
+  }
+})
+
+test_that("an as_of run rejects a checkpoint missing the position state", {
+  fp <- .psr_test_fingerprint(); fp$as_of <- TRUE
+  cp <- .psr_test_checkpoint(fp)
+  expect_match(panna:::.psr_checkpoint_reject_reason(cp, fp, 20L), "incomplete.*pos_cnt")
+  cp$pos_cnt <- 1; cp$cur_pg <- 1; cp$seen <- 1; cp$rate_alpha0 <- 1; cp$eff_mu0 <- 1
+  expect_identical(panna:::.psr_checkpoint_reject_reason(cp, fp, 20L), "")
+  # ...and a default-mode fingerprint refuses an as_of checkpoint.
+  expect_match(panna:::.psr_checkpoint_reject_reason(cp, .psr_test_fingerprint(), 20L),
+               "as_of")
+})
