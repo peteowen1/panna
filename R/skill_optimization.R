@@ -482,7 +482,11 @@ optimize_stat_prior <- function(match_stats = NULL, stat_name,
     # 1D: Brent's method
     interval <- if (optimize_prior) prior_bounds else
                 if (optimize_quantile) quantile_bounds else lambda_bounds
-    result <- stats::optimize(objective, interval = interval, tol = 0.01)
+    # Tolerance scaled to the interval: a fixed 0.01 is half the default lambda
+    # range c(0, 0.02), so a lambda-only search stopped after a step or two
+    # (panna#439). min() keeps the prior search's tolerance at 0.01 as before.
+    result <- stats::optimize(objective, interval = interval,
+                              tol = min(0.01, diff(interval) * 1e-4))
     out <- list(stat = stat_name, loss = result$objective)
 
     if (optimize_prior) out$optimal_prior <- result$minimum

@@ -87,7 +87,13 @@ ms[, .is_gk_full := .detect_gk_rows(ms)]
 ms <- ms[total_minutes >= 20, c(meta_cols, raw_feat_cols, ".is_gk_full"), with = FALSE]
 cli::cli_alert_info("match_stats rows after minutes>=20 filter: {format(nrow(ms), big.mark=',')}")
 
-ms <- enrich_match_stats_with_xmetrics(ms, verbose = TRUE, fail_if_missing_frac = 0.6)
+# Same xMetrics source as 07 (XMETRICS_SOURCE=remote, else local), so the
+# scale is derived on the data the coefficients were trained on. It used to
+# always read the local tree, which can be months stale (panna#440, #422).
+xm_source <- if (identical(Sys.getenv("XMETRICS_SOURCE"), "remote")) "remote" else "local"
+cli::cli_alert_info("xMetrics source: {xm_source}")
+ms <- enrich_match_stats_with_xmetrics(ms, verbose = TRUE, fail_if_missing_frac = 0.6,
+                                       source = xm_source)
 gc(verbose = FALSE)
 
 ## ---------------------------------------------------------------------------
