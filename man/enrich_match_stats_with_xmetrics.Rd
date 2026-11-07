@@ -8,7 +8,8 @@ enrich_match_stats_with_xmetrics(
   match_stats,
   verbose = TRUE,
   fail_if_missing_frac = Inf,
-  source = c("local", "remote")
+  source = c("local", "remote"),
+  keeper_style = TRUE
 )
 }
 \arguments{
@@ -31,6 +32,13 @@ this is finite, regardless of the fraction.}
 \code{opta_xmetrics_bymatch.parquet} on the \code{opta-latest} release —
 the only option that works on a GHA runner, which never has the local
 per-league/season tree; see \code{\link{load_opta_xmetrics}}).}
+
+\item{keeper_style}{Add the club-adjusted keeper distribution columns
+(\code{<stat>_kadj}, panna#429) from the as-of table that
+\code{01c_keeper_style.R} writes. Default \code{TRUE}, and a missing table
+STOPS: keeper PSR is trained on these columns, so scoring without them
+would apply the coefficients to the wrong values. Pass \code{FALSE} only
+where keepers are not scored (SPM panels, tests).}
 }
 \value{
 \code{match_stats} (as data.table) with the xMetrics columns added
