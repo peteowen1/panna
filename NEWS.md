@@ -1,3 +1,16 @@
+# panna (development version)
+
+- Retrained the PSR/PSV coefficients (step 07) on the fitted skill priors from panna#432 (02b fit on
+  all 9,258 Big-5 players, every skill stat on the xMetrics-enriched table). Cross-validated error is
+  unchanged (xG margin 0.9585 -> 0.9575, goal-diff margin 2.3837 -> 2.3848). The outfield model now
+  keeps 57 stats instead of 31, and `goals_p90` drops out of the blend and goal-diff sets.
+  `PSV_RELIABILITY_GD_SCALE` is refit by 07d from 2.668 to 3.002, and 07c rebuilds
+  `psv_live_constants.csv` against it. Ratings move: PSR rank correlation with the previous
+  coefficients is 0.92 (2,532 players with 15+ weighted 90s), keepers and finishers fall, creators rise.
+- PSR tests: fixtures now carry every shipped coefficient stat (`helper-coef-cols.R`), so a retrain
+  that drops a stat no longer breaks them, and two keeper-scaling tests that a retrain had turned
+  into silent skips now fail instead of skipping.
+
 # panna 0.3.109
 
 - Parked the 10-position PSR calibration from 0.3.108 (panna#216). On the first full weekly
