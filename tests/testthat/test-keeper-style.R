@@ -107,7 +107,8 @@ test_that("the in-season club term uses only earlier dates of the same season", 
 test_that("the in-season term removes a club's style change that earlier seasons could not see", {
   sim <- make_keeper_league(seed = 7, last_shift = 8)   # half the clubs go 8 long balls longer in 2025
   st <- fit_keeper_style_asof(sim$dt, stats = "long_balls_p90", verbose = FALSE)
-  on  <- add_kstyle(data.table::copy(sim$dt), st, verbose = FALSE)
+  # Tests the mechanism at a light shrinkage; the default (20) absorbs the shift more slowly.
+  on  <- add_kstyle(data.table::copy(sim$dt), st, in_season_k = 5, verbose = FALSE)
   off <- add_kstyle(data.table::copy(sim$dt), st, in_season_k = Inf, verbose = FALSE)
   shifted <- names(sim$club_habit)[1:12]
   late <- function(x) x[position == "Goalkeeper" & season_end_year == 2025L & match_date > as.Date("2024-12-01")]
