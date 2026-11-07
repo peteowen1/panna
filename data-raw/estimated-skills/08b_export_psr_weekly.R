@@ -996,8 +996,8 @@ cat(sprintf("  Unique dates:   %d\n", data.table::uniqueN(weekly_psr$snapshot_da
 # writing it to opta_psr_weekly.parquet replaced the local full history with
 # 2 dates on 2026-11-07 (panna#441).
 .psr_smoke <- exists("psr_smoke_n") && psr_smoke_n > 0
-out_path <- file.path(opta_dir, if (psr_raw_mode) "opta_psr_weekly_RAW_uncalibrated.parquet"
-                                else if (.psr_smoke) "opta_psr_weekly_SMOKE.parquet"
+out_path <- file.path(opta_dir, if (.psr_smoke) "opta_psr_weekly_SMOKE.parquet"
+                                else if (psr_raw_mode) "opta_psr_weekly_RAW_uncalibrated.parquet"
                                 else "opta_psr_weekly.parquet")
 arrow::write_parquet(as.data.frame(weekly_psr), out_path)
 mb <- round(file.info(out_path)$size / 1024^2, 1)

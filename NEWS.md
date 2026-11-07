@@ -2,10 +2,11 @@
 
 - `optimize_stat_prior()`: a one-parameter search now uses a tolerance scaled to its interval. The fixed
   `tol = 0.01` was half the default lambda range, so a lambda-only search stopped after a step or two
-  (panna#439). The prior search keeps 0.01, and the joint prior + lambda fit used by 02b is unchanged.
+  (panna#439). The prior search keeps 0.01; the unused quantile search tightens to 9e-5; the joint prior +
+  lambda fit used by 02b is unchanged.
 - 07d reads xMetrics from the same source as 07 (`XMETRICS_SOURCE`), not always the local tree (panna#440).
 - 08b smoke runs (`psr_smoke_n`) write `opta_psr_weekly_SMOKE.parquet` instead of replacing the local
-  full-history `opta_psr_weekly.parquet` (panna#441).
+  full-history `opta_psr_weekly.parquet`, also in raw mode (panna#441).
 - Retrained the PSR/PSV coefficients (step 07) on the fitted skill priors from panna#432 (02b fit on
   all 9,258 Big-5 players, every skill stat on the xMetrics-enriched table). Cross-validated error is
   unchanged (xG margin 0.9585 -> 0.9575, goal-diff margin 2.3837 -> 2.3848). The outfield model now
