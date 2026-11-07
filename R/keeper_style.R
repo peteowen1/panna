@@ -118,15 +118,20 @@ fit_keeper_style_asof <- function(match_stats, stats = .keeper_style_stats(),
   for (s in stats) data.table::set(k, j = s, value = as.numeric(dt[[s]][keep]))
   if (!nrow(k)) cli::cli_abort("No keeper rows found (checked with .detect_gk_rows()).")
   years <- sort(unique(k$season_end_year))
-  out <- list()
+  out <- list(); kout <- list()
   for (s in stats) for (y in years) {
     f <- .fit_keeper_style_once(k, s, y, lambda)
     if (is.null(f)) next
     out[[length(out) + 1L]] <- f$club[, .(stat = s, season_end_year = y, team_id, club_style)]
+    kout[[length(kout) + 1L]] <- f$keeper[, .(stat = s, season_end_year = y, player_id, keeper_eff)]
     if (verbose) cli::cli_inform("keeper style {s} for {y}: {nrow(f$club)} clubs from {f$n} keeper-matches")
   }
   if (!length(out)) cli::cli_abort("No keeper-style fits had enough data.")
-  data.table::rbindlist(out)
+  res <- data.table::rbindlist(out)
+  # Keeper effects from the same as-of fits (seasons before Y), used by the
+  # in-season club term to tell a club's shift from a known keeper's own style.
+  data.table::setattr(res, "keeper_effects", data.table::rbindlist(kout))
+  res
 }
 
 #' Add club-adjusted keeper distribution columns
@@ -138,24 +143,66 @@ fit_keeper_style_asof <- function(match_stats, stats = .keeper_style_stats(),
 #' club new to it), keep the raw value, and the count is reported rather than
 #' silently guessed.
 #'
-#' @param dt Match-level stats with team_id and season_end_year (or season).
+#' In-season club term (Pete chose it 2026-11-08, over the prior-seasons-only
+#' version): the club's shift this season, from its keepers' matches on EARLIER
+#' dates of the same season. Each earlier match contributes its raw value minus
+#' the club's as-of style minus that keeper's own as-of effect (0 for a keeper
+#' with no earlier seasons), so a new coach's change is caught while a known
+#' keeper's personal style is not mistaken for it. The running mean is shrunk:
+#' shift = sum(w * r) / (sum(w) + in_season_k), w = 90s played, so it starts
+#' at 0 and needs about in_season_k nineties to count fully. Same-date matches
+#' are excluded, so nothing from the match itself or later enters.
+#'
+#' @param dt Match-level stats with team_id, season_end_year (or season) and,
+#'   for the in-season term, match_date and player_id.
 #' @param style Output of `fit_keeper_style_asof()`.
 #' @param is_gk Logical keeper flag per row (default `.detect_gk_rows(dt)`).
+#' @param in_season_k Shrinkage of the in-season term in 90s; `Inf` turns it off.
+#'   Default 20 (Pete, 2026-11-08). On 617 club movers the term lowered the new
+#'   club's weight on a keeper's adjusted long-ball rate (0.336 off -> 0.299 at
+#'   20) but also his own (0.399 -> 0.315), and stayer stability (0.62 -> 0.56):
+#'   within a one-keeper club-season, the club's shift and the keeper's form look
+#'   alike. Kept on so the step 07 retrain can judge it on prediction error.
 #' @return dt by reference, with the `_kadj_p90` columns added.
 #' @keywords internal
 #' @noRd
-.add_keeper_style_features <- function(dt, style, is_gk = NULL, verbose = TRUE) {
+.add_keeper_style_features <- function(dt, style, is_gk = NULL, in_season_k = 20, verbose = TRUE) {
   if (is.null(is_gk)) is_gk <- .detect_gk_rows(dt)
   yr <- if ("season_end_year" %in% names(dt)) as.integer(dt$season_end_year)
         else as.integer(extract_season_end_year(dt$season))
   key <- paste(dt$team_id, yr)
+  kfx <- attr(style, "keeper_effects")
+  do_season <- is.finite(in_season_k)
+  if (do_season) {
+    miss <- setdiff(c("match_date", "player_id", "total_minutes"), names(dt))
+    if (length(miss)) cli::cli_abort("The in-season keeper-style term needs {.field {miss}}; pass in_season_k = Inf to skip it.")
+    if (is.null(kfx)) cli::cli_abort("style has no keeper effects; refit it with fit_keeper_style_asof().")
+    md <- as.numeric(as.Date(dt$match_date))
+    w <- as.numeric(dt$total_minutes) / 90; w[!is.finite(w)] <- 0
+    pkey <- paste(dt$player_id, yr)
+  }
   for (s in intersect(unique(style$stat), names(dt))) {
     st <- style[stat == s]
-    adj <- st$club_style[match(key, paste(st$team_id, st$season_end_year))]
+    cstyle <- st$club_style[match(key, paste(st$team_id, st$season_end_year))]
     raw <- as.numeric(dt[[s]])
-    use <- is_gk & is.finite(adj)
+    use <- is_gk & is.finite(cstyle) & is.finite(raw)
+    shift <- rep(0, length(raw))
+    if (do_season && any(use)) {
+      kf <- kfx[stat == s]
+      keff <- kf$keeper_eff[match(pkey, paste(kf$player_id, kf$season_end_year))]
+      keff[!is.finite(keff)] <- 0
+      r <- raw - cstyle - keff
+      day <- data.table::data.table(ck = key[use], md = md[use], wr = (w * r)[use], w = w[use])
+      day <- day[, .(wr = sum(wr), w = sum(w)), by = .(ck, md)]
+      data.table::setorder(day, ck, md)
+      # Totals over strictly EARLIER dates in the same club-season.
+      day[, `:=`(wr_before = cumsum(wr) - wr, w_before = cumsum(w) - w), by = ck]
+      day[, shift := wr_before / (w_before + in_season_k)]
+      hit <- match(paste(key, md), paste(day$ck, day$md))
+      shift[use] <- day$shift[hit[use]]
+    }
     out <- raw
-    out[use] <- raw[use] - adj[use]
+    out[use] <- raw[use] - cstyle[use] - shift[use]
     out_col <- .keeper_style_col(s)
     data.table::set(dt, j = out_col, value = out)
     n_used <- sum(use); n_gk <- sum(is_gk); n_raw <- n_gk - n_used
