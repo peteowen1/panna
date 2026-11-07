@@ -49,6 +49,19 @@ test_that("get_stat_tiers has no duplicate stat names across tiers", {
   expect_equal(length(all_stats), length(unique(all_stats)))
 })
 
+test_that("get_stat_tiers fits the finishing, placement and GSAA priors (panna#432)", {
+  tiers <- get_stat_tiers()
+  # The xG-type skill stats; the default run used to skip finishing, placement
+  # and GSAA, leaving them on the fallback prior. (The zonal ibox/obox split
+  # left PSR on 2026-07-20, so it is deliberately not here.)
+  expect_true(all(c("xg_per90", "npxg_per90", "xa_per90_xmetrics",
+                    "xpass_overperformance_per90_xmetrics", "npg_minus_npxg_per90",
+                    "placement_added_per90", "gsaa_per90") %in% tiers$xmetrics))
+  # Every xmetrics stat is one the skill estimators actually score.
+  registered <- union(panna:::.get_psr_skill_cols(), panna:::.get_gk_skill_cols())
+  expect_true(all(tiers$xmetrics %in% registered))
+})
+
 test_that("get_stat_tiers tier1 rate stats end in _p90", {
   tiers <- get_stat_tiers()
   expect_true(all(grepl("_p90$", tiers$tier1)))
