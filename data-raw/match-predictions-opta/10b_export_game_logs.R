@@ -236,6 +236,11 @@ if (has_match_stats) {
   }
   all_match_stats[, .is_gk_full := .detect_gk_rows(all_match_stats)]
   all_match_stats[, .pos_grp_full := .psv_pos_grp(all_match_stats, .is_gk_full)]
+  # Club-adjusted keeper distribution (panna#429), once on the full population
+  # with the same router PSV scoring uses: the in-season club term needs every
+  # earlier match of the club-season, which a league slice would drop. Stops
+  # here, before any league, if keeper_style_asof.rds is missing.
+  .apply_keeper_style(all_match_stats, is_gk = all_match_stats$.is_gk_full, verbose = TRUE)
   # Report the live figure only -- a baked-in "was X%" baseline would keep
   # printing a fixed historical number as though it were a current comparison.
   # The 2026-09-14 measurement (3.52% -> 0.77% of rows, 2.24% -> 0.44% of
@@ -833,10 +838,15 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
             # fail_if_missing_frac left at the library default (Inf, warn-only) —
             # a hard stop() here would convert "PSV present but box-score-only"
             # into "PSV entirely NA for this league" on any local/remote gap.
+            # keeper_style = FALSE: cache rows already carry `_kadj`, computed
+            # once on the full population before the league loop.
             psv_pop <- data.table::as.data.table(
-              enrich_match_stats_with_xmetrics(cache_rows, verbose = FALSE, source = xm_source))
+              enrich_match_stats_with_xmetrics(cache_rows, verbose = FALSE, source = xm_source,
+                                               keeper_style = FALSE))
           }
         }, error = function(e) {
+          # A missing keeper style table must fail the league, not become a warning.
+          if (inherits(e, "panna_keeper_style_error")) stop(e)
           warning(sprintf("PSV failed for %s %s: %s",
                           league, season, e$message), call. = FALSE)
         })
@@ -865,9 +875,12 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
               match_level <- compute_match_level_opta_stats(box_dt, min_minutes = 10)
               if (!is.null(match_level) && nrow(match_level) > 0L) {
                 # Enrich BEFORE scoring (train/serve parity — see note above).
+                # keeper_style = FALSE: the `_kadj` columns are added below, once
+                # the scoring router is pinned and with the club's cache history.
                 match_level <- data.table::as.data.table(
                   enrich_match_stats_with_xmetrics(match_level, verbose = FALSE,
-                                                   source = xm_source))
+                                                   source = xm_source,
+                                                   keeper_style = FALSE))
                 # These rows are NOT in all_match_stats (that's why we're here),
                 # so the full-population columns can't ride along -- join by
                 # player_id instead, falling back to this slice's own resolution
@@ -915,6 +928,33 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
                 # scored the row (the 07c failure mode, panna PR #250).
                 match_level[, `:=`(.is_gk_full = .inline_is_gk,
                                    .pos_grp_full = .psv_pin_gk(.inline_pos, .inline_is_gk))]
+                # Club-adjusted keeper columns (panna#429) for these newest rows,
+                # computed together with the club's earlier same-season cache rows
+                # (all competitions) so the in-season term matches 08b/training,
+                # and with the pinned router above.
+                if (!"season_end_year" %in% names(match_level)) {
+                  match_level[, season_end_year := as.integer(extract_season_end_year(league_season))]
+                }
+                if (!"team_id" %in% names(match_level)) {
+                  cli::cli_abort("Box-score top-up rows for {league} {season} have no {.field team_id}; keeper style cannot be applied.",
+                                 class = "panna_keeper_style_error")
+                }
+                .ks_cols <- c("team_id", "season_end_year", "match_date", "player_id",
+                              "total_minutes", .keeper_style_stats(), ".is_gk_full")
+                .ks_new <- match_level[, .SD, .SDcols = intersect(.ks_cols, names(match_level))]
+                .ks_new[, `:=`(.ks_src = 1L, match_date = as.Date(match_date))]
+                .ks_ctx <- if (has_match_stats) {
+                  .ml_keys <- unique(paste(match_level$team_id, match_level$season_end_year))
+                  all_match_stats[paste(team_id, season_end_year) %in% .ml_keys,
+                                  .SD, .SDcols = intersect(.ks_cols, names(all_match_stats))]
+                } else NULL
+                if (!is.null(.ks_ctx)) .ks_ctx[, `:=`(.ks_src = 0L, match_date = as.Date(match_date))]
+                .ks_all <- data.table::rbindlist(list(.ks_ctx, .ks_new), fill = TRUE, use.names = TRUE)
+                .apply_keeper_style(.ks_all, is_gk = .ks_all$.is_gk_full, verbose = FALSE)
+                for (.kc in .keeper_style_col(intersect(.keeper_style_stats(), names(.ks_all)))) {
+                  data.table::set(match_level, j = .kc, value = .ks_all[.ks_src == 1L][[.kc]])
+                }
+                rm(.ks_new, .ks_ctx, .ks_all)
                 if (!is.null(psv_pop)) {
                   # A column on one side only is NA-filled for the other side's
                   # rows; say so rather than let it pass silently.
@@ -940,6 +980,8 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
             ), call. = FALSE)
           }
         }, error = function(e) {
+          # A missing keeper style table must fail the league, not become a warning.
+          if (inherits(e, "panna_keeper_style_error")) stop(e)
           warning(sprintf("Inline PSV (#74) failed for %s %s: %s%s",
                           league, season, e$message,
                           if (!is.null(psv_pop)) " -- PSV centred on the skills-cache rows only (partial population)" else ""),

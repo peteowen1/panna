@@ -259,6 +259,7 @@ jobs:
           opta_data_dir(opta_path)
           run_steps <- list(
             step_01_compute_match_stats    = TRUE,
+            step_01c_keeper_style          = TRUE,
             step_02_estimate_skills        = FALSE,
             step_02b_optimize_params       = FALSE,
             step_03_skill_spm              = FALSE,

@@ -65,7 +65,7 @@ cli::cli_alert_info("outfield nonzero-beta features: {length(of_feats)} | gk: {l
 ms <- as.data.table(readRDS("data-raw/cache-skills/01_match_stats.rds"))
 ms[, match_date := as.Date(match_date)]
 
-meta_cols <- intersect(c("match_id", "player_id", "player_name", "team_name", "opponent_team",
+meta_cols <- intersect(c("match_id", "player_id", "player_name", "team_id", "team_name", "opponent_team",
                           "match_date", "league", "season", "position", "position_side",
                           "primary_position", "total_minutes", "is_home", "goals", "competition"),
                         names(ms))

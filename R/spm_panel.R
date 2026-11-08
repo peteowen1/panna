@@ -167,7 +167,8 @@ classify_role_group <- function(role) {
     window <- tryCatch(
       enrich_match_stats_with_xmetrics(window, verbose = FALSE,
                                        source = xmetrics_source,
-                                       fail_if_missing_frac = Inf),
+                                       fail_if_missing_frac = Inf,
+                                       keeper_style = FALSE),  # SPM does not score keepers on _kadj
       error = function(e) {
         cli::cli_warn("xMetrics enrichment failed for vintage {cutoff_year}: {conditionMessage(e)} -- proceeding box-only.")
         window
