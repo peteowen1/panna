@@ -175,3 +175,44 @@ test_that("enrich_match_stats_with_xmetrics stops when the keeper style table is
   expect_equal(out$long_balls_p90_kadj, 15)
   expect_equal(out$long_balls_p90, 20)
 })
+
+test_that(".apply_keeper_style stops with a classed error a per-league tryCatch can re-raise", {
+  sim <- make_keeper_league(seed = 10)
+  withr::local_options(panna.keeper_style_path = file.path(tempdir(), "no_such_keeper_style.rds"))
+  expect_error(panna:::.apply_keeper_style(data.table::copy(sim$dt), verbose = FALSE),
+               class = "panna_keeper_style_error")
+  st <- fit_keeper_style_asof(sim$dt, stats = "long_balls_p90", verbose = FALSE)
+  expect_error(add_kstyle(data.table::copy(sim$dt)[, !"team_id"], st, verbose = FALSE),
+               class = "panna_keeper_style_error")
+  # The 10b pattern: the keeper error escapes the handler that turns other errors into warnings.
+  # (A separate sibling `panna_keeper_style_error = function(e) stop(e)` handler does NOT work:
+  # the error handler next to it catches the re-raise.)
+  path <- file.path(tempdir(), "no_such_keeper_style.rds")
+  expect_error(tryCatch(panna:::.apply_keeper_style(data.table::copy(sim$dt), verbose = FALSE),
+                        error = function(e) {
+                          if (inherits(e, "panna_keeper_style_error")) stop(e)
+                          warning("swallowed")
+                        }),
+               class = "panna_keeper_style_error")
+})
+
+test_that("_kadj must be computed on the full population: a league slice drops the club's cup matches", {
+  sim <- make_keeper_league(seed = 11)
+  st <- fit_keeper_style_asof(sim$dt, stats = "long_balls_p90", verbose = FALSE)
+  # Club c01's keeper also plays cup matches in 2025, with a very different rate, between league dates.
+  kp <- sim$dt[team_id == "c01" & season_end_year == 2025L & position == "Goalkeeper", player_id[1]]
+  cup <- data.table::data.table(match_id = paste("cup", 1:6), player_id = kp, team_id = "c01",
+                                match_date = as.Date("2024-08-05") + 7L * (1:6), league = "CUP",
+                                season_end_year = 2025L, position = "Goalkeeper", total_minutes = 90,
+                                long_balls_p90 = 60)
+  all <- rbind(sim$dt, cup)
+  withr::local_options(panna.keeper_style_path = { p <- file.path(tempdir(), "ks_full.rds"); saveRDS(st, p); p })
+  full <- panna:::.apply_keeper_style(data.table::copy(all), verbose = FALSE)[league == "L1"]
+  slice <- panna:::.apply_keeper_style(data.table::copy(all)[league == "L1"], verbose = FALSE)
+  sel <- full$team_id == "c01" & full$season_end_year == 2025L & full$match_date > as.Date("2024-09-20")
+  expect_gt(sum(sel), 5)
+  expect_gt(max(abs(full$long_balls_p90_kadj[sel] - slice$long_balls_p90_kadj[sel])), 0.5)
+  # Other clubs, which have no cup rows, are identical either way.
+  other <- full$team_id != "c01"
+  expect_equal(full$long_balls_p90_kadj[other], slice$long_balls_p90_kadj[other], tolerance = 1e-10)
+})

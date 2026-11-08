@@ -16,7 +16,8 @@ devtools::load_all()
 
 if (!exists("cache_dir", inherits = FALSE)) cache_dir <- file.path("data-raw", "cache-skills")
 in_path  <- file.path(cache_dir, "01_match_stats.rds")
-out_path <- file.path(cache_dir, "keeper_style_asof.rds")
+# Write where every reader looks (.keeper_style_path(), option panna.keeper_style_path).
+out_path <- .keeper_style_path()
 
 ms <- readRDS(in_path)
 ms <- if (data.table::is.data.table(ms)) ms else data.table::as.data.table(ms)

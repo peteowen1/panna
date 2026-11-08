@@ -187,7 +187,10 @@ fit_keeper_style_asof <- function(match_stats, stats = .keeper_style_stats(),
 .add_keeper_style_features <- function(dt, style, is_gk = NULL, in_season_k = 20, verbose = TRUE) {
   # Without team_id every key misses and every keeper silently keeps his raw
   # value, so stop instead (review of the step 2 wiring, 2026-11-08).
-  if (!"team_id" %in% names(dt)) cli::cli_abort("Keeper style needs a {.field team_id} column; pass keeper_style = FALSE where keepers are not scored.")
+  if (!"team_id" %in% names(dt)) cli::cli_abort("Keeper style needs a {.field team_id} column; pass keeper_style = FALSE where keepers are not scored.",
+                                                class = "panna_keeper_style_error")
+  if (!is.null(is_gk) && length(is_gk) != nrow(dt)) cli::cli_abort("{.arg is_gk} has {length(is_gk)} entries for {nrow(dt)} rows.",
+                                                                    class = "panna_keeper_style_error")
   if (is.null(is_gk)) is_gk <- .detect_gk_rows(dt)
   yr <- if ("season_end_year" %in% names(dt)) as.integer(dt$season_end_year)
         else as.integer(extract_season_end_year(dt$season))
@@ -196,8 +199,8 @@ fit_keeper_style_asof <- function(match_stats, stats = .keeper_style_stats(),
   do_season <- is.finite(in_season_k)
   if (do_season) {
     miss <- setdiff(c("match_date", "player_id", "total_minutes"), names(dt))
-    if (length(miss)) cli::cli_abort("The in-season keeper-style term needs {.field {miss}}; pass in_season_k = Inf to skip it.")
-    if (is.null(kfx)) cli::cli_abort("style has no keeper effects; refit it with fit_keeper_style_asof().")
+    if (length(miss)) cli::cli_abort("The in-season keeper-style term needs {.field {miss}}; pass in_season_k = Inf to skip it.", class = "panna_keeper_style_error")
+    if (is.null(kfx)) cli::cli_abort("style has no keeper effects; refit it with fit_keeper_style_asof().", class = "panna_keeper_style_error")
     md <- as.numeric(as.Date(dt$match_date))
     w <- as.numeric(dt$total_minutes) / 90; w[!is.finite(w)] <- 0
     pkey <- paste(dt$player_id, yr)
@@ -207,7 +210,7 @@ fit_keeper_style_asof <- function(match_stats, stats = .keeper_style_stats(),
     cstyle <- st$club_style[match(key, paste(st$team_id, st$season_end_year))]
     raw <- as.numeric(dt[[s]])
     use <- is_gk & is.finite(cstyle) & is.finite(raw)
-    if (do_season && anyNA(md[use])) cli::cli_abort("{sum(is.na(md[use]))} keeper rows have no match_date; the in-season term would count them as earlier than every match.")
+    if (do_season && anyNA(md[use])) cli::cli_abort("{sum(is.na(md[use]))} keeper rows have no match_date; the in-season term would count them as earlier than every match.", class = "panna_keeper_style_error")
     shift <- rep(0, length(raw))
     if (do_season && any(use)) {
       kf <- kfx[stat == s]
@@ -232,4 +235,33 @@ fit_keeper_style_asof <- function(match_stats, stats = .keeper_style_stats(),
     if (verbose) cli::cli_inform("{out_col}: club style applied to {n_used} of {n_gk} keeper rows; {n_nostyle} keep the raw value (no earlier season for that club), {n_na} have no value")
   }
   dt
+}
+
+#' Read the as-of keeper style table and add the `_kadj` columns
+#'
+#' The one entry point for scoring sites. Stops (condition class
+#' `panna_keeper_style_error`, so a per-league `tryCatch` can re-raise it
+#' instead of turning it into a warning) when the table is missing.
+#'
+#' Call it on the FULL population, before any per-league, per-player or
+#' per-fixture filter: the in-season term sums a club's earlier matches in the
+#' season across every competition, and `is_gk` should be the same router the
+#' rows are scored with. A slice gives different values (review, 2026-11-09).
+#' @param dt Match stats with team_id, season or season_end_year, match_date,
+#'   player_id, total_minutes and the keeper stats.
+#' @param is_gk Optional per-row logical; default `.detect_gk_rows(dt)`.
+#' @param verbose Print the per-stat coverage line.
+#' @return dt by reference, with the `_kadj` columns added.
+#' @keywords internal
+#' @noRd
+.apply_keeper_style <- function(dt, is_gk = NULL, verbose = TRUE) {
+  ks_path <- .keeper_style_path()
+  if (!file.exists(ks_path)) {
+    cli::cli_abort(c(
+      "Keeper style table not found at {.path {ks_path}}.",
+      "i" = "Keeper PSR is trained on the club-adjusted {.field _kadj} columns (panna#429), so scoring without them is wrong.",
+      "i" = "Build it with {.file data-raw/estimated-skills/01c_keeper_style.R}, download it with the other skills caches, or pass {.code keeper_style = FALSE} where keepers are not scored."),
+      class = "panna_keeper_style_error")
+  }
+  .add_keeper_style_features(dt, readRDS(ks_path), is_gk = is_gk, verbose = verbose)
 }

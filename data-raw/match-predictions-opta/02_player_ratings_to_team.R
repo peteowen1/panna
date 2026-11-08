@@ -694,7 +694,7 @@ if (nrow(upcoming) > 0) {
       match_stats <- .narrow_match_stats_for_skills(
         match_stats,
         extra_cols = c("player_id", "player_name", "match_date", "position",
-                       "total_minutes", "league", "season", "match_id"))
+                       "total_minutes", "league", "season", "match_id", "team_id"))
       gc(verbose = FALSE)
       message(sprintf("  Narrowed match_stats to %d columns for skill estimation",
                       ncol(match_stats)))
@@ -706,11 +706,19 @@ if (nrow(upcoming) > 0) {
         # bug fixed for 07c in panna PR #250 (see compute_player_psv()'s is_gk
         # roxygen, R/psr.R). Joined onto live_skills by player_id below, since
         # estimate_player_skills_at_date() returns a different table shape.
+        .is_gk_rows <- .detect_gk_rows(match_stats)
         .is_gk_lookup <- unique(
           data.table::data.table(player_id = match_stats$player_id,
-                                  is_gk = .detect_gk_rows(match_stats)),
+                                  is_gk = .is_gk_rows),
           by = "player_id"
         )
+        # Club-adjusted keeper distribution (panna#429): keeper PSR below is
+        # scored on the `_kadj` columns, so add them HERE, on the full table
+        # and with the same router -- the in-season club term needs the club's
+        # earlier matches, which the fixture filter below would drop. Stops if
+        # the table is missing (08b and training do the same on the full table).
+        match_stats <- .apply_keeper_style(match_stats, is_gk = .is_gk_rows, verbose = TRUE)
+        rm(.is_gk_rows)
         match_stats <- match_stats[match_stats$player_id %in% upcoming_player_ids, ]
         message(sprintf("  Filtered match_stats to %d players (%d rows)",
                         length(upcoming_player_ids), nrow(match_stats)))
@@ -720,8 +728,8 @@ if (nrow(upcoming) > 0) {
         # run since 2026-07 and the tryCatch below silently fell back to
         # seasonal ratings (codebase review R018). Same call as 08b / skills 02.
         xm_source <- if (identical(Sys.getenv("XMETRICS_SOURCE"), "remote")) "remote" else "local"
-        # keeper_style = FALSE: this table is narrowed without team_id and only the
-        # SPM blend (`_p90` columns) reads it, so keeper _kadj columns are not used.
+        # keeper_style = FALSE: the `_kadj` columns were added above on the full
+        # table; recomputing them on the fixture-filtered rows would be wrong.
         match_stats <- enrich_match_stats_with_xmetrics(match_stats, verbose = TRUE,
                                                         source = xm_source,
                                                         keeper_style = FALSE)

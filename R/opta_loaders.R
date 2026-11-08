@@ -1249,15 +1249,7 @@ enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
   # Club-adjusted keeper distribution (panna#429), here for the same train/serve
   # reason as the territory columns. Additive `<stat>_kadj` columns.
   if (isTRUE(keeper_style)) {
-    ks_path <- .keeper_style_path()
-    if (!file.exists(ks_path)) {
-      cli::cli_abort(c(
-        "Keeper style table not found at {.path {ks_path}}.",
-        "i" = "Keeper PSR is trained on the club-adjusted {.field _kadj} columns (panna#429), so scoring without them is wrong.",
-        "i" = "Build it with {.file data-raw/estimated-skills/01c_keeper_style.R}, download it with the other skills caches, or pass {.code keeper_style = FALSE} where keepers are not scored."))
-    }
-    ks <- readRDS(ks_path)
-    match_stats <- .add_keeper_style_features(match_stats, ks, verbose = verbose)
+    match_stats <- .apply_keeper_style(match_stats, verbose = verbose)
   }
   match_stats
 }
