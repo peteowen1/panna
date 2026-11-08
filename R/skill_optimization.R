@@ -61,7 +61,7 @@ get_stat_tiers <- function() {
       # Club-adjusted keeper distribution (panna#429, R/keeper_style.R): the
       # keeper feature list uses these instead of the raw columns.
       "passes_p90_kadj", "passes_accurate_p90_kadj", "long_balls_p90_kadj",
-      "keeper_throws_p90_kadj"
+      "keeper_throws_p90_kadj", "touches_p90_kadj"
     ),
     efficiency = c(
       "shot_accuracy", "goals_per_shot", "pass_accuracy",

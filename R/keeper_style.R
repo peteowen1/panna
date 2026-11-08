@@ -25,7 +25,11 @@
 #' Keeper distribution stats adjusted for club style by default
 #' @keywords internal
 #' @noRd
-.keeper_style_stats <- function() c("passes_p90", "passes_accurate_p90", "long_balls_p90", "keeper_throws_p90")
+# touches_p90 added 2026-11-08: with only the four distribution stats adjusted,
+# the step 07 keeper fit moved the club signal onto raw touches (beta*sd 0 ->
+# +0.573, the largest keeper term), touches minus passes rebuilding "plays short".
+.keeper_style_stats <- function() c("passes_p90", "passes_accurate_p90", "long_balls_p90", "keeper_throws_p90",
+                                    "touches_p90")
 
 #' Name of the club-adjusted column for a keeper stat ("long_balls_p90" -> "long_balls_p90_kadj")
 #'

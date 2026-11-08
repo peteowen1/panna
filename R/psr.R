@@ -137,7 +137,7 @@
   # Shared outfield stats that GKs also accumulate (additive counts only)
   shared_cols <- c(
     "clearances_p90", "aerial_won_p90", "aerial_lost_p90",
-    "touches_p90",
+    "touches_p90_kadj",  # club-adjusted like distribution (panna#429): raw touches took over the club signal
     "error_lead_to_shot_p90", "error_lead_to_goal_p90"
   )
 
