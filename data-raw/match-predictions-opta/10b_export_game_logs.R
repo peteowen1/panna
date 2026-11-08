@@ -935,6 +935,10 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
                 if (!"season_end_year" %in% names(match_level)) {
                   match_level[, season_end_year := as.integer(extract_season_end_year(league_season))]
                 }
+                if (!"team_id" %in% names(match_level)) {
+                  cli::cli_abort("Box-score top-up rows for {league} {season} have no {.field team_id}; keeper style cannot be applied.",
+                                 class = "panna_keeper_style_error")
+                }
                 .ks_cols <- c("team_id", "season_end_year", "match_date", "player_id",
                               "total_minutes", .keeper_style_stats(), ".is_gk_full")
                 .ks_new <- match_level[, .SD, .SDcols = intersect(.ks_cols, names(match_level))]

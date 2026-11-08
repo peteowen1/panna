@@ -974,6 +974,9 @@ if (nrow(upcoming) > 0) {
                         nrow(fixture_ratings), fixture_date))
       }
     }, error = function(e) {
+      # A missing keeper style table is a broken setup, not a data gap: fail the
+      # step rather than fall back to seasonal ratings (panna#429 review).
+      if (inherits(e, "panna_keeper_style_error")) stop(e)
       # The body assigns fixture_ratings in script scope as it goes, so an
       # error after line ~714 (PSR/EPR joins, sign assert) would leave a
       # half-built table with no psr/epr columns that is then USED below.
