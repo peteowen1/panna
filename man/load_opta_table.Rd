@@ -22,6 +22,8 @@ load_opta_table(table_type, league, season, columns, source = "local")
 Data frame
 }
 \description{
-Internal function to load Opta table data
+A season that comes back empty is retried once with its accents removed
+(see \code{.fold_season_label()}); an accented label the data does store is
+still tried first.
 }
 \keyword{internal}
