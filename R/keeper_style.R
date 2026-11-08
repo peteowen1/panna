@@ -181,6 +181,9 @@ fit_keeper_style_asof <- function(match_stats, stats = .keeper_style_stats(),
 #' @keywords internal
 #' @noRd
 .add_keeper_style_features <- function(dt, style, is_gk = NULL, in_season_k = 20, verbose = TRUE) {
+  # Without team_id every key misses and every keeper silently keeps his raw
+  # value, so stop instead (review of the step 2 wiring, 2026-11-08).
+  if (!"team_id" %in% names(dt)) cli::cli_abort("Keeper style needs a {.field team_id} column; pass keeper_style = FALSE where keepers are not scored.")
   if (is.null(is_gk)) is_gk <- .detect_gk_rows(dt)
   yr <- if ("season_end_year" %in% names(dt)) as.integer(dt$season_end_year)
         else as.integer(extract_season_end_year(dt$season))

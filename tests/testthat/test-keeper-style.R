@@ -122,6 +122,7 @@ test_that("the in-season term asks for match_date instead of guessing", {
   st <- fit_keeper_style_asof(sim$dt, stats = "long_balls_p90", verbose = FALSE)
   expect_error(add_kstyle(data.table::copy(sim$dt)[, !"match_date"], st, verbose = FALSE), "match_date")
   expect_no_error(add_kstyle(data.table::copy(sim$dt)[, !"match_date"], st, in_season_k = Inf, verbose = FALSE))
+  expect_error(add_kstyle(data.table::copy(sim$dt)[, !"team_id"], st, verbose = FALSE), "team_id")
 })
 
 test_that("as-of keeper effects map to the right keeper and ignore later seasons", {
