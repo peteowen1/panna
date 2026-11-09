@@ -1,4 +1,4 @@
-# panna (development version)
+# panna 0.3.113
 
 - `optimize_stat_prior()`: a one-parameter search now uses a tolerance scaled to its interval. The fixed
   `tol = 0.01` was half the default lambda range, so a lambda-only search stopped after a step or two
