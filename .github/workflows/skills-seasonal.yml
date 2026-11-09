@@ -13,8 +13,10 @@ name: Skills Seasonal Build
 # 01 14.8, 04c 6.1, 02 10.5, 03 14.5, 06 14.8. Stages 01, 03 and 06 have ~1.2 GB headroom.
 #
 # The publish job always runs the coverage gate (the new tables must cover what the published
-# copies cover). It UPLOADS only on main, and only on the weekly schedule or a dispatch with
-# publish=true. Uploads go through .vb_safe_upload (temp name, verify, swap), never --clobber.
+# copies cover). It UPLOADS only on main, and only on a dispatch with publish=true: the weekly
+# schedule is gate-only until Pete has walked the first 06 publish through on named players
+# (Pete, 2026-11-09; pannaverse NEXT-STEPS). Uploads go through .vb_safe_upload (temp name,
+# verify, swap), never --clobber.
 
 on:
   schedule:
@@ -715,7 +717,7 @@ jobs:
 
   publish:
     # Always runs the coverage gate, so a test run proves it on real outputs; uploads only
-    # on main, and only on the schedule or a dispatch with publish=true.
+    # on main, and only on a dispatch with publish=true (the schedule is gate-only, 2026-11-09).
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     needs: [s03, s06]
@@ -729,7 +731,7 @@ jobs:
     permissions:
       contents: read
     env:
-      DO_UPLOAD: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'schedule' || github.event.inputs.publish == 'true') }}
+      DO_UPLOAD: ${{ github.ref == 'refs/heads/main' && github.event_name == 'workflow_dispatch' && github.event.inputs.publish == 'true' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

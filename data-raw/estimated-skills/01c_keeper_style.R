@@ -44,3 +44,23 @@ if (cov < 0.8) stop(sprintf("Only %.1f%% of season %d keeper rows have a club st
 
 saveRDS(ks, out_path)
 cat(sprintf("Saved to %s (%s)\n", out_path, format(file.mtime(out_path))))
+
+# Published copy for the site's live PSV scorer (panna#452): club style + the
+# in-season shift for the recent seasons, built by the same code that writes the
+# `_kadj` columns. Predictions step 10e registers it for blog-latest, and
+# pannadata build-blog-data passes it to R2 as football/keeper-style.parquet.
+kst <- build_keeper_style_table(ms, ks)
+kst_path <- file.path(dirname(out_path), "keeper-style.parquet")
+arrow::write_parquet(kst, kst_path)
+data.table::fwrite(kst, sub("\\.parquet$", ".csv", kst_path))
+cat(sprintf("Keeper style table: %s rows, seasons %s, %d club-seasons, latest after_date %s -> %s (+ .csv)\n",
+            format(nrow(kst), big.mark = ","), paste(sort(unique(kst$season_end_year)), collapse = "/"),
+            uniqueN(kst[, .(team_id, season_end_year)]), format(max(kst$after_date)), kst_path))
+# Freshness: compare with the latest match of the published clubs' keepers, not
+# max(match_date) overall, so a summer of tournament/bridge games for clubs with
+# no style cannot trip it (review nit, 2026-11-09).
+pub_gk <- gk & paste(ms$team_id, yr) %in% paste(kst$team_id, kst$season_end_year)
+latest_pub <- max(as.Date(ms$match_date[pub_gk]), na.rm = TRUE)
+if (max(kst$after_date) < latest_pub)
+  stop(sprintf("keeper-style table's latest shift date %s is behind its clubs' latest keeper match %s; check the in-season term.",
+               format(max(kst$after_date)), format(latest_pub)))
