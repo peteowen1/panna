@@ -274,4 +274,10 @@ test_that("_kadj on whole kept seasons equals _kadj on the full table (10b appli
   expect_equal(nrow(a), nrow(b))
   expect_gt(sum(a$long_balls_p90_kadj != a$long_balls_p90), 100)   # the adjustment did something
   expect_equal(b$long_balls_p90_kadj, a$long_balls_p90_kadj, tolerance = 1e-12)
+  # The cup rows do feed the league rows' in-season term (so the trim must keep every competition).
+  no_cup <- add_kstyle(data.table::copy(kept[league != "CUP"]), st, verbose = FALSE)[order(match_id, player_id)]
+  b_lg <- b[league != "CUP"]
+  expect_false(isTRUE(all.equal(no_cup$long_balls_p90_kadj, b_lg$long_balls_p90_kadj)))
+  # Note: the trim here is by season_end_year, the unit of the club-season key. It guards 10b's
+  # whole-season trim, not a trim by date, which would cut club-seasons and change values.
 })
