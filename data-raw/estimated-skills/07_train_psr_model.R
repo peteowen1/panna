@@ -1606,7 +1606,9 @@ cat("     99b_fit_position_calibration.R. Turning its slopes into shipped factor
 cat("     a decision (see its header). Seen stale after the 2026-11-07 retrain (panna#432).\n\n")
 cat("Then re-run 06 (seasonal ratings) -> 08b (weekly PSR) -> 10b/02, which\n")
 cat("consume the coefficients via load_psr_coefficients().\n")
-cat("07b is NOT in this chain -- it reads match stats, not coefficients.\n")
+cat("07b IS in this chain when the feature set changes: it builds position_role_means.csv\n")
+cat("and psv_match_reliability.csv for the stat names in the coefficient files (panna#429).\n")
+cat("Run it before 07c.\n")
 cat(strrep("=", 78), "\n", sep = "")
 
 cat("\n=== COMPLETE ===\n")
