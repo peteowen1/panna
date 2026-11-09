@@ -2412,6 +2412,12 @@ test_that(".estimate_prematch_skills_batch(as_of = TRUE) stops without cached pr
   dp_missing <- dp; dp_missing$position_multipliers <- NULL; dp_missing$prior_centers <- NULL
   expect_no_error(suppressWarnings(panna:::.estimate_prematch_skills_batch(
     ms, ref_dates = ref, decay_params = dp_missing, verbose = FALSE)))
+  # A cache missing one stat's centre is refused too (it would be centred on all dates).
+  dp_part <- dp; dp_part$prior_centers <- dp_part$prior_centers[-1]
+  expect_error(
+    panna:::.estimate_prematch_skills_batch(ms, ref_dates = ref, decay_params = dp_part,
+                                            as_of = TRUE, verbose = FALSE),
+    "no centre")
 })
 
 test_that(".estimate_prematch_skills_batch(as_of = TRUE) matches estimate_player_skills per date", {

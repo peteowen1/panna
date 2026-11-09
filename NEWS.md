@@ -16,7 +16,8 @@
   returned population come only from matches before each date), so step 08b can later switch to the
   batch estimator; the default is unchanged and step 07 is unaffected. `as_of = TRUE` now stops
   unless `decay_params` carries cached `position_multipliers` and `prior_centers`, since computing them
-  from all of `match_stats` would use matches after each date. Real-data check before any switch:
+  from all of `match_stats` would use matches after each date; it also stops when `prior_centers`
+  misses any estimated stat, which would leak the same way. Real-data check before any switch:
   `data-raw/estimated-skills/99c_compare_batch_vs_single_snapshots.R`.
 - New diagnostic `data-raw/estimated-skills/99d_continental_league_check.R` (#419, panna#219):
   continental-match residuals per league as a check on the PSR league offsets. Reads only; changes no

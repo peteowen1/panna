@@ -366,6 +366,17 @@
       "i" = "Without them both would come from all of {.arg match_stats}, including matches after each date.",
       "i" = "Load them as step 08b does (the cached skills step 02b output)."))
   }
+  # A partial cache leaks the same way: .stat_grand_means() fills any stat missing from
+  # prior_centers with its mean over the whole of match_stats.
+  if (as_of) {
+    no_centre <- setdiff(stat_cols, names(decay_params$prior_centers))
+    if (length(no_centre)) {
+      cli::cli_abort(c(
+        "{.code as_of = TRUE}: {.field prior_centers} has no centre for {length(no_centre)} stat{?s}: {.val {head(no_centre, 5)}}.",
+        "i" = "Their centres would come from all of {.arg match_stats}, including matches after each date.",
+        "i" = "Rebuild the cached centres (skills step 02b) so they cover every estimated stat."))
+    }
+  }
 
   # Position multipliers & grand means -- compute once
   pos_multipliers <- .resolve_position_multipliers(decay_params, dt, stat_cols)
