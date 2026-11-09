@@ -4,7 +4,7 @@
 \alias{add_wp_vars}
 \title{Add win probability and WPA to SPADL data}
 \usage{
-add_wp_vars(wp_features, wp_model)
+add_wp_vars(wp_features, wp_model, centre = TRUE)
 }
 \arguments{
 \item{wp_features}{SPADL features with WP model features. MUST contain:
@@ -22,6 +22,10 @@ retro at \code{CLAUDE_TODO_WPA_SCALE_REGRESSION.md}.}
 
 \item{wp_model}{Trained WP model from \code{\link{train_wp_model}}.
 Predictions are clamped to \code{[0, 1]} by \code{\link{predict_wp}}.}
+
+\item{centre}{Centre WPA per match (default \code{TRUE}, unchanged). Pass
+\code{FALSE} for the raw change, whose match total is the result minus the
+opening win chance -- what \code{\link{wpa_build_ledger}} needs.}
 }
 \value{
 The input data.table with added \code{wp} (possession-POV
@@ -60,6 +64,7 @@ Other win probability:
 \code{\link{load_wp_model}()},
 \code{\link{predict_wp}()},
 \code{\link{save_wp_model}()},
-\code{\link{train_wp_model}()}
+\code{\link{train_wp_model}()},
+\code{\link{wpa_build_ledger}()}
 }
 \concept{win probability}

@@ -398,7 +398,7 @@ create_wp_features <- function(spadl_with_epv, match_results = NULL,
   if (all(c("epv", "time_elapsed_frac") %in% names(dt)))
     dt[, epv_x_time := epv * time_elapsed_frac]
 
-  feature_cols <- c("match_id", "team_id", "player_id", "player_name",
+  feature_cols <- c("match_id", "action_id", "team_id", "player_id", "player_name",
                      "action_type", "time_seconds", "period_id",
                      "time_remaining", "time_elapsed_frac",
                      "score_diff", "margin_poss", "xmargin", "epv",
@@ -675,13 +675,16 @@ predict_wp <- function(wp_model, wp_features) {
 #'   retro at \code{CLAUDE_TODO_WPA_SCALE_REGRESSION.md}.
 #' @param wp_model Trained WP model from \code{\link{train_wp_model}}.
 #'   Predictions are clamped to \code{[0, 1]} by \code{\link{predict_wp}}.
+#' @param centre Centre WPA per match (default \code{TRUE}, unchanged). Pass
+#'   \code{FALSE} for the raw change, whose match total is the result minus the
+#'   opening win chance -- what \code{\link{wpa_build_ledger}} needs.
 #'
 #' @return The input data.table with added \code{wp} (possession-POV
 #'   probability) and \code{wpa} (acting-team-POV delta) columns.
 #'
 #' @family win probability
 #' @export
-add_wp_vars <- function(wp_features, wp_model) {
+add_wp_vars <- function(wp_features, wp_model, centre = TRUE) {
   required <- c("match_id", "team_id", "is_home", "wp_label")
   missing <- setdiff(required, names(wp_features))
   if (length(missing) > 0L) {
@@ -729,8 +732,10 @@ add_wp_vars <- function(wp_features, wp_model) {
     (1 - wp_next) - wp
   )]
 
-  # Center WPA per match so it sums to zero (removes WP model calibration bias)
-  dt[, wpa := wpa - mean(wpa, na.rm = TRUE), by = match_id]
+  # Center WPA per match so it sums to zero (removes WP model calibration bias).
+  # centre = FALSE keeps the raw change, whose match total is (result - opening
+  # win chance): the identity wpa_build_ledger() conserves (panna#273).
+  if (isTRUE(centre)) dt[, wpa := wpa - mean(wpa, na.rm = TRUE), by = match_id]
 
   # Clean up internal columns
   dt[, c("wp_next", "team_id_next") := NULL]
