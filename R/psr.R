@@ -241,6 +241,30 @@
 #'   over N dates returns N x 46,044 rows. Note chunking the call is NOT an
 #'   alternative: this function deep-copies \code{match_stats} on entry, so
 #'   chunking pays that copy once per chunk instead of once in total.
+#' @param as_of If \code{TRUE}, reproduce \code{estimate_player_skills()}'s
+#'   per-date view of the data instead of the full-history view (default
+#'   \code{FALSE}, which is what step 07's training relies on and is left
+#'   unchanged). Two things differ between the modes:
+#'   \itemize{
+#'     \item \strong{Position.} Default: each player's modal position group and
+#'       the position-scaled prior centre are fixed from ALL matches, including
+#'       ones after the snapshot date. \code{as_of = TRUE}: both come from
+#'       matches strictly before that date (counts carried forward date to
+#'       date), and a player whose only appearances so far are as a substitute
+#'       gets \code{primary_position = NA} and the un-scaled global prior,
+#'       exactly like the single-date estimator.
+#'     \item \strong{Population.} Default: every player in \code{match_stats}
+#'       is returned at every date (players who debut later come back with
+#'       \code{weighted_90s = 0}). \code{as_of = TRUE}: only players with at
+#'       least one match before the date, like the single-date estimator.
+#'   }
+#'   \code{player_name} is still the player's first name over the whole data in
+#'   both modes (the single-date estimator takes the first name before the
+#'   date; the two only differ for a player whose name changes in the source).
+#'   The use case is a full snapshot rebuild (step 08b), where the batch
+#'   estimator's running sums are far cheaper than refiltering all history at
+#'   every date. Resuming a checkpoint also restores the position counts, and a
+#'   checkpoint from a non-\code{as_of} run is rejected (fingerprint).
 #' @param verbose Print progress (default TRUE).
 #'
 #' @return Named list keyed by date string. Each element is a data.table (one
@@ -256,6 +280,7 @@
                                             output_min_w90 = 0,
                                             stream_dir = NULL,
                                             source_fingerprint = NULL,
+                                            as_of = FALSE,
                                             verbose = TRUE) {
   if (!is.null(stream_dir) && !dir.exists(stream_dir)) {
     dir.create(stream_dir, recursive = TRUE)
@@ -383,7 +408,13 @@
   pid_int <- match(dt$player_id, all_player_ids)  # integer index per row
 
   # Pre-compute position-specific prior centers per player (constant across dates)
-  player_pg <- player_pos$pos_group[match(all_player_ids, player_pos$player_id)]
+  # as_of: start from "no player has a position yet" (all NA); the loop below
+  # fills positions in from the matches seen so far.
+  player_pg <- if (as_of) {
+    rep(NA_character_, n_players)
+  } else {
+    player_pos$pos_group[match(all_player_ids, player_pos$player_id)]
+  }
 
   # Rate stat priors: alpha0 matrix (n_players x n_rate_stats)
   rate_alpha0 <- matrix(0, nrow = n_players, ncol = length(rate_stats))
@@ -404,6 +435,19 @@
     pm_lookup <- if (sc %in% names(pos_multipliers)) pos_multipliers[[sc]] else NULL
     m0 <- .position_prior_center(gm, pm_lookup, player_pg)
     eff_mu0[[sc]] <- pmax(pmin(m0, 1 - 1e-6), 1e-6)
+  }
+
+  # as_of state: running position counts (player x position group), the
+  # position currently assigned to each player, and which players have any
+  # match before the current date. Ties go to the first group in sorted order,
+  # which is what table()/which.max() does in .modal_pos_group().
+  if (as_of) {
+    raw_pg <- .simplify_position(dt$position)
+    pos_levels <- sort(unique(raw_pg[!is.na(raw_pg)]))
+    raw_pg_int <- match(raw_pg, pos_levels)
+    pos_cnt <- matrix(0, nrow = n_players, ncol = length(pos_levels))
+    cur_pg <- rep(NA_character_, n_players)
+    seen <- logical(n_players)
   }
 
   # Player name/position lookup aligned to all_player_ids
@@ -493,6 +537,9 @@
                       output_min_w90 = output_min_w90,
                       decay_params = decay_params,
                       source_fingerprint = source_fingerprint)
+  # Only added when TRUE so default-mode fingerprints (and any checkpoint a
+  # default run is mid-way through) are unchanged.
+  if (as_of) fingerprint$as_of <- TRUE
   if (!is.null(checkpoint_path) && file.exists(checkpoint_path)) {
     cp <- tryCatch(readRDS(checkpoint_path), error = function(e) {
       # A truncated/corrupt RDS (e.g. from a killed process -- exactly the
@@ -513,6 +560,13 @@
       run_eff <- cp$run_eff
       run_w90 <- cp$run_w90
       cursor <- cp$cursor
+      if (as_of) {
+        pos_cnt <- cp$pos_cnt
+        cur_pg <- cp$cur_pg
+        seen <- cp$seen
+        rate_alpha0 <- cp$rate_alpha0
+        eff_mu0 <- cp$eff_mu0
+      }
       resume_from <- cp$i + 1L
       for (k in seq_len(cp$i)) {
         chunk_path <- file.path(stream_dir, paste0(as.character(ref_dates[k]), ".rds"))
@@ -643,6 +697,41 @@
 
       cursor <- new_cursor
 
+      # --- as_of: carry position counts forward and re-centre changed priors ---
+      if (as_of && has_new) {
+        new_pid <- dt_pid_int[new_rows]
+        seen[new_pid] <- TRUE
+        g <- raw_pg_int[new_rows]
+        ok <- !is.na(g)
+        if (any(ok)) {
+          onehot <- matrix(0, nrow = sum(ok), ncol = length(pos_levels))
+          onehot[cbind(seq_len(sum(ok)), g[ok])] <- 1
+          pc <- rowsum(onehot, new_pid[ok], reorder = FALSE)
+          ch <- as.integer(rownames(pc))
+          pos_cnt[ch, ] <- pos_cnt[ch, ] + pc
+          new_pg <- pos_levels[max.col(pos_cnt[ch, , drop = FALSE], ties.method = "first")]
+          old_pg <- cur_pg[ch]
+          differs <- is.na(old_pg) != is.na(new_pg) |
+            (!is.na(old_pg) & !is.na(new_pg) & old_pg != new_pg)
+          moved <- ch[differs]
+          if (length(moved) > 0) {
+            cur_pg[moved] <- new_pg[differs]
+            pg_m <- cur_pg[moved]
+            for (ci in seq_along(rate_stats)) {
+              sc <- rate_stats[ci]
+              pm_lookup <- if (sc %in% names(pos_multipliers)) pos_multipliers[[sc]] else NULL
+              a0 <- .position_prior_center(grand_means[sc], pm_lookup, pg_m)
+              rate_alpha0[moved, ci] <- pmax(a0 * stat_prior_strengths[sc], 1e-4)
+            }
+            for (sc in eff_stats) {
+              pm_lookup <- if (sc %in% names(pos_multipliers)) pos_multipliers[[sc]] else NULL
+              m0 <- .position_prior_center(grand_means[sc], pm_lookup, pg_m)
+              eff_mu0[[sc]][moved] <- pmax(pmin(m0, 1 - 1e-6), 1e-6)
+            }
+          }
+        }
+      }
+
       # --- Compute posteriors from running sums ---
 
       # Rate stats
@@ -681,7 +770,7 @@
       # added (2026-09-12, 273d5cf0) -- training callers pass output_min_w90=0
       # expecting every player back, shrunk toward the prior, not omitted.
       sel <- if (is.null(keep_players)) {
-        seq_len(n_players)
+        if (as_of) which(seen) else seq_len(n_players)
       } else {
         # Same rule as above: narrow to the requested players only, don't
         # ALSO drop explicitly-requested players for having thin history --
@@ -698,7 +787,7 @@
       result <- data.table::data.table(
         player_id = all_player_ids[sel],
         player_name = pname_lookup[sel],
-        primary_position = ppos_lookup[sel],
+        primary_position = if (as_of) cur_pg[sel] else ppos_lookup[sel],
         date = rd,
         weighted_90s = run_w90[sel]
       )
@@ -739,9 +828,13 @@
     # relative to a single date's own cost (a few small matrices/vectors, not
     # the ~47k-player-wide result table).
     if (!is.null(checkpoint_path) && i %% 25 == 0) {
-      saveRDS(list(fingerprint = fingerprint, run_rate = run_rate, run_eff = run_eff,
-                   run_w90 = run_w90, cursor = cursor, i = i),
-              checkpoint_path)
+      cp_state <- list(fingerprint = fingerprint, run_rate = run_rate, run_eff = run_eff,
+                       run_w90 = run_w90, cursor = cursor, i = i)
+      if (as_of) {
+        cp_state <- c(cp_state, list(pos_cnt = pos_cnt, cur_pg = cur_pg, seen = seen,
+                                     rate_alpha0 = rate_alpha0, eff_mu0 = eff_mu0))
+      }
+      saveRDS(cp_state, checkpoint_path)
     }
   }
 
@@ -822,6 +915,13 @@
   missing <- setdiff(required, names(cp))
   if (length(missing) > 0) {
     return(sprintf("incomplete (missing %s)", paste(missing, collapse = ", ")))
+  }
+  if (isTRUE(fingerprint$as_of)) {
+    as_of_keys <- c("pos_cnt", "cur_pg", "seen", "rate_alpha0", "eff_mu0")
+    missing_as_of <- setdiff(as_of_keys, names(cp))
+    if (length(missing_as_of) > 0) {
+      return(sprintf("incomplete (missing %s)", paste(missing_as_of, collapse = ", ")))
+    }
   }
   if (!identical(cp$fingerprint, fingerprint)) {
     # Union of both key sets, not just the current fingerprint's: a field
