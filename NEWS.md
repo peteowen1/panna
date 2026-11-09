@@ -1,4 +1,4 @@
-# panna (development version)
+# panna 0.3.115
 
 - New `wpa_build_ledger()` (panna#273): football WPA as a net ledger. Each team's players sum to its
   result against an even start (win +0.5, draw 0, loss -0.5), torp's `wpa_neutral`. It runs the
