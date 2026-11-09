@@ -16,20 +16,22 @@ devtools::load_all()
 # 2. Configuration ----
 
 # Overridable so a test run can read and write a scratch folder, not the cache.
-if (!exists("cache_dir", inherits = FALSE)) cache_dir <- file.path("data-raw", "cache-skills")
+if (!exists("cache_dir") || is.function(get("cache_dir"))) cache_dir <- file.path("data-raw", "cache-skills")
 if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
 
 # Override these before sourcing for custom runs
-# Use inherits = FALSE to avoid colliding with dplyr::sample_n and similar exports
+# Plain exists() so a value set by the driver (run_skills_pipeline.R sources this
+# with local = TRUE inside a closure) is seen; is.function() skips a same-named
+# package export. sample_n keeps inherits = FALSE: dplyr::sample_n is exported.
 if (!exists("sample_n", inherits = FALSE) || is.function(sample_n)) sample_n <- 500
-if (!exists("n_cores", inherits = FALSE)) n_cores <- 1L
+if (!exists("n_cores") || is.function(get("n_cores"))) n_cores <- 1L
 # Seed for the player sample; rerun with another seed to measure sampling noise.
-if (!exists("optim_seed", inherits = FALSE)) optim_seed <- 42L
+if (!exists("optim_seed") || is.function(get("optim_seed"))) optim_seed <- 42L
 # A prior that lands on a search bound was not fitted (panna#432: 18 of the 68
 # priors in the 2026-09-10 file sat at the old start value or the bound). The
 # run stops unless this is TRUE, so a capped value is never saved unseen.
-if (!exists("allow_bound_priors", inherits = FALSE)) allow_bound_priors <- FALSE
-if (!exists("optim_leagues", inherits = FALSE)) optim_leagues <- c("ENG", "ESP", "GER", "ITA", "FRA")
+if (!exists("allow_bound_priors") || is.function(get("allow_bound_priors"))) allow_bound_priors <- FALSE
+if (!exists("optim_leagues") || is.function(get("optim_leagues"))) optim_leagues <- c("ENG", "ESP", "GER", "ITA", "FRA")
 
 output_path <- file.path(cache_dir, "02b_decay_params.rds")
 
