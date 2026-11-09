@@ -40,6 +40,10 @@
     </div>
 
     <div class="section level2">
+<h2 class="pkg-version" data-toc-text="development version" id="panna-development-version">panna (development version)<a class="anchor" aria-label="anchor" href="#panna-development-version"></a></h2>
+<ul><li>Keeper style is published for the site’s live PSV scorer (panna#452). Skills step 01c also writes <code>keeper-style.parquet</code> (+ <code>.csv</code>): per club-season and keeper stat, the as-of <code>club_style</code> and the in-season <code>shift</code>, one row per step of the shift (<code>after_date</code>). For a keeper row, <code>&lt;stat&gt;_kadj = raw - club_style - shift</code> from the row with the latest <code>after_date</code> before the match. Built by <code>build_keeper_style_table()</code> from the same <code>.keeper_style_parts()</code> / <code>.keeper_style_shift()</code> code as <code>.add_keeper_style_features()</code>; on local data (2,041,183 rows) the lookup reproduces the pipeline’s <code>_kadj</code> on all 141,835 keeper-stat rows of the published seasons (max diff 1.4e-14). New predictions step 10e registers it for blog-latest; pannadata passes it to R2 as <code>football/keeper-style.parquet</code>.</li>
+</ul></div>
+    <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.113" id="panna-03113">panna 0.3.113<a class="anchor" aria-label="anchor" href="#panna-03113"></a></h2>
 <ul><li>
 <code><a href="../reference/optimize_stat_prior.html">optimize_stat_prior()</a></code>: a one-parameter search now uses a tolerance scaled to its interval. The fixed <code>tol = 0.01</code> was half the default lambda range, so a lambda-only search stopped after a step or two (panna#439). The prior search keeps 0.01; the unused quantile search tightens to 9e-5; the joint prior + lambda fit used by 02b is unchanged.</li>
