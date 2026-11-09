@@ -17,6 +17,47 @@
 - PSR tests: fixtures now carry every shipped coefficient stat (`helper-coef-cols.R`), so a retrain
   that drops a stat no longer breaks them, and two keeper-scaling tests that a retrain had turned
   into silent skips now fail instead of skipping.
+- Keeper PSR scores club-adjusted distribution (panna#429): passes, accurate passes, long balls,
+  throws and touches each have the as-of club style removed (`R/keeper_style.R`, built by skills step
+  01c into `keeper_style_asof.rds`), and the keeper coefficients are retrained on the `<stat>_kadj`
+  columns. Every scoring site (02, 10b, enrich) applies it on the full population and fails loudly
+  when the table is missing. Keeper PSR correlates less with long balls per 90 (-0.75 -> -0.55) and
+  more with shot-stopping (0.44 -> 0.53), n = 3,411 keeper-seasons.
+- `position_role_means.csv` and `psv_match_reliability.csv` list the five `_kadj` stats, and
+  `psv_live_constants.csv` is rebuilt for the keeper coefficients (panna#450). Published weekly PSR
+  and game-log PSV do not move: both are re-centred per group.
+
+# panna 0.3.112
+
+- `league-walkforward.yml` gains a `horizon` input. `season` makes each monthly refit predict
+  every later match in its season, one row per (refit `cutoff_date`, match), published as
+  `predictions_walkforward_all_refits_<league>_<first>_<last>.parquet`. That is what a
+  forecaster looking several weeks ahead had at each refit (fplverse's 6-gameweek
+  projections). The default `month` is unchanged.
+
+# panna 0.3.111
+
+- New one-off backfill of honest pre-match predictions for past league seasons:
+  `data-raw/match-predictions-opta/backfill_league_walkforward.R` refits steps 05-06 at the
+  start of every month on matches played before it and predicts that month with step 07
+  (`record = "backtest"`). `league-walkforward.yml` runs one job per season from a
+  Predictions Pipeline run's new `match-dataset` artifact, checks every match is predicted,
+  and can publish `predictions_walkforward_<league>_<first>_<last>.parquet` plus a coverage
+  CSV to pannadata `predictions-latest`. Built for fplverse's ENG 2021-22 to 2024-25 backtest.
+- Steps 05 and 06 skip validation scoring when a segment has no validation rows (metrics are
+  NA then); a normal run is unchanged. `backfill_wc_walkforward.R` now copies
+  `01_fixture_results.rds` into each work folder, which step 07 needs since #411.
+
+# panna 0.3.110
+
+- Skills step 02b's joint search for each stat's prior strength and decay rate now actually
+  searches. It used to start the prior at the middle of its bounds on the raw scale, with
+  optim's default step applied to a decay rate near 0.002, and on flat stats it stopped where
+  it began: production carried prior 50.05 for `npg_minus_npxg_per90` and
+  `placement_added_per90`. `optimize_stat_prior()` now starts from the best point of a log
+  grid, searches log(prior), scales the decay step by its own size, and allows rate-stat
+  priors up to 1000. No published file changes with this release; whether to publish refit
+  values is panna#432.
 
 # panna 0.3.109
 
