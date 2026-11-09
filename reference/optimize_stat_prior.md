@@ -57,7 +57,7 @@ optimize_stat_prior(
 - prior_bounds:
 
   Numeric vector of length 2: search range for prior strength. Default
-  c(0.1, 100) for rate stats, c(0.1, 500) for efficiency.
+  c(0.1, 1000) for rate stats, c(0.1, 500) for efficiency.
 
 - lambda_bounds:
 

@@ -17,7 +17,8 @@ enrich_match_stats_with_xmetrics(
   match_stats,
   verbose = TRUE,
   fail_if_missing_frac = Inf,
-  source = c("local", "remote")
+  source = c("local", "remote"),
+  keeper_style = TRUE
 )
 ```
 
@@ -52,6 +53,15 @@ enrich_match_stats_with_xmetrics(
   `opta-latest` release — the only option that works on a GHA runner,
   which never has the local per-league/season tree; see
   [`load_opta_xmetrics`](https://peteowen1.github.io/panna/reference/load_opta_xmetrics.md)).
+
+- keeper_style:
+
+  Add the club-adjusted keeper distribution columns (`<stat>_kadj`,
+  panna#429) from the as-of table that `01c_keeper_style.R` writes.
+  Default `TRUE`, and a missing table STOPS: keeper PSR is trained on
+  these columns, so scoring without them would apply the coefficients to
+  the wrong values. Pass `FALSE` only where keepers are not scored (SPM
+  panels, tests).
 
 ## Value
 

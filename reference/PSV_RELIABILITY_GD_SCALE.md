@@ -16,7 +16,7 @@ PSV_RELIABILITY_GD_SCALE
 
 ## Format
 
-Numeric value: 2.668
+Numeric value: 3.002
 
 ## Details
 
@@ -99,6 +99,12 @@ both moved together. `c_gk = 3.5739` (t = 22.6, POSITIVE again, unlike
 the 2026-09-02/09-03 inverted fits) – still REJECTED per the standing
 D1-v2 decision (GKs use `c_outfield`), noted here only because the sign
 flip itself may be relevant to \#226 if that gets revisited.
+
+2026-11-07 (panna#432): refit to 3.002 (t = 27.6, n = 15,704 matches,
+R^2 = 0.094) after the step-07 retrain on the fitted 02b skill priors.
+The old coefficients reproduce 2.655 on the same data, so the move is
+the retrain. `c_gk = 0.588` (t = 3.1), still REJECTED; the keeper term
+weakened because keeper skill sds shrank (gsaa_per90 0.147 -\> 0.049).
 
 ## See also
 

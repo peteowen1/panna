@@ -1,6 +1,8 @@
 # Internal function to load Opta table data
 
-Internal function to load Opta table data
+A season that comes back empty is retried once with its accents removed
+(see `.fold_season_label()`); an accented label the data does store is
+still tried first.
 
 ## Usage
 

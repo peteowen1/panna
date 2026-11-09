@@ -23,7 +23,7 @@ inline join)."><meta property="og:image" content="https://peteowen1.github.io/pa
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.112</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.113</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -74,7 +74,8 @@ inline join).</p>
 <span>  <span class="va">match_stats</span>,</span>
 <span>  verbose <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  fail_if_missing_frac <span class="op">=</span> <span class="cn">Inf</span>,</span>
-<span>  source <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"local"</span>, <span class="st">"remote"</span><span class="op">)</span></span>
+<span>  source <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"local"</span>, <span class="st">"remote"</span><span class="op">)</span>,</span>
+<span>  keeper_style <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -108,6 +109,15 @@ this is finite, regardless of the fraction.</p></dd>
 <code>opta_xmetrics_bymatch.parquet</code> on the <code>opta-latest</code> release —
 the only option that works on a GHA runner, which never has the local
 per-league/season tree; see <code><a href="load_opta_xmetrics.html">load_opta_xmetrics</a></code>).</p></dd>
+
+
+<dt id="arg-keeper-style">keeper_style<a class="anchor" aria-label="anchor" href="#arg-keeper-style"></a></dt>
+<dd><p>Add the club-adjusted keeper distribution columns
+(<code>&lt;stat&gt;_kadj</code>, panna#429) from the as-of table that
+<code>01c_keeper_style.R</code> writes. Default <code>TRUE</code>, and a missing table
+STOPS: keeper PSR is trained on these columns, so scoring without them
+would apply the coefficients to the wrong values. Pass <code>FALSE</code> only
+where keepers are not scored (SPM panels, tests).</p></dd>
 
 </dl></div>
     <div class="section level2">

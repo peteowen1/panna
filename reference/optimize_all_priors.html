@@ -11,7 +11,7 @@ prior_attempts. Results are stored in decay_params$stat_priors."><meta property=
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.112</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.113</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -59,6 +59,7 @@ per-stat <code>prior_90s</code>, efficiency stats get per-stat
 <span>  optimize_lambda <span class="op">=</span> <span class="cn">TRUE</span>,</span>
 <span>  optimize_quantile <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  sample_n <span class="op">=</span> <span class="fl">500</span>,</span>
+<span>  seed <span class="op">=</span> <span class="fl">42</span>,</span>
 <span>  n_cores <span class="op">=</span> <span class="fl">1</span>,</span>
 <span>  verbose <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
@@ -91,6 +92,11 @@ quantile.</p></dd>
 
 <dt id="arg-sample-n">sample_n<a class="anchor" aria-label="anchor" href="#arg-sample-n"></a></dt>
 <dd><p>Max players to sample per stat (default 500).</p></dd>
+
+
+<dt id="arg-seed">seed<a class="anchor" aria-label="anchor" href="#arg-seed"></a></dt>
+<dd><p>Seed for the player sample. Fits under two seeds differ only by
+which players were sampled, so comparing them measures sampling noise.</p></dd>
 
 
 <dt id="arg-n-cores">n_cores<a class="anchor" aria-label="anchor" href="#arg-n-cores"></a></dt>

@@ -12,3 +12,7 @@ cannot separate the stages. See
 ``` r
 WC2026_GROUP_STAGE_END
 ```
+
+## Format
+
+An object of class `Date` of length 1.
