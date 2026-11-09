@@ -216,3 +216,45 @@ test_that("_kadj must be computed on the full population: a league slice drops t
   other <- full$team_id != "c01"
   expect_equal(full$long_balls_p90_kadj[other], slice$long_balls_p90_kadj[other], tolerance = 1e-10)
 })
+
+test_that("published keeper style table reproduces the pipeline's _kadj columns (panna#452)", {
+  sim <- make_keeper_league(last_shift = 4)
+  st <- fit_keeper_style_asof(sim$dt, stats = "long_balls_p90", lambda = 0.00127, verbose = FALSE)
+  # A future match for one club, after every date in the data: the live case.
+  last_c01 <- sim$dt[team_id == "c01" & season_end_year == 2025L & position == "Goalkeeper"]
+  fut <- last_c01[.N][, `:=`(match_id = "future", match_date = match_date + 7L, long_balls_p90 = 20)]
+  full <- rbind(sim$dt, fut)
+  # Pipeline values for the played matches come from the data without the
+  # future row; the future row's value from the data with it.
+  adj <- add_kstyle(data.table::copy(sim$dt), st, verbose = FALSE)
+  adj_fut <- add_kstyle(data.table::copy(full), st, verbose = FALSE)[match_id == "future"]
+  tab <- panna:::build_keeper_style_table(data.table::copy(sim$dt), st, seasons = 2024:2025)
+
+  expect_setequal(names(tab), c("team_id", "season_end_year", "stat", "after_date", "club_style", "shift", "n90_before"))
+  expect_setequal(unique(tab$season_end_year), 2024:2025)
+  expect_false(anyDuplicated(tab[, .(stat, team_id, season_end_year, after_date)]) > 0)
+  first <- tab[, .SD[1], by = .(stat, team_id, season_end_year)]
+  expect_true(all(first$after_date == as.Date("1900-01-01") & first$shift == 0))
+
+  # The site's lookup: the row with the latest after_date strictly before the match.
+  lookup <- function(rows) {
+    tb <- data.table::copy(tab)[, look := after_date + 1L]
+    rows <- data.table::copy(rows)[, look := match_date]
+    tb[rows, on = .(team_id, season_end_year, look), roll = TRUE]
+  }
+  k <- adj[position == "Goalkeeper" & season_end_year %in% 2024:2025]
+  m <- lookup(k)
+  expect_equal(nrow(m), nrow(k))
+  expect_false(anyNA(m$shift))
+  expect_equal(m$long_balls_p90 - m$club_style - m$shift, m$long_balls_p90_kadj, tolerance = 1e-9)
+  mf <- lookup(adj_fut)
+  expect_equal(mf$long_balls_p90 - mf$club_style - mf$shift, mf$long_balls_p90_kadj, tolerance = 1e-9)
+  # The live shift is not trivially zero in this league (a new coach in 2025).
+  expect_gt(abs(mf$shift), 0.1)
+})
+
+test_that("keeper style table refuses to publish without the in-season term", {
+  sim <- make_keeper_league()
+  st <- fit_keeper_style_asof(sim$dt, stats = "long_balls_p90", lambda = 0.00127, verbose = FALSE)
+  expect_error(panna:::build_keeper_style_table(sim$dt, st, in_season_k = Inf), class = "panna_keeper_style_error")
+})

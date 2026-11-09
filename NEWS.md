@@ -1,3 +1,15 @@
+# panna (development version)
+
+- Keeper style is published for the site's live PSV scorer (panna#452). Skills step 01c also writes
+  `keeper-style.parquet` (+ `.csv`): per club-season and keeper stat, the as-of `club_style` and the
+  in-season `shift`, one row per step of the shift (`after_date`). For a keeper row,
+  `<stat>_kadj = raw - club_style - shift` from the row with the latest `after_date` before the match.
+  Built by `build_keeper_style_table()` from the same `.keeper_style_parts()` / `.keeper_style_shift()`
+  code as `.add_keeper_style_features()`; on local data (2,041,183 rows) the lookup reproduces the
+  pipeline's `_kadj` on all 141,835 keeper-stat rows of the published seasons (max diff 1.4e-14).
+  New predictions step 10e registers it for blog-latest; pannadata passes it to R2 as
+  `football/keeper-style.parquet`.
+
 # panna 0.3.113
 
 - `optimize_stat_prior()`: a one-parameter search now uses a tolerance scaled to its interval. The fixed

@@ -44,3 +44,17 @@ if (cov < 0.8) stop(sprintf("Only %.1f%% of season %d keeper rows have a club st
 
 saveRDS(ks, out_path)
 cat(sprintf("Saved to %s (%s)\n", out_path, format(file.mtime(out_path))))
+
+# Published copy for the site's live PSV scorer (panna#452): club style + the
+# in-season shift for the recent seasons, built by the same code that writes the
+# `_kadj` columns. Predictions step 10e registers it for blog-latest, and
+# pannadata build-blog-data passes it to R2 as football/keeper-style.parquet.
+kst <- build_keeper_style_table(ms, ks)
+kst_path <- file.path(dirname(out_path), "keeper-style.parquet")
+arrow::write_parquet(kst, kst_path)
+data.table::fwrite(kst, sub("\\.parquet$", ".csv", kst_path))
+cat(sprintf("Keeper style table: %s rows, seasons %s, %d club-seasons, latest after_date %s -> %s (+ .csv)\n",
+            format(nrow(kst), big.mark = ","), paste(sort(unique(kst$season_end_year)), collapse = "/"),
+            uniqueN(kst[, .(team_id, season_end_year)]), format(max(kst$after_date)), kst_path))
+if (max(kst$after_date) < max(as.Date(ms$match_date), na.rm = TRUE) - 30)
+  stop("keeper-style table's latest shift date is over 30 days behind the match stats; check the in-season term.")

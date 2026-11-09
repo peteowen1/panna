@@ -64,6 +64,7 @@ if (!exists("run_steps", inherits = FALSE)) {
     step_10b_export_game_logs        = FALSE,  # Opt-in: export per-match value metrics
     step_10c_export_equity           = FALSE,  # Opt-in: export per-action EPV equity
     step_10d_export_shootout_wpa     = FALSE,  # Opt-in: export per-player penalty-shootout WPA
+    step_10e_export_keeper_style     = FALSE,  # Opt-in: publish keeper-style.parquet from skills 01c (panna#452)
     step_11_simulate_wc2026          = FALSE,  # Opt-in: simulate the 2026 World Cup
     step_12_export_wc2026_blog       = FALSE,  # Opt-in: export WC2026 blog data
     step_12b_snapshot_wc_minutes     = FALSE,  # Opt-in: archive dated minutes snapshot + diff
@@ -396,6 +397,12 @@ step_results[["10d"]] <- run_pipeline_step("export_shootout_wpa", "10d", functio
   source("data-raw/match-predictions-opta/10d_export_shootout_wpa.R", local = TRUE)
 })
 
+# 14c3. Step 10e: Publish keeper style table (panna#452) ----
+
+step_results[["10e"]] <- run_pipeline_step("export_keeper_style", "10e", function() {
+  source("data-raw/match-predictions-opta/10e_export_keeper_style.R", local = TRUE)
+})
+
 # 14c-bis. World Cup liveness gate (steps 11/12b/12c) ----
 # Steps 11, 12b and 12c simulate/snapshot a tournament that is still being
 # played. Once the final is done there is nothing left to simulate, and the
@@ -576,6 +583,9 @@ if (isTRUE(run_steps$step_10c_export_equity)) {
 }
 if (isTRUE(run_steps$step_10d_export_shootout_wpa)) {
   message(sprintf("  - %s", file.path(cache_dir, "shootout_wpa.parquet")))
+}
+if (isTRUE(run_steps$step_10e_export_keeper_style)) {
+  message(sprintf("  - %s", file.path("data-raw", "cache-skills", "keeper-style.parquet")))
 }
 if (isTRUE(run_steps$step_11_simulate_wc2026)) {
   message(sprintf("  - %s", file.path(cache_dir, "wc2026_bt_ratings.parquet")))
