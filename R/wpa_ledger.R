@@ -71,7 +71,10 @@ wpa_build_ledger <- function(actions, wp_actions, fixtures, lineups, adj = NULL,
   }
 
   a <- data.table::copy(a)
-  for (col in intersect(c("epv_delta", "xgot", "epv", "shot_xg"), names(a))) a[, (col) := NULL]
+  # Goals-unit inputs are dropped (see above), and so are any fixture columns the
+  # engine merges in itself, which would otherwise come back as .x / .y.
+  for (col in intersect(c("epv_delta", "xgot", "epv", "shot_xg", "home_team_id",
+                          "away_team_id", "is_home"), names(a))) a[, (col) := NULL]
   a[w, epv_delta := i.wpa, on = c("match_id", "action_id")]
   n_miss <- sum(is.na(a$epv_delta))
   if (n_miss > 0) {
