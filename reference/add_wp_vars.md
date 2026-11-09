@@ -8,7 +8,7 @@ event) columns.
 ## Usage
 
 ``` r
-add_wp_vars(wp_features, wp_model)
+add_wp_vars(wp_features, wp_model, centre = TRUE)
 ```
 
 ## Arguments
@@ -38,6 +38,14 @@ add_wp_vars(wp_features, wp_model)
   [`train_wp_model`](https://peteowen1.github.io/panna/reference/train_wp_model.md).
   Predictions are clamped to `[0, 1]` by
   [`predict_wp`](https://peteowen1.github.io/panna/reference/predict_wp.md).
+
+- centre:
+
+  Centre WPA per match (default `TRUE`, unchanged). Pass `FALSE` for the
+  raw change, whose match total is the result minus the opening win
+  chance – what
+  [`wpa_build_ledger`](https://peteowen1.github.io/panna/reference/wpa_build_ledger.md)
+  needs.
 
 ## Value
 
@@ -73,4 +81,5 @@ Other win probability:
 [`load_wp_model()`](https://peteowen1.github.io/panna/reference/load_wp_model.md),
 [`predict_wp()`](https://peteowen1.github.io/panna/reference/predict_wp.md),
 [`save_wp_model()`](https://peteowen1.github.io/panna/reference/save_wp_model.md),
-[`train_wp_model()`](https://peteowen1.github.io/panna/reference/train_wp_model.md)
+[`train_wp_model()`](https://peteowen1.github.io/panna/reference/train_wp_model.md),
+[`wpa_build_ledger()`](https://peteowen1.github.io/panna/reference/wpa_build_ledger.md)

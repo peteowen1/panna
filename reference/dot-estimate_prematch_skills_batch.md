@@ -18,6 +18,7 @@ new observations. Uses [`rowsum()`](https://rdrr.io/r/base/rowsum.html)
   output_min_w90 = 0,
   stream_dir = NULL,
   source_fingerprint = NULL,
+  as_of = FALSE,
   verbose = TRUE
 )
 ```
@@ -106,6 +107,38 @@ new observations. Uses [`rowsum()`](https://rdrr.io/r/base/rowsum.html)
   cannot see a data change that preserves n_rows/n_players/n_dates and
   the date sum; passing this closes most of that gap for a few bytes.
   Optional because not every caller has a single source file.
+
+- as_of:
+
+  If `TRUE`, reproduce
+  [`estimate_player_skills()`](https://peteowen1.github.io/panna/reference/estimate_player_skills.md)'s
+  per-date view of the data instead of the full-history view (default
+  `FALSE`, which is what step 07's training relies on and is left
+  unchanged). Two things differ between the modes:
+
+  - **Position.** Default: each player's modal position group and the
+    position-scaled prior centre are fixed from ALL matches, including
+    ones after the snapshot date. `as_of = TRUE`: both come from matches
+    strictly before that date (counts carried forward date to date), and
+    a player whose only appearances so far are as a substitute gets
+    `primary_position = NA` and the un-scaled global prior, exactly like
+    the single-date estimator.
+
+  - **Population.** Default: every player in `match_stats` is returned
+    at every date (players who debut later come back with
+    `weighted_90s = 0`). `as_of = TRUE`: only players with at least one
+    match before the date, like the single-date estimator.
+
+  `player_name` is still the player's first name over the whole data in
+  both modes (the single-date estimator takes the first name before the
+  date; the two only differ for a player whose name changes in the
+  source). The use case is a full snapshot rebuild (step 08b), where the
+  batch estimator's running sums are far cheaper than refiltering all
+  history at every date. Resuming a checkpoint also restores the
+  position counts, and a checkpoint from a non-`as_of` run is rejected
+  (fingerprint). `as_of = TRUE` requires cached `position_multipliers`
+  and `prior_centers` in `decay_params` and stops without them, since
+  computing them here would use matches after each date.
 
 - verbose:
 

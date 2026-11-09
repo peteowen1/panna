@@ -272,6 +272,8 @@ Win probability model and WPA credit assignment
   : Save WP model
 - [`train_wp_model()`](https://peteowen1.github.io/panna/reference/train_wp_model.md)
   : Train a win probability model
+- [`wpa_build_ledger()`](https://peteowen1.github.io/panna/reference/wpa_build_ledger.md)
+  : Build the WPA net ledger
 
 ## Penalty Shootouts
 

@@ -122,4 +122,5 @@ Other win probability:
 [`create_wp_features()`](https://peteowen1.github.io/panna/reference/create_wp_features.md),
 [`load_wp_model()`](https://peteowen1.github.io/panna/reference/load_wp_model.md),
 [`predict_wp()`](https://peteowen1.github.io/panna/reference/predict_wp.md),
-[`save_wp_model()`](https://peteowen1.github.io/panna/reference/save_wp_model.md)
+[`save_wp_model()`](https://peteowen1.github.io/panna/reference/save_wp_model.md),
+[`wpa_build_ledger()`](https://peteowen1.github.io/panna/reference/wpa_build_ledger.md)

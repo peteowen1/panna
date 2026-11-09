@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.113</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.115</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -215,7 +215,7 @@
 <td><code><a href="reference/soccer_stat_rating_definitions.html">soccer_stat_rating_definitions()</a></code></td>
 <td><code>skill_config.R</code></td>
 </tr><tr><td><strong>Skill optimisation</strong></td>
-<td>L-BFGS-B for decay rates, Brent for prior strength</td>
+<td>L-BFGS-B for decay rates, and for prior strength (on a log scale, from a coarse log-grid start) when jointly optimised with decay or quantile; Brent when prior strength is optimised alone</td>
 <td>
 <code><a href="reference/optimize_all_priors.html">optimize_all_priors()</a></code>, <code><a href="reference/optimize_stat_prior.html">optimize_stat_prior()</a></code>
 </td>
