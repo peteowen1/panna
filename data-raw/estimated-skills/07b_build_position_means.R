@@ -18,7 +18,10 @@ cli::cli_alert_info("Loaded match_stats: {format(nrow(ms), big.mark=',')} player
 # Full history: compute_position_role_means keys by (season_end_year x role), so
 # era drift is handled by per-era baselines (not a recent-window crop). Each
 # game-log — current or historical — gets its own era's positional baseline.
-ms <- enrich_match_stats_with_xmetrics(ms, verbose = TRUE, fail_if_missing_frac = 0.6)
+# Same source switch as steps 02 and 07 (panna#429): the local tree can be stale.
+xm_source <- if (identical(Sys.getenv("XMETRICS_SOURCE"), "remote")) "remote" else "local"
+ms <- enrich_match_stats_with_xmetrics(ms, verbose = TRUE, fail_if_missing_frac = 0.6,
+                                       source = xm_source)
 
 # Scored feature set = union of stat_names across all trained coefficient sets.
 # GK sets are gk_{psr,osr,dsr} — NOT gk_blend_* (those files never existed; the

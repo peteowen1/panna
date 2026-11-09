@@ -992,7 +992,12 @@ cat(sprintf("  Total rows:    %s\n", format(nrow(weekly_psr), big.mark = ",")))
 cat(sprintf("  Unique players: %s\n", format(data.table::uniqueN(weekly_psr$player_id), big.mark = ",")))
 cat(sprintf("  Unique dates:   %d\n", data.table::uniqueN(weekly_psr$snapshot_date)))
 
-out_path <- file.path(opta_dir, if (psr_raw_mode) "opta_psr_weekly_RAW_uncalibrated.parquet"
+# A smoke run keeps only the newest psr_smoke_n dates, so it gets its own file:
+# writing it to opta_psr_weekly.parquet replaced the local full history with
+# 2 dates on 2026-11-07 (panna#441).
+.psr_smoke <- exists("psr_smoke_n") && psr_smoke_n > 0
+out_path <- file.path(opta_dir, if (.psr_smoke) "opta_psr_weekly_SMOKE.parquet"
+                                else if (psr_raw_mode) "opta_psr_weekly_RAW_uncalibrated.parquet"
                                 else "opta_psr_weekly.parquet")
 arrow::write_parquet(as.data.frame(weekly_psr), out_path)
 mb <- round(file.info(out_path)$size / 1024^2, 1)

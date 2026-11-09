@@ -856,12 +856,12 @@ test_that("compute_player_psr scales GK rows end-to-end and leaves outfield unto
     keeper_sweeper_p90 = c(0.8, 0.6, 0, 0),
     gsaa_per90 = c(0.05, -0.02, 0, 0)
   )
+  # Without this the call errors whenever a retrain zeroes these columns, and
+  # the old skip_if() turned that into a silent skip (panna#432 retrain).
+  skills <- .with_all_coef_cols(skills)
 
-  unscaled <- tryCatch(
-    suppressWarnings(suppressMessages(
-      compute_player_psr(skills, center = FALSE, gk_goal_scale = 1))),
-    error = function(e) NULL)
-  skip_if(is.null(unscaled), "compute_player_psr unavailable on this fixture")
+  unscaled <- suppressWarnings(suppressMessages(
+    compute_player_psr(skills, center = FALSE, gk_goal_scale = 1)))
 
   scaled <- suppressWarnings(suppressMessages(
     compute_player_psr(skills, center = FALSE, gk_goal_scale = 0.5)))
@@ -1120,11 +1120,9 @@ test_that("apply_psr_calibration refuses to double-scale already-gk-scaled ratin
     high_claim_p90 = c(1.2, 0), keeper_sweeper_p90 = c(0.8, 0),
     gsaa_per90 = c(0.05, 0)
   )
-  scaled <- tryCatch(
-    suppressWarnings(suppressMessages(
-      compute_player_psr(skills, center = FALSE, gk_goal_scale = 0.5))),
-    error = function(e) NULL)
-  skip_if(is.null(scaled), "compute_player_psr unavailable on this fixture")
+  skills <- .with_all_coef_cols(skills)
+  scaled <- suppressWarnings(suppressMessages(
+    compute_player_psr(skills, center = FALSE, gk_goal_scale = 0.5)))
   expect_error(apply_psr_calibration(scaled), "double-scale")
 
   # the default path (gk_goal_scale = 1) carries no marker and calibrates fine
@@ -1502,6 +1500,7 @@ test_that("compute_player_psv()'s is_gk override is honored, not silently re-det
     goals_p90 = c(0, 0.2),
     gsaa_per90 = c(0.3, 0)  # a real nonzero-beta GK stat, so the GK branch has something to score
   )
+  sub <- .with_all_coef_cols(sub)
   # Row 1's raw position doesn't say GK, so the default (is_gk = NULL,
   # recomputed internally) must NOT route it to the GK sub-model.
   default_is_gk <- panna:::.detect_gk_rows(sub)
@@ -1603,6 +1602,7 @@ test_that("compute_player_psr() actually passes its resolved is_gk into .positio
     goals_p90 = c(0.02, 0.03, 0.3),
     gsaa_per90 = c(0.1, 0.1, 0)  # a real nonzero-beta GK stat, so the GK branch has something to score
   )
+  skills <- .with_all_coef_cols(skills)
   explicit_is_gk <- c(TRUE, FALSE, FALSE)  # deliberately NOT primary_position=="GK" or .detect_gk_rows()'s answer
   compute_player_psr(skills, target = "goals", position_means = data.table::data.table(
     role = "MID", stat_name = "goals_p90", mean = 0.25, season_end_year = NA_integer_
@@ -1655,6 +1655,7 @@ test_that("compute_player_psv()'s .pos_grp_override replaces internal resolution
     goals_p90 = c(0, 0.2),
     gsaa_per90 = c(0, 0)
   )
+  sub <- .with_all_coef_cols(sub)
   # Without an override, row 1 has nothing to resolve from -> NA (uncalibrated).
   out_default <- compute_player_psv(sub, min_adjust = FALSE, target = "blend")
   row_default <- merge(as.data.table(out_default), sub[1, .(match_id, player_id)],
@@ -1684,6 +1685,7 @@ test_that("compute_player_psv() pins .pos_grp_override to is_gk rather than trus
     goals_p90 = c(0.2, 0),
     gsaa_per90 = c(0, 0.3)
   )
+  sub <- .with_all_coef_cols(sub)
   # Deliberately inconsistent: claim row 1 is a GK while routing it outfield,
   # and claim row 2 is MID while routing it to the GK sub-model.
   out <- compute_player_psv(sub, min_adjust = FALSE, target = "blend",

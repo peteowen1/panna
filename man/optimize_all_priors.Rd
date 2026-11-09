@@ -11,6 +11,7 @@ optimize_all_priors(
   optimize_lambda = TRUE,
   optimize_quantile = FALSE,
   sample_n = 500,
+  seed = 42,
   n_cores = 1,
   verbose = TRUE
 )
@@ -28,6 +29,9 @@ optimize_all_priors(
 quantile.}
 
 \item{sample_n}{Max players to sample per stat (default 500).}
+
+\item{seed}{Seed for the player sample. Fits under two seeds differ only by
+which players were sampled, so comparing them measures sampling noise.}
 
 \item{n_cores}{Number of cores for parallel optimization. Default 1
 (sequential).}

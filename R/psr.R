@@ -113,7 +113,7 @@
     "saves_p90", "saves_ibox_p90", "saves_obox_p90",
     "keeper_sweeper_p90", "gk_smother_p90",
     "high_claim_p90", "good_high_claim_p90",
-    "punches_p90", "keeper_throws_p90", "keeper_pickup_p90",
+    "punches_p90", "keeper_throws_p90_kadj", "keeper_pickup_p90",
     "gsaa_per90"
   )
 
@@ -122,17 +122,22 @@
   # long_ball_accuracy / long_pass_own_to_opp_accuracy / aerial_success all
   # REMOVED in favour of the additive per-90 counts below + GSAA.
 
-  # Distribution / passing -- GKs contribute here meaningfully (additive counts)
+  # Distribution / passing -- GKs contribute here meaningfully (additive counts).
+  # Club-adjusted (`_kadj`, R/keeper_style.R, panna#429): a keeper's distribution
+  # is mostly his club's instruction. Of 617 keepers who changed clubs, the new
+  # club's previous keepers predicted his long-ball rate with weight 0.66 vs 0.19
+  # for his own previous rate, so the raw stats scored team tactics. Throws are
+  # adjusted the same way (above).
   distribution_cols <- c(
-    "passes_p90", "passes_accurate_p90",
-    "long_balls_p90",
+    "passes_p90_kadj", "passes_accurate_p90_kadj",
+    "long_balls_p90_kadj",
     "goals_conceded_p90"
   )
 
   # Shared outfield stats that GKs also accumulate (additive counts only)
   shared_cols <- c(
     "clearances_p90", "aerial_won_p90", "aerial_lost_p90",
-    "touches_p90",
+    "touches_p90_kadj",  # club-adjusted like distribution (panna#429): raw touches took over the club signal
     "error_lead_to_shot_p90", "error_lead_to_goal_p90"
   )
 

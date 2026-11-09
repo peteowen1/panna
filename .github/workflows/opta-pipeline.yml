@@ -102,7 +102,7 @@ jobs:
           fi
 
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
 
@@ -147,13 +147,13 @@ jobs:
           fi
 
       - name: Setup R
-        uses: r-lib/actions/setup-r@v2
+        uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
         with:
           r-version: '4.5.0'
           use-public-rspm: true
 
       - name: Setup R dependencies
-        uses: r-lib/actions/setup-r-dependencies@v2
+        uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2.14.0
         with:
           cache-version: 1
           extra-packages: |
@@ -481,7 +481,7 @@ jobs:
       # with upload_caches=false can still be compared against a baseline.
       - name: Keep step-07 output as a run artifact
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: seasonal-ratings
           path: data-raw/cache-opta/07_seasonal_ratings.rds

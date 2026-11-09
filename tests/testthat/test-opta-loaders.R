@@ -375,7 +375,7 @@ test_that("enrich_match_stats_with_xmetrics surfaces gaps and fail-fasts", {
   # Missing join keys -> returns input unchanged with a warning (no silent drop).
   ms_nokey <- data.frame(player_id = "p1", goals_p90 = 1, stringsAsFactors = FALSE)
   expect_warning(
-    out <- enrich_match_stats_with_xmetrics(ms_nokey, verbose = FALSE),
+    out <- enrich_match_stats_with_xmetrics(ms_nokey, keeper_style = FALSE, verbose = FALSE),
     "missing league/season/match_id/player_id"
   )
   expect_equal(nrow(out), 1L)
@@ -391,13 +391,13 @@ test_that("enrich_match_stats_with_xmetrics surfaces gaps and fail-fasts", {
   )
   expect_error(
     suppressWarnings(
-      enrich_match_stats_with_xmetrics(ms, verbose = FALSE,
+      enrich_match_stats_with_xmetrics(ms, keeper_style = FALSE, verbose = FALSE,
                                        fail_if_missing_frac = 0.5)),
     "Refusing to proceed|No per-match xMetrics"
   )
   # Inf default: warns and returns unchanged (no xG columns added).
   out2 <- suppressWarnings(
-    enrich_match_stats_with_xmetrics(ms, verbose = FALSE))
+    enrich_match_stats_with_xmetrics(ms, keeper_style = FALSE, verbose = FALSE))
   expect_false("xg_per90" %in% names(out2))
 })
 
@@ -419,7 +419,7 @@ test_that("remote xMetrics enrichment narrow-selects, falling back full-width on
     }
   )
   expect_warning(
-    out <- enrich_match_stats_with_xmetrics(ms, verbose = FALSE, source = "remote"),
+    out <- enrich_match_stats_with_xmetrics(ms, keeper_style = FALSE, verbose = FALSE, source = "remote"),
     "falling back to the full-width load"
   )
   expect_length(seen_cols, 2L)                       # narrow attempt, then fallback
@@ -447,7 +447,7 @@ test_that("remote xMetrics enrichment aligns a multi-row match() join (shuffled,
   )
   # 2 of 3 rows matched (67%) is under the per-league-season 80% floor: warns (R036)
   expect_warning(
-    out <- enrich_match_stats_with_xmetrics(ms, verbose = FALSE, source = "remote"),
+    out <- enrich_match_stats_with_xmetrics(ms, keeper_style = FALSE, verbose = FALSE, source = "remote"),
     "under 80% of rows in 1 league-season")
   expect_equal(out$xg_per90, c(0, 0.7, 0.9))   # row 1 unmatched -> 0; rows realigned
   expect_equal(out$gsaa_per90, c(0, 0, 0.2))   # NA inside a matched row -> 0 too
@@ -464,24 +464,24 @@ test_that("R036/R037: a league-season that matches nothing is reported even when
                           xg_per90 = 0.5, stringsAsFactors = FALSE)
   testthat::local_mocked_bindings(query_remote_opta_parquet = function(...) xm_remote)
   expect_warning(
-    out <- enrich_match_stats_with_xmetrics(ms, verbose = FALSE, source = "remote"),
+    out <- enrich_match_stats_with_xmetrics(ms, keeper_style = FALSE, verbose = FALSE, source = "remote"),
     "NO rows in 1/2 league-seasons of the latest season [(]TINY 2024-2025[)]")
   expect_equal(out$xg_per90, c(rep(0.5, 5), 0))   # fill itself unchanged
   # a caller that demanded the features stops when too many league-seasons are empty
   expect_error(
-    suppressWarnings(enrich_match_stats_with_xmetrics(ms, verbose = FALSE, source = "remote",
+    suppressWarnings(enrich_match_stats_with_xmetrics(ms, keeper_style = FALSE, verbose = FALSE, source = "remote",
                                                       fail_if_missing_frac = 0.25)),
     "Exceeds fail_if_missing_frac")
   # healthy: everything matched -> silent
   xm_all <- data.frame(player_id = paste0("p", 1:6), match_id = paste0("m", 1:6),
                        xg_per90 = 0.5, stringsAsFactors = FALSE)
   testthat::local_mocked_bindings(query_remote_opta_parquet = function(...) xm_all)
-  expect_no_warning(enrich_match_stats_with_xmetrics(ms, verbose = FALSE, source = "remote"))
+  expect_no_warning(enrich_match_stats_with_xmetrics(ms, keeper_style = FALSE, verbose = FALSE, source = "remote"))
   # an OLDER season with no xMetrics is a known permanent gap: message, not warning
   ms_old <- rbind(ms, data.frame(player_id = "p7", match_id = "m7", league = "SCO", season = "2015-2016",
                                  total_minutes = 90, goals_p90 = 1, stringsAsFactors = FALSE))
   expect_no_warning(expect_message(
-    enrich_match_stats_with_xmetrics(ms_old, verbose = FALSE, source = "remote"),
+    enrich_match_stats_with_xmetrics(ms_old, keeper_style = FALSE, verbose = FALSE, source = "remote"),
     "older league-season.*SCO 2015-2016"))
 })
 
@@ -500,7 +500,7 @@ test_that("remote xMetrics enrichment errors when the join matches zero rows", {
     query_remote_opta_parquet = function(...) xm_remote
   )
   expect_error(
-    enrich_match_stats_with_xmetrics(ms, verbose = FALSE, source = "remote"),
+    enrich_match_stats_with_xmetrics(ms, keeper_style = FALSE, verbose = FALSE, source = "remote"),
     "matched 0 of"
   )
 })

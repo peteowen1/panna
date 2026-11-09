@@ -96,8 +96,15 @@ cat(sprintf("Match stats: %s player-match rows x %d cols\n",
 # step 2's enriched output), so without this join the coefficients would omit
 # xg_per90 / npg_minus_npxg / placement_added / gsaa entirely. Uses the same
 # shared helper as step 2 → identical feature set for training and skill ratings.
+# Same source switch as step 2 (02_estimate_skills.R:72). Without it step 7
+# always read the local xmetrics_bymatch/ tree: the 2026-09-13 GK retrain
+# (#249) trained on that tree's 2026-09-03 vintage, before xGOT v3.2, while
+# scoring on GHA reads the published v3.2 copy (panna#429).
+xm_source <- if (identical(Sys.getenv("XMETRICS_SOURCE"), "remote")) "remote" else "local"
+cat(sprintf("xMetrics source: %s\n", xm_source))
 if (!exists("use_xmetrics_features") || isTRUE(use_xmetrics_features)) {
-  match_stats <- enrich_match_stats_with_xmetrics(match_stats, fail_if_missing_frac = 0.6)
+  match_stats <- enrich_match_stats_with_xmetrics(match_stats, fail_if_missing_frac = 0.6,
+                                                  source = xm_source)
   cat(sprintf("After xMetrics join: %d cols\n", ncol(match_stats)))
 }
 
@@ -105,9 +112,13 @@ if (!exists("use_xmetrics_features") || isTRUE(use_xmetrics_features)) {
 decay_params_path <- file.path(cache_dir, "02b_decay_params.rds")
 if (file.exists(decay_params_path)) {
   decay_params <- readRDS(decay_params_path)
-  cat("Using optimized decay parameters\n")
+  # Hash now, not at save time: a pull from predictions-cache mid-run would
+  # otherwise record a file the coefficients were not trained on (panna#432).
+  decay_params_md5 <- unname(tools::md5sum(decay_params_path))
+  cat(sprintf("Using optimized decay parameters (%s, md5 %s)\n", decay_params_path, decay_params_md5))
 } else {
   decay_params <- get_default_decay_params()
+  decay_params_md5 <- NA_character_
   cat("Using default decay parameters\n")
 }
 
@@ -1161,7 +1172,8 @@ gk_skill_keep_cols <- character(0)
   # never sees gsaa_per90 (keeper shot-stopping), so it can't reach the GK
   # coefficients. Uses the shared helper for an identical feature set.
   if (!exists("use_xmetrics_features") || isTRUE(use_xmetrics_features)) {
-    ms_dt_gk <- enrich_match_stats_with_xmetrics(ms_dt_gk, fail_if_missing_frac = 0.6)
+    ms_dt_gk <- enrich_match_stats_with_xmetrics(ms_dt_gk, fail_if_missing_frac = 0.6,
+                                                 source = xm_source)
   }
   ms_dt_gk[, match_date := as.Date(match_date)]
   # Season from the label, as section 3 does for the outfield model (panna#224);
@@ -1557,6 +1569,15 @@ psr_model_data <- list(
     alpha_grid = ALPHA_GRID,
     decay_days = MATCH_WEIGHT_DECAY_DAYS,
     min_w90 = MIN_W90_FOR_SKILLS,
+    # Provenance of the skill shrinkage the coefficients were trained against
+    # (panna#432): the local and published 02b files have disagreed, and the
+    # trained-with copy was not recoverable afterwards. To compare with the
+    # file GHA scores with, check decay_params_md5 (hashed when the file was
+    # read; NA = defaults, no file), or diff decay_params_used, which holds the
+    # whole object: per-stat lambdas, stat_priors and position_multipliers
+    # (about 6 KB on disk).
+    decay_params_md5 = decay_params_md5,
+    decay_params_used = decay_params,
     created = Sys.time()
   )
 )
@@ -1577,10 +1598,17 @@ cat("  1. Rscript data-raw/estimated-skills/07d_derive_psv_gd_scale.R\n")
 cat("     -> prints a new PSV_RELIABILITY_GD_SCALE; edit R/constants.R BY HAND.\n")
 cat("  2. Rscript data-raw/estimated-skills/07c_build_live_psv_constants.R\n")
 cat("     -> rewrites inst/extdata/psv_live_constants.csv (live PSV pricing).\n")
-cat("     Run AFTER 1, so the live constants use the updated scale.\n\n")
+cat("     Run AFTER 1, so the live constants use the updated scale.\n")
+cat("  3. inst/extdata/psr_calibration.csv and psv_calibration.csv (position and\n")
+cat("     season factors) were fitted on PSR/PSV from the PREVIOUS coefficients.\n")
+cat("     Re-measure: 08b with PSR_RAW_UNCALIBRATED=1, then\n")
+cat("     99b_fit_position_calibration.R. Turning its slopes into shipped factors is\n")
+cat("     a decision (see its header). Seen stale after the 2026-11-07 retrain (panna#432).\n\n")
 cat("Then re-run 06 (seasonal ratings) -> 08b (weekly PSR) -> 10b/02, which\n")
 cat("consume the coefficients via load_psr_coefficients().\n")
-cat("07b is NOT in this chain -- it reads match stats, not coefficients.\n")
+cat("07b IS in this chain when the feature set changes: it builds position_role_means.csv\n")
+cat("and psv_match_reliability.csv for the stat names in the coefficient files (panna#429).\n")
+cat("Run it before 07c.\n")
 cat(strrep("=", 78), "\n", sep = "")
 
 cat("\n=== COMPLETE ===\n")

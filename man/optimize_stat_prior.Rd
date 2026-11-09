@@ -38,7 +38,7 @@ computed as minutes-weighted mean from the data.}
 \item{denom_col}{Denominator column for efficiency stats.}
 
 \item{prior_bounds}{Numeric vector of length 2: search range for prior
-strength. Default c(0.1, 100) for rate stats, c(0.1, 500) for efficiency.}
+strength. Default c(0.1, 1000) for rate stats, c(0.1, 500) for efficiency.}
 
 \item{lambda_bounds}{Numeric vector of length 2: search range for decay lambda.
 Default c(0, 0.02). Only used when \code{optimize_lambda = TRUE}.}

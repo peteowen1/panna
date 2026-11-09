@@ -57,7 +57,11 @@ get_stat_tiers <- function() {
       "att_fastbreak_p90", "att_openplay_p90",
       "crosses_open_play_p90",
       "last_man_tackle_p90", "six_yard_block_p90",
-      "unsuccessful_touch_p90", "overrun_p90"
+      "unsuccessful_touch_p90", "overrun_p90",
+      # Club-adjusted keeper distribution (panna#429, R/keeper_style.R): the
+      # keeper feature list uses these instead of the raw columns.
+      "passes_p90_kadj", "passes_accurate_p90_kadj", "long_balls_p90_kadj",
+      "keeper_throws_p90_kadj", "touches_p90_kadj"
     ),
     efficiency = c(
       "shot_accuracy", "goals_per_shot", "pass_accuracy",
@@ -70,7 +74,11 @@ get_stat_tiers <- function() {
     ),
     xmetrics = c(
       "xg_per90", "npxg_per90", "xa_per90_xmetrics",
-      "xpass_overperformance_per90_xmetrics"
+      "xpass_overperformance_per90_xmetrics",
+      # Finishing, placement and keeper shot-stopping (panna#432): published
+      # skills read priors for these, but no 02b run fitted them by default.
+      # (The zonal ibox/obox split left PSR on 2026-07-20, skill_config.R.)
+      "npg_minus_npxg_per90", "placement_added_per90", "gsaa_per90"
     )
   )
 }
@@ -478,7 +486,11 @@ optimize_stat_prior <- function(match_stats = NULL, stat_name,
     # 1D: Brent's method
     interval <- if (optimize_prior) prior_bounds else
                 if (optimize_quantile) quantile_bounds else lambda_bounds
-    result <- stats::optimize(objective, interval = interval, tol = 0.01)
+    # Tolerance scaled to the interval: a fixed 0.01 is half the default lambda
+    # range c(0, 0.02), so a lambda-only search stopped after a step or two
+    # (panna#439). min() keeps the prior search's tolerance at 0.01 as before.
+    result <- stats::optimize(objective, interval = interval,
+                              tol = min(0.01, diff(interval) * 1e-4))
     out <- list(stat = stat_name, loss = result$objective)
 
     if (optimize_prior) out$optimal_prior <- result$minimum
@@ -569,6 +581,8 @@ optimize_stat_prior <- function(match_stats = NULL, stat_name,
 #' @param optimize_quantile If TRUE, jointly optimizes per-stat prior center
 #'   quantile.
 #' @param sample_n Max players to sample per stat (default 500).
+#' @param seed Seed for the player sample. Fits under two seeds differ only by
+#'   which players were sampled, so comparing them measures sampling noise.
 #' @param n_cores Number of cores for parallel optimization. Default 1
 #'   (sequential).
 #' @param verbose Print progress.
@@ -582,6 +596,7 @@ optimize_all_priors <- function(match_stats, decay_params = NULL,
                                  optimize_lambda = TRUE,
                                  optimize_quantile = FALSE,
                                  sample_n = 500,
+                                 seed = 42,
                                  n_cores = 1,
                                  verbose = TRUE) {
   if (is.null(decay_params)) decay_params <- get_default_decay_params()
@@ -608,7 +623,7 @@ optimize_all_priors <- function(match_stats, decay_params = NULL,
   # Precompute shared per-player data (sort, positions, sample, split)
   # This avoids repeating expensive work 68x (once per stat)
   if (verbose) progress_msg("Precomputing player splits...")
-  precomputed <- .precompute_player_data(match_stats, sample_n = sample_n, seed = 42)
+  precomputed <- .precompute_player_data(match_stats, sample_n = sample_n, seed = seed)
   if (verbose) progress_msg(sprintf("  %d players, %d with >5 matches",
                                      length(precomputed$player_splits),
                                      sum(vapply(precomputed$player_splits,

@@ -1,3 +1,32 @@
+# panna 0.3.113
+
+- `optimize_stat_prior()`: a one-parameter search now uses a tolerance scaled to its interval. The fixed
+  `tol = 0.01` was half the default lambda range, so a lambda-only search stopped after a step or two
+  (panna#439). The prior search keeps 0.01; the unused quantile search tightens to 9e-5; the joint prior +
+  lambda fit used by 02b is unchanged.
+- 07d reads xMetrics from the same source as 07 (`XMETRICS_SOURCE`), not always the local tree (panna#440).
+- 08b smoke runs (`psr_smoke_n`) write `opta_psr_weekly_SMOKE.parquet` instead of replacing the local
+  full-history `opta_psr_weekly.parquet`, also in raw mode (panna#441).
+- Retrained the PSR/PSV coefficients (step 07) on the fitted skill priors from panna#432 (02b fit on
+  all 9,258 Big-5 players, every skill stat on the xMetrics-enriched table). Cross-validated error is
+  unchanged (xG margin 0.9585 -> 0.9575, goal-diff margin 2.3837 -> 2.3848). The outfield model now
+  keeps 57 stats instead of 31, and `goals_p90` drops out of the blend and goal-diff sets.
+  `PSV_RELIABILITY_GD_SCALE` is refit by 07d from 2.668 to 3.002, and 07c rebuilds
+  `psv_live_constants.csv` against it. Ratings move: PSR rank correlation with the previous
+  coefficients is 0.92 (2,532 players with 15+ weighted 90s), keepers and finishers fall, creators rise.
+- PSR tests: fixtures now carry every shipped coefficient stat (`helper-coef-cols.R`), so a retrain
+  that drops a stat no longer breaks them, and two keeper-scaling tests that a retrain had turned
+  into silent skips now fail instead of skipping.
+- Keeper PSR scores club-adjusted distribution (panna#429): passes, accurate passes, long balls,
+  throws and touches each have the as-of club style removed (`R/keeper_style.R`, built by skills step
+  01c into `keeper_style_asof.rds`), and the keeper coefficients are retrained on the `<stat>_kadj`
+  columns. Every scoring site (02, 10b, enrich) applies it on the full population and fails loudly
+  when the table is missing. Keeper PSR correlates less with long balls per 90 (-0.75 -> -0.55) and
+  more with shot-stopping (0.44 -> 0.53), n = 3,411 keeper-seasons.
+- `position_role_means.csv` and `psv_match_reliability.csv` list the five `_kadj` stats, and
+  `psv_live_constants.csv` is rebuilt for the keeper coefficients (panna#450). Published weekly PSR
+  and game-log PSV do not move: both are re-centred per group.
+
 # panna 0.3.112
 
 - `league-walkforward.yml` gains a `horizon` input. `season` makes each monthly refit predict
