@@ -197,3 +197,49 @@ test_that("a lambda-only search reaches the best decay on a fine grid (panna#439
   expect_true(full$optimal_lambda > 0 && full$optimal_lambda < 0.02)
   expect_lte(full$loss, min(grid_loss) + 1e-6)
 })
+
+test_that("a lambda-only search recovers a planted decay (panna#439)", {
+  # Each player's rate is a random walk with steady-state Kalman gain K, so the
+  # decay that best predicts the next match is lambda* = -log(1 - K) / 7 per day
+  # (weekly matches). Warm-up and normalised weights move the empirical optimum
+  # about 5% below lambda* on seed 1, so the search is checked against a brute-force
+  # EWMA argmin on the same data (no optimiser involved), and that argmin is
+  # checked against lambda*.
+  n_players <- 200
+  n_matches <- 200
+  min_history <- 20
+  K <- 0.07
+  lambda_star <- -log(1 - K) / 7
+  ms <- make_optimization_match_stats(n_players = n_players, n_matches = n_matches)
+  set.seed(1)
+  q <- K^2 / (1 - K)
+  mu <- matrix(0, n_players, n_matches)
+  mu[, 1] <- rnorm(n_players, 1, 0.5)
+  for (t in 2:n_matches) mu[, t] <- mu[, t - 1] + rnorm(n_players, 0, sqrt(q))
+  y <- mu + matrix(rnorm(n_players * n_matches), n_players, n_matches)
+  ms$planted_p90 <- y[cbind(ms$player_id, ms$match_idx)]
+
+  # One-step MSE of the normalised EWMA predictor: the objective being minimised.
+  ewma_mse <- function(lambda) {
+    r <- exp(-7 * lambda)
+    err <- 0
+    for (j in (min_history + 1):n_matches) {
+      w <- r^(j - seq_len(j - 1))
+      pred <- as.vector(y[, seq_len(j - 1), drop = FALSE] %*% w) / sum(w)
+      err <- err + sum((y[, j] - pred)^2)
+    }
+    err / (n_players * (n_matches - min_history))
+  }
+  grid <- seq(0, 0.02, length.out = 101)
+  reference <- grid[which.min(vapply(grid, ewma_mse, numeric(1)))]
+  expect_lt(abs(reference - lambda_star) / lambda_star, 0.15)
+
+  fit <- optimize_stat_prior(
+    match_stats = ms, stat_name = "planted_p90", prior_bounds = c(0.001, 0.001),
+    optimize_lambda = TRUE, lambda_bounds = c(0, 0.02),
+    min_history = min_history, sample_n = n_players
+  )
+  # With tol = 0.01 this seed returned 0.01236, one of the two golden-section
+  # probe points on c(0, 0.02), 0.0026 above the reference.
+  expect_lt(abs(fit$optimal_lambda - reference), 3e-4)
+})
