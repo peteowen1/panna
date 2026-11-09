@@ -105,7 +105,10 @@ date; the two only differ for a player whose name changes in the source).
 The use case is a full snapshot rebuild (step 08b), where the batch
 estimator's running sums are far cheaper than refiltering all history at
 every date. Resuming a checkpoint also restores the position counts, and a
-checkpoint from a non-\code{as_of} run is rejected (fingerprint).}
+checkpoint from a non-\code{as_of} run is rejected (fingerprint).
+\code{as_of = TRUE} requires cached \code{position_multipliers} and
+\code{prior_centers} in \code{decay_params} and stops without them, since
+computing them here would use matches after each date.}
 
 \item{verbose}{Print progress (default TRUE).}
 }

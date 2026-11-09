@@ -2397,6 +2397,23 @@ make_asof_params <- function(ms) {
   dp
 }
 
+test_that(".estimate_prematch_skills_batch(as_of = TRUE) stops without cached priors (no lookahead)", {
+  ms <- make_asof_test_data()
+  dp <- make_asof_params(ms)
+  ref <- as.Date("2024-02-10")
+  for (drop in c("position_multipliers", "prior_centers")) {
+    dp_missing <- dp; dp_missing[[drop]] <- NULL
+    expect_error(
+      panna:::.estimate_prematch_skills_batch(ms, ref_dates = ref, decay_params = dp_missing,
+                                              as_of = TRUE, verbose = FALSE),
+      "needs")
+  }
+  # The default (full-history) mode keeps computing them itself, as step 07 relies on.
+  dp_missing <- dp; dp_missing$position_multipliers <- NULL; dp_missing$prior_centers <- NULL
+  expect_no_error(suppressWarnings(panna:::.estimate_prematch_skills_batch(
+    ms, ref_dates = ref, decay_params = dp_missing, verbose = FALSE)))
+})
+
 test_that(".estimate_prematch_skills_batch(as_of = TRUE) matches estimate_player_skills per date", {
   ms <- make_asof_test_data()
   dp <- make_asof_params(ms)

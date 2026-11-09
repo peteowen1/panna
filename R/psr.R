@@ -265,6 +265,9 @@
 #'   estimator's running sums are far cheaper than refiltering all history at
 #'   every date. Resuming a checkpoint also restores the position counts, and a
 #'   checkpoint from a non-\code{as_of} run is rejected (fingerprint).
+#'   \code{as_of = TRUE} requires cached \code{position_multipliers} and
+#'   \code{prior_centers} in \code{decay_params} and stops without them, since
+#'   computing them here would use matches after each date.
 #' @param verbose Print progress (default TRUE).
 #'
 #' @return Named list keyed by date string. Each element is a data.table (one
@@ -353,6 +356,16 @@
   stat_lambdas <- vapply(stat_cols, function(sc) {
     .resolve_lambda(sc, decay_params, eff_map)
   }, numeric(1))
+
+  # as_of promises the single-date estimator's view, which takes position multipliers and prior
+  # centres from the pre-date slice. Without the cached ones in decay_params, the batch path below
+  # would compute both from the WHOLE of match_stats: a lookahead in every prior centre.
+  if (as_of && (is.null(decay_params$position_multipliers) || is.null(decay_params$prior_centers))) {
+    cli::cli_abort(c(
+      "{.code as_of = TRUE} needs {.field position_multipliers} and {.field prior_centers} in {.arg decay_params}.",
+      "i" = "Without them both would come from all of {.arg match_stats}, including matches after each date.",
+      "i" = "Load them as step 08b does (the cached skills step 02b output)."))
+  }
 
   # Position multipliers & grand means -- compute once
   pos_multipliers <- .resolve_position_multipliers(decay_params, dt, stat_cols)

@@ -1,8 +1,8 @@
-## 99c_continental_league_check.R ------------------------------------------
+## 99d_continental_league_check.R ------------------------------------------
 ## DIAGNOSTIC, not a pipeline step (panna#219). Nothing consumes its output and
 ## run_skills_pipeline.R does not source it.
 ##
-##   PANNA_CONT_DIR=/path/to/data Rscript data-raw/estimated-skills/99c_continental_league_check.R
+##   PANNA_CONT_DIR=/path/to/data Rscript data-raw/estimated-skills/99d_continental_league_check.R
 ##
 ## PANNA_CONT_DIR must hold the public pannadata release assets (download them
 ## OUTSIDE the repo): game_logs_20*.parquet (blog-latest), opta_fixtures.parquet
