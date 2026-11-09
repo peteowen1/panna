@@ -236,11 +236,6 @@ if (has_match_stats) {
   }
   all_match_stats[, .is_gk_full := .detect_gk_rows(all_match_stats)]
   all_match_stats[, .pos_grp_full := .psv_pos_grp(all_match_stats, .is_gk_full)]
-  # Club-adjusted keeper distribution (panna#429), once on the full population
-  # with the same router PSV scoring uses: the in-season club term needs every
-  # earlier match of the club-season, which a league slice would drop. Stops
-  # here, before any league, if keeper_style_asof.rds is missing.
-  .apply_keeper_style(all_match_stats, is_gk = all_match_stats$.is_gk_full, verbose = TRUE)
   # Report the live figure only -- a baked-in "was X%" baseline would keep
   # printing a fixed historical number as though it were a current comparison.
   # The 2026-09-14 measurement (3.52% -> 0.77% of rows, 2.24% -> 0.44% of
@@ -264,6 +259,16 @@ if (has_match_stats) {
   message(sprintf("  Kept match stats for season end year(s) %s (and the year before): %d of %d rows",
                   paste(sort(.keep_sey), collapse = ", "), nrow(all_match_stats), .n_all))
   .rss_note("after trimming match stats to the seasons built")
+  # Club-adjusted keeper distribution (panna#429), once, before any league, with
+  # the router PSV scoring uses (.is_gk_full, resolved above on every season).
+  # The in-season club term reads only earlier matches of the same club-season,
+  # across all competitions, and the trim above keeps whole seasons, so the
+  # values for every kept row are the same as on the full table. Run on the full
+  # 2.1M-row table it took the last of the runner's 16 GB: three predictions runs
+  # lost their runner here on 2026-11-09/10 (run 42637285004 attempt 2 died 42 s
+  # after loading match stats). Stops here if keeper_style_asof.rds is missing.
+  .apply_keeper_style(all_match_stats, is_gk = all_match_stats$.is_gk_full, verbose = TRUE)
+  .rss_note("after keeper style")
 } else {
   message("  Note: No match stats cache — PSV will be unavailable")
 }

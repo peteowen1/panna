@@ -258,3 +258,20 @@ test_that("keeper style table refuses to publish without the in-season term", {
   st <- fit_keeper_style_asof(sim$dt, stats = "long_balls_p90", lambda = 0.00127, verbose = FALSE)
   expect_error(panna:::build_keeper_style_table(sim$dt, st, in_season_k = Inf), class = "panna_keeper_style_error")
 })
+
+test_that("_kadj on whole kept seasons equals _kadj on the full table (10b applies it after its season trim)", {
+  sim <- make_keeper_league(seed = 7)
+  st <- fit_keeper_style_asof(sim$dt, stats = "long_balls_p90", verbose = FALSE)
+  # A second competition for the same clubs, so the in-season term crosses leagues.
+  cup <- data.table::copy(sim$dt[position == "Goalkeeper" & season_end_year >= 2024L][seq(1, .N, by = 5)])
+  cup[, `:=`(match_id = paste0("cup", match_id), league = "CUP", match_date = match_date + 3L)]
+  full <- rbind(sim$dt, cup)
+  full_adj <- add_kstyle(data.table::copy(full), st, verbose = FALSE)
+  kept <- full[season_end_year %in% c(2025L, 2024L)]
+  kept_adj <- add_kstyle(data.table::copy(kept), st, verbose = FALSE)
+  a <- full_adj[season_end_year %in% c(2025L, 2024L)][order(match_id, player_id)]
+  b <- kept_adj[order(match_id, player_id)]
+  expect_equal(nrow(a), nrow(b))
+  expect_gt(sum(a$long_balls_p90_kadj != a$long_balls_p90), 100)   # the adjustment did something
+  expect_equal(b$long_balls_p90_kadj, a$long_balls_p90_kadj, tolerance = 1e-12)
+})
