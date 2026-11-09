@@ -1,5 +1,16 @@
 # panna (development version)
 
+- New `wpa_build_ledger()` (panna#273): football WPA as a net ledger. Each team's players sum to its
+  result against an even start (win +0.5, draw 0, loss -0.5), torp's `wpa_neutral`. It runs the
+  per-action change in win probability through the net goals engine with the goals-only rules off
+  (shot chain, shot aftermath, and the xGOT strike/finish split, which is priced in goals), spreads
+  the gap between the model's opening win chance and 0.5 by minutes (`wpa_start`), and refuses
+  centred WPA or any team that misses its target. Additive: nothing calls it yet, and the published
+  `wpa_total` is unchanged. On Liverpool's 9 EPL 2026-27 matches it reproduces the 2026-11-09
+  prototype exactly (279 player-matches). Which WP model feeds it is still Pete's call (panna#273).
+- `add_wp_vars()` gains `centre = TRUE`; `FALSE` keeps the raw change, whose match total is the
+  result minus the opening win chance. `create_wp_features()` now keeps `action_id` when present.
+
 - `.estimate_prematch_skills_batch()` gains `as_of = FALSE` (#446, panna#442). `as_of = TRUE`
   reproduces `estimate_player_skills()` per date (positions, position-scaled prior centres and the
   returned population come only from matches before each date), so step 08b can later switch to the
