@@ -357,6 +357,9 @@ jobs:
               # stalled on exactly that. Small, additive, no existing consumer.
               step_04b_export_match_features = TRUE,
               step_10d_export_shootout_wpa   = TRUE,
+              # keeper-style.parquet (club style + in-season shift) for the site's live
+              # keeper PSV; built by the skills step 01c pre-pass above (panna#452).
+              step_10e_export_keeper_style   = TRUE,
               # WC2026 simulation + blog export. Refresh weekly with the rest
               # of the predictions chain so the WC tab tracks the latest match
               # outcomes (esp. during the qualifier finals window). Disable in

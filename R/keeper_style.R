@@ -185,6 +185,58 @@ fit_keeper_style_asof <- function(match_stats, stats = .keeper_style_stats(),
 #' @keywords internal
 #' @noRd
 .add_keeper_style_features <- function(dt, style, is_gk = NULL, in_season_k = 20, verbose = TRUE) {
+  parts <- .keeper_style_parts(dt, style, is_gk = is_gk, in_season_k = in_season_k)
+  for (s in names(parts$stats)) {
+    p <- parts$stats[[s]]
+    out <- p$raw
+    out[p$use] <- p$raw[p$use] - p$cstyle[p$use] - p$shift[p$use]
+    out_col <- .keeper_style_col(s)
+    data.table::set(dt, j = out_col, value = out)
+    n_used <- sum(p$use); n_gk <- sum(parts$is_gk)
+    n_na <- sum(parts$is_gk & !is.finite(p$raw)); n_nostyle <- n_gk - n_used - n_na
+    if (verbose) cli::cli_inform("{out_col}: club style applied to {n_used} of {n_gk} keeper rows; {n_nostyle} keep the raw value (no earlier season for that club), {n_na} have no value")
+  }
+  dt
+}
+
+#' In-season club shift per club-season and keeper match date
+#'
+#' The one place the in-season term is computed, shared by
+#' `.add_keeper_style_features()` (scoring) and `build_keeper_style_table()`
+#' (the published copy the site's live scorer reads, panna#452), so the two
+#' cannot drift.
+#'
+#' @param ck Club-season key per keeper row ("team_id season_end_year").
+#' @param md Match date as a number per row.
+#' @param w 90s played per row.
+#' @param r Residual per row: raw - club_style - keeper_eff.
+#' @param in_season_k Shrinkage in 90s.
+#' @return data.table(ck, md, wr, w, shift, shift_after): `shift` is the term
+#'   for a match ON `md` (strictly earlier dates only), `shift_after` the term
+#'   for any match AFTER `md` (this date included).
+#' @keywords internal
+#' @noRd
+.keeper_style_shift <- function(ck, md, w, r, in_season_k) {
+  day <- data.table::data.table(ck = ck, md = md, wr = w * r, w = w)
+  day <- day[, .(wr = sum(wr), w = sum(w)), by = .(ck, md)]
+  data.table::setorder(day, ck, md)
+  # Totals over strictly EARLIER dates in the same club-season.
+  day[, `:=`(wr_cum = cumsum(wr), w_cum = cumsum(w)), by = ck]
+  day[, `:=`(shift = (wr_cum - wr) / (w_cum - w + in_season_k),
+             shift_after = wr_cum / (w_cum + in_season_k))]
+  day[, c("wr_cum", "w_cum") := NULL]
+  day[]
+}
+
+#' Per-stat pieces of the keeper adjustment, aligned with the rows of dt
+#'
+#' @inheritParams .add_keeper_style_features
+#' @return list(is_gk, yr, key, stats = named list per stat of
+#'   list(raw, cstyle, use, shift, day)); `day` is the `.keeper_style_shift()`
+#'   table (NULL when the in-season term is off or no row is used).
+#' @keywords internal
+#' @noRd
+.keeper_style_parts <- function(dt, style, is_gk = NULL, in_season_k = 20) {
   # Without team_id every key misses and every keeper silently keeps his raw
   # value, so stop instead (review of the step 2 wiring, 2026-11-08).
   if (!"team_id" %in% names(dt)) cli::cli_abort("Keeper style needs a {.field team_id} column; pass keeper_style = FALSE where keepers are not scored.",
@@ -205,6 +257,7 @@ fit_keeper_style_asof <- function(match_stats, stats = .keeper_style_stats(),
     w <- as.numeric(dt$total_minutes) / 90; w[!is.finite(w)] <- 0
     pkey <- paste(dt$player_id, yr)
   }
+  out <- list()
   for (s in intersect(unique(style$stat), names(dt))) {
     st <- style[stat == s]
     cstyle <- st$club_style[match(key, paste(st$team_id, st$season_end_year))]
@@ -212,29 +265,78 @@ fit_keeper_style_asof <- function(match_stats, stats = .keeper_style_stats(),
     use <- is_gk & is.finite(cstyle) & is.finite(raw)
     if (do_season && anyNA(md[use])) cli::cli_abort("{sum(is.na(md[use]))} keeper rows have no match_date; the in-season term would count them as earlier than every match.", class = "panna_keeper_style_error")
     shift <- rep(0, length(raw))
+    day <- NULL
     if (do_season && any(use)) {
       kf <- kfx[stat == s]
       keff <- kf$keeper_eff[match(pkey, paste(kf$player_id, kf$season_end_year))]
       keff[!is.finite(keff)] <- 0
       r <- raw - cstyle - keff
-      day <- data.table::data.table(ck = key[use], md = md[use], wr = (w * r)[use], w = w[use])
-      day <- day[, .(wr = sum(wr), w = sum(w)), by = .(ck, md)]
-      data.table::setorder(day, ck, md)
-      # Totals over strictly EARLIER dates in the same club-season.
-      day[, `:=`(wr_before = cumsum(wr) - wr, w_before = cumsum(w) - w), by = ck]
-      day[, shift := wr_before / (w_before + in_season_k)]
+      day <- .keeper_style_shift(key[use], md[use], w[use], r[use], in_season_k)
       hit <- match(paste(key, md), paste(day$ck, day$md))
       shift[use] <- day$shift[hit[use]]
     }
-    out <- raw
-    out[use] <- raw[use] - cstyle[use] - shift[use]
-    out_col <- .keeper_style_col(s)
-    data.table::set(dt, j = out_col, value = out)
-    n_used <- sum(use); n_gk <- sum(is_gk)
-    n_na <- sum(is_gk & !is.finite(raw)); n_nostyle <- n_gk - n_used - n_na
-    if (verbose) cli::cli_inform("{out_col}: club style applied to {n_used} of {n_gk} keeper rows; {n_nostyle} keep the raw value (no earlier season for that club), {n_na} have no value")
+    out[[s]] <- list(raw = raw, cstyle = cstyle, use = use, shift = shift, day = day)
   }
-  dt
+  list(is_gk = is_gk, yr = yr, key = key, stats = out)
+}
+
+#' Keeper style table for the site's live PSV scorer (panna#452)
+#'
+#' The site scores live matches in JavaScript and cannot fit the keeper-style
+#' model, so this publishes the two pieces it subtracts: each club's as-of
+#' style for the season and the in-season shift. For a keeper row,
+#' `<stat>_kadj = raw - club_style - shift`, where `shift` comes from the
+#' club-season's row with the LATEST `after_date` strictly before the match
+#' date. The first row of every club-season has `after_date` 1900-01-01 and
+#' `shift` 0 (no earlier match). A club-season with no row keeps raw values,
+#' as do outfield players. Built from `.keeper_style_parts()`, the code
+#' `.add_keeper_style_features()` uses, so the lookup reproduces the
+#' pipeline's `_kadj` columns exactly (tested).
+#'
+#' Call it on the full population, like `.apply_keeper_style()`: the shift sums
+#' a club's matches across every competition.
+#'
+#' @inheritParams .add_keeper_style_features
+#' @param seasons season_end_year values to publish; default the seasons with
+#'   a keeper match in the 400 days before the latest match date.
+#' @return data.table(team_id, season_end_year, stat, after_date, club_style,
+#'   shift, n90_before), one row per club-season x stat x step of the shift.
+#' @keywords internal
+#' @noRd
+build_keeper_style_table <- function(dt, style, is_gk = NULL, in_season_k = 20, seasons = NULL) {
+  if (!is.finite(in_season_k)) cli::cli_abort("The published table carries the in-season shift; in_season_k must be finite.",
+                                             class = "panna_keeper_style_error")
+  parts <- .keeper_style_parts(dt, style, is_gk = is_gk, in_season_k = in_season_k)
+  if (is.null(seasons)) {
+    md <- as.Date(dt$match_date)
+    recent <- parts$is_gk & !is.na(md) & md > max(md[parts$is_gk], na.rm = TRUE) - 400
+    seasons <- sort(unique(parts$yr[recent]))
+  }
+  seasons <- as.integer(seasons)
+  start <- as.Date("1900-01-01")
+  out <- list()
+  for (s in names(parts$stats)) {
+    p <- parts$stats[[s]]
+    st <- style[stat == s & season_end_year %in% seasons]
+    if (!nrow(st)) next
+    base <- st[, .(team_id = as.character(team_id), season_end_year = as.integer(season_end_year), stat = s,
+                   after_date = start, club_style, shift = 0, n90_before = 0)]
+    rows <- list(base)
+    if (!is.null(p$day) && nrow(p$day)) {
+      d <- data.table::copy(p$day)
+      d[, `:=`(team_id = sub(" -?[0-9]+$", "", ck), season_end_year = as.integer(sub(".* ", "", ck)))]
+      d <- d[season_end_year %in% seasons]
+      d[, n90_before := cumsum(w), by = ck]
+      d <- merge(d, base[, .(team_id, season_end_year, club_style)], by = c("team_id", "season_end_year"))
+      rows[[2]] <- d[, .(team_id, season_end_year, stat = s, after_date = as.Date(md, origin = "1970-01-01"),
+                         club_style, shift = shift_after, n90_before)]
+    }
+    out[[s]] <- data.table::rbindlist(rows)
+  }
+  if (!length(out)) cli::cli_abort("No keeper style rows for seasons {seasons}.", class = "panna_keeper_style_error")
+  res <- data.table::rbindlist(out)
+  data.table::setorder(res, stat, team_id, season_end_year, after_date)
+  res[]
 }
 
 #' Read the as-of keeper style table and add the `_kadj` columns
