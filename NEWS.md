@@ -1,5 +1,38 @@
-# panna (development version)
+# panna 0.3.115
 
+- New `wpa_build_ledger()` (panna#273): football WPA as a net ledger. Each team's players sum to its
+  result against an even start (win +0.5, draw 0, loss -0.5), torp's `wpa_neutral`. It runs the
+  per-action change in win probability through the net goals engine with the goals-only rules off
+  (shot chain, shot aftermath, and the xGOT strike/finish split, which is priced in goals), spreads
+  the gap between the model's opening win chance and 0.5 by minutes (`wpa_start`), and refuses
+  centred WPA or any team that misses its target. Additive: nothing calls it yet, and the published
+  `wpa_total` is unchanged. On Liverpool's 9 EPL 2026-27 matches it reproduces the 2026-11-09
+  prototype exactly (279 player-matches). Which WP model feeds it is still Pete's call (panna#273).
+- `add_wp_vars()` gains `centre = TRUE`; `FALSE` keeps the raw change, whose match total is the
+  result minus the opening win chance. `create_wp_features()` now keeps `action_id` when present.
+
+- `.estimate_prematch_skills_batch()` gains `as_of = FALSE` (#446, panna#442). `as_of = TRUE`
+  reproduces `estimate_player_skills()` per date (positions, position-scaled prior centres and the
+  returned population come only from matches before each date), so step 08b can later switch to the
+  batch estimator; the default is unchanged and step 07 is unaffected. `as_of = TRUE` now stops
+  unless `decay_params` carries cached `position_multipliers` and `prior_centers`, since computing them
+  from all of `match_stats` would use matches after each date; it also stops when `prior_centers`
+  misses any estimated stat, which would leak the same way. Real-data check before any switch:
+  `data-raw/estimated-skills/99c_compare_batch_vs_single_snapshots.R`.
+- New diagnostic `data-raw/estimated-skills/99d_continental_league_check.R` (#419, panna#219):
+  continental-match residuals per league as a check on the PSR league offsets. Reads only; changes no
+  offset.
+- Test: a lambda-only `optimize_stat_prior()` search recovers a planted decay (#445, panna#439).
+
+# panna 0.3.114
+
+Released to main 2026-11-09 via #454 (shipped without this version bump, which follows on dev).
+
+- `skills-seasonal.yml`: the Monday schedule is gate-only. Uploading to predictions-cache needs a
+  dispatch on main with `publish=true`, until Pete has walked the first new
+  `06_seasonal_ratings.rds` through on named players.
+- Regression test that an 08b smoke run never writes the full-history `opta_psr_weekly.parquet`
+  (#444, panna#441; the fix itself is #443).
 - Keeper style is published for the site's live PSV scorer (panna#452). Skills step 01c also writes
   `keeper-style.parquet` (+ `.csv`): per club-season and keeper stat, the as-of `club_style` and the
   in-season `shift`, one row per step of the shift (`after_date`). For a keeper row,

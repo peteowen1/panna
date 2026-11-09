@@ -52,7 +52,7 @@ For code conventions see [`CLAUDE.md`](CLAUDE.md).
 | **Splints** | Constant-lineup match segments (between subs/goals) | `create_all_splints()` | `splint_creation.R` |
 | **RAPM design matrix** | Sparse matrix with `{player_id}_off` / `{player_id}_def` columns | `create_rapm_design_matrix()` | `rapm_matrix.R` |
 | **Skill config** | Structured definitions for 80+ stats (type, category, position-adjustment) | `soccer_stat_rating_definitions()` | `skill_config.R` |
-| **Skill optimisation** | L-BFGS-B for decay rates, Brent for prior strength | `optimize_all_priors()`, `optimize_stat_prior()` | `skill_optimization.R` |
+| **Skill optimisation** | L-BFGS-B for decay rates, and for prior strength (on a log scale, from a coarse log-grid start) when jointly optimised with decay or quantile; Brent when prior strength is optimised alone | `optimize_all_priors()`, `optimize_stat_prior()` | `skill_optimization.R` |
 | **Player attribution** | Zero-ablation SHAP-like player impact on predictions | `calculate_player_attribution()` | `player_attribution.R` |
 | **Match prediction** | Elo + XGBoost using team-aggregated ratings | `predict_match()` | `match_prediction.R` |
 

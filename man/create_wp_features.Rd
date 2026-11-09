@@ -34,6 +34,7 @@ Other win probability:
 \code{\link{load_wp_model}()},
 \code{\link{predict_wp}()},
 \code{\link{save_wp_model}()},
-\code{\link{train_wp_model}()}
+\code{\link{train_wp_model}()},
+\code{\link{wpa_build_ledger}()}
 }
 \concept{win probability}
