@@ -1,5 +1,16 @@
 # Changelog
 
+## panna 0.3.116
+
+- Step 10b applies the club-adjusted keeper columns (`_kadj`, panna#429)
+  after trimming match stats to the seasons it builds, not on the full
+  2.1M-row table. On the 16 GB GitHub runner the full-table pass ran out
+  of memory: the daily predictions run lost its runner three times on
+  2026-11-09/10, so no game logs, blog data or keeper-style published
+  after 2026-11-08. The values are unchanged (the in-season club term
+  reads only the same club-season, and the trim keeps whole seasons); a
+  new test in `test-keeper-style.R` checks it.
+
 ## panna 0.3.115
 
 - New

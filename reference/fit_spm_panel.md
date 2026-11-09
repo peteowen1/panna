@@ -2,7 +2,7 @@
 
 The Wave-2 estimator (BOX-SCORE-VALUE-SPM-REDESIGN.md sec 2.2/2.3/3.1):
 plain
-[`glmnet::cv.glmnet()`](https://rdrr.io/pkg/glmnet/man/cv.glmnet.html)
+[`glmnet::cv.glmnet()`](https://glmnet.stanford.edu/reference/cv.glmnet.html)
 with (a) player-grouped CV folds (never random rows – R5), (b) an
 optional role-group x feature interaction block for the restricted
 role-ambivalent feature set, shrunk toward 0 via a higher
