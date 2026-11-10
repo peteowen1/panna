@@ -19,10 +19,23 @@ files[, role := fcase(end_year %in% 2022:2024, "train", end_year == 2026L, "hold
 files <- files[!is.na(role)]
 
 # ---- XI strength per team-match ----
-xi_path <- file.path(out, "xi_strength.parquet")
+# XI_SOURCE = "psr" (weekly PSR; its coefficients were fitted on seasons up to 2025-26, so it LEAKS into
+# this hold-out, 2026-11-10) or "panna" (career_panna_asof.parquet: monthly snapshots, each fitted only on
+# matches up to its date with a point-in-time prior -- leak-free by construction, 09b_career_panna_asof.R).
+XI_SOURCE <- Sys.getenv("XI_SOURCE", "psr")
+ROLL_DAYS <- if (XI_SOURCE == "panna") 62L else 400L
+sfx <- if (XI_SOURCE == "psr") "" else paste0("_", XI_SOURCE)
+say("XI source: %s (latest snapshot dated before match day, at most %d days old)", XI_SOURCE, ROLL_DAYS)
+xi_path <- file.path(out, sprintf("xi_strength%s.parquet", sfx))
 if (!file.exists(xi_path)) {
-  psr <- as.data.table(arrow::read_parquet("C:/dev/pannaverse/pannadata/data/opta/opta_psr_weekly.parquet",
-                                           col_select = c("snapshot_date", "player_id", "psr")))[!is.na(psr)]
+  psr <- if (XI_SOURCE == "panna") {
+    x <- as.data.table(arrow::read_parquet("C:/dev/pannaverse/pannadata/data/opta/career_panna_asof.parquet",
+                                           col_select = c("ref_date", "player_id", "panna")))
+    setnames(x, c("ref_date", "panna"), c("snapshot_date", "psr"))[!is.na(psr)]
+  } else {
+    as.data.table(arrow::read_parquet("C:/dev/pannaverse/pannadata/data/opta/opta_psr_weekly.parquet",
+                                      col_select = c("snapshot_date", "player_id", "psr")))[!is.na(psr)]
+  }
   psr[, snapshot_date := as.Date(snapshot_date)]
   say("PSR weekly: %d rows, %d players, %s to %s", nrow(psr), uniqueN(psr$player_id), min(psr$snapshot_date), max(psr$snapshot_date))
   setkey(psr, player_id, snapshot_date)
@@ -32,7 +45,7 @@ if (!file.exists(xi_path)) {
     if (is.null(lu) || !nrow(lu)) { say("no lineups: %s", u$key); return(NULL) }
     st <- unique(lu[is_starter %in% TRUE, .(match_id, team_id, player_id, d = as.Date(substr(match_date, 1, 10)) - 1L)])
     st[, snap_d := d]
-    j <- psr[st, on = .(player_id, snapshot_date = snap_d), roll = 400, .(match_id, team_id, player_id, psr = x.psr)]
+    j <- psr[st, on = .(player_id, snapshot_date = snap_d), roll = ROLL_DAYS, .(match_id, team_id, player_id, psr = x.psr)]
     j[, .(n_starters = .N, n_rated = sum(!is.na(psr)), xi_psr = 11 * mean(psr, na.rm = TRUE)), by = .(match_id, team_id)]
   }), fill = TRUE)
   xi[n_rated < 9, xi_psr := NA_real_]
@@ -61,7 +74,7 @@ say("train: %d rows, %d matches; xi_diff present for %.1f%% of matches; correlat
     nrow(m_cov), 100 * mean(m_cov$has), m_cov[has == TRUE, cor(elo, xi)])
 fits <- list(SEP = train_wp_structural(tr, use_possession = TRUE),
              SEP_xi = train_wp_structural(tr, use_possession = TRUE, extra_features = "xi_diff"))
-saveRDS(fits, file.path(out, "wp_xi_arms_models.rds")); rm(tr); gc(verbose = FALSE)
+saveRDS(fits, file.path(out, sprintf("wp_xi_arms_models%s.rds", sfx))); rm(tr); gc(verbose = FALSE)
 
 ll <- function(p, y) { p <- pmin(pmax(p, 1e-6), 1 - 1e-6); -(y * log(p) + (1 - y) * log(1 - p)) }
 acc <- list()
@@ -88,4 +101,4 @@ by_u <- dcast(A[, .(ll = sum(ll) / sum(rows)), by = .(unit, model)], unit ~ mode
 by_u[, gain := round(SEP - SEP_xi, 4)]
 cat(sprintf("\nCompetitions where SEP + XI beats SEP: %d of %d\n", by_u[, sum(gain > 0)], nrow(by_u)))
 print(by_u[order(-gain), .(unit, SEP = round(SEP, 4), SEP_xi = round(SEP_xi, 4), gain)])
-fwrite(A, file.path(out, "wp_xi_arms_by_unit.csv")); say("DONE")
+fwrite(A, file.path(out, sprintf("wp_xi_arms_by_unit%s.csv", sfx))); say("DONE")
