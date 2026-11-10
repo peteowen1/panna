@@ -15,7 +15,8 @@ train_wp_structural(
   min_child_weight = 50L,
   early_stopping_rounds = 20L,
   seed = 42L,
-  weight = NULL
+  weight = NULL,
+  extra_features = character()
 )
 
 predict_wp_structural(wp_model, wp_features, team_agnostic = FALSE)
@@ -33,6 +34,11 @@ log loss.}
 
 \item{weight}{Optional per-row training weights (same length as the rows kept
 after dropping NA labels), e.g. to undo row subsampling.}
+
+\item{extra_features}{Names of further numeric columns in \code{wp_features}
+to use as inputs, in the HOME frame or frame-free (e.g. minutes into
+stoppage time). No monotone constraint; NA allowed. Stored on the model,
+so prediction needs the same columns.}
 
 \item{wp_model}{A model from \code{train_wp_structural()}.}
 

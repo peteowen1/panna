@@ -69,6 +69,18 @@ test_that("use_possession adds home_has_ball; a published-style model refuses te
                "structural")
 })
 
+test_that("extra_features are stored, used at prediction, NA-tolerant, and required", {
+  skip_if_not_installed("xgboost")
+  d <- wps_fx(n_match = 100L)
+  d[, stoppage_min := pmax(0, time_seconds - 5400) / 60 + ifelse(seq_len(.N) %% 7 == 0, NA, 0)]
+  m <- suppressMessages(train_wp_structural(d, nrounds = 20L, nfolds = 2L, extra_features = "stoppage_min"))
+  expect_identical(m$extra_features, "stoppage_min")
+  expect_true("stoppage_min" %in% m$feature_names)
+  expect_length(predict_wp(m, d[1:10]), 10L)
+  expect_error(predict_wp(m, d[, !"stoppage_min"]), "stoppage_min")
+  expect_error(train_wp_structural(d, extra_features = "elo_diff"), "repeats")
+})
+
 test_that("missing Elo or epv is refused, not filled", {
   skip_if_not_installed("xgboost")
   d <- wps_fx(n_match = 80L)

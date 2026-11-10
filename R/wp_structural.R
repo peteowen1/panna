@@ -66,9 +66,9 @@ add_wp_match_elo <- function(wp_features, match_elo, min_coverage = 0.95,
 
 # Home-frame model inputs from create_wp_features() output. score_diff and
 # red_card_diff are already home frame there (R/wp_model.R).
-.wp_structural_frame <- function(dt) {
+.wp_structural_frame <- function(dt, extra = character()) {
   need <- c("time_remaining", "score_diff", "red_card_diff", "is_second_half",
-            "is_extra_time", "is_home", "elo_diff")
+            "is_extra_time", "is_home", "elo_diff", extra)
   miss <- setdiff(need, names(dt))
   if (length(miss) > 0L) {
     cli::cli_abort(c("WP features missing {.val {miss}} for the structural model.",
@@ -77,6 +77,8 @@ add_wp_match_elo <- function(wp_features, match_elo, min_coverage = 0.95,
   x <- dt[, .(time_remaining, m_home = as.numeric(score_diff),
               red_home = as.numeric(red_card_diff), is_second_half, is_extra_time,
               elo_diff = as.numeric(elo_diff), home_has_ball = as.integer(is_home == 1L))]
+  # Extra inputs pass through as numbers; NA is kept (xgboost learns a direction for missing).
+  for (f in extra) data.table::set(x, j = f, value = as.numeric(dt[[f]]))
   x
 }
 
@@ -99,6 +101,10 @@ add_wp_match_elo <- function(wp_features, match_elo, min_coverage = 0.95,
 #'   XGBoost / CV settings.
 #' @param weight Optional per-row training weights (same length as the rows kept
 #'   after dropping NA labels), e.g. to undo row subsampling.
+#' @param extra_features Names of further numeric columns in \code{wp_features}
+#'   to use as inputs, in the HOME frame or frame-free (e.g. minutes into
+#'   stoppage time). No monotone constraint; NA allowed. Stored on the model,
+#'   so prediction needs the same columns.
 #'
 #' @return A list of class \code{panna_wp_structural} with \code{model},
 #'   \code{feature_names}, \code{use_possession}, \code{cv_logloss},
@@ -109,7 +115,7 @@ train_wp_structural <- function(wp_features, use_possession = FALSE,
                                 nrounds = 600L, max_depth = 4L, eta = 0.1,
                                 nfolds = 5L, min_child_weight = 50L,
                                 early_stopping_rounds = 20L, seed = 42L,
-                                weight = NULL) {
+                                weight = NULL, extra_features = character()) {
   if (!requireNamespace("xgboost", quietly = TRUE)) {
     cli::cli_abort("Package {.pkg xgboost} required for WP model training")
   }
@@ -122,14 +128,18 @@ train_wp_structural <- function(wp_features, use_possession = FALSE,
     cli::cli_abort("{.arg weight} has {length(weight)} values for {sum(keep)} labelled rows.")
   }
   dt <- dt[keep]
-  x <- .wp_structural_frame(dt)
-  feature_names <- c(.WP_STRUCTURAL_BASE, if (isTRUE(use_possession)) "home_has_ball")
+  extra_features <- as.character(extra_features)
+  clash <- intersect(extra_features, c(.WP_STRUCTURAL_BASE, "home_has_ball"))
+  if (length(clash)) cli::cli_abort("{.arg extra_features} repeats built-in input{?s} {.val {clash}}.")
+  x <- .wp_structural_frame(dt, extra_features)
+  feature_names <- c(.WP_STRUCTURAL_BASE, if (isTRUE(use_possession)) "home_has_ball", extra_features)
   # Home frame label: the possession-POV wp_label flipped for away rows.
   y <- data.table::fifelse(dt$is_home == 1L, dt$wp_label, 1 - dt$wp_label)
   # More home goals, more away red cards (red_home > 0 = away down to fewer),
   # and a stronger home side must never LOWER the home win chance.
   mono <- c(time_remaining = 0L, m_home = 1L, red_home = 1L, is_second_half = 0L,
-            is_extra_time = 0L, elo_diff = 1L, home_has_ball = 0L)[feature_names]
+            is_extra_time = 0L, elo_diff = 1L, home_has_ball = 0L,
+            stats::setNames(rep(0L, length(extra_features)), extra_features))[feature_names]
   params <- list(booster = "gbtree", objective = "binary:logistic", eval_metric = "logloss",
                  tree_method = "hist", max_depth = max_depth, eta = eta, subsample = 0.8,
                  colsample_bytree = 0.8, min_child_weight = min_child_weight,
@@ -149,7 +159,8 @@ train_wp_structural <- function(wp_features, use_possession = FALSE,
   model <- xgboost::xgb.train(params = params, data = dtrain, nrounds = best, verbose = 0)
   cli::cli_alert_success("Structural WP model ({if (isTRUE(use_possession)) 'with' else 'without'} possession): {nrow(x)} actions, {length(um)} matches, nrounds {best}, CV log loss {round(min(ll), 5)}")
   structure(list(model = model, feature_names = feature_names,
-                 use_possession = isTRUE(use_possession), cv_logloss = min(ll),
+                 use_possession = isTRUE(use_possession), extra_features = extra_features,
+                 cv_logloss = min(ll),
                  optimal_nrounds = best, type = "structural"),
             class = c("panna_wp_structural", "list"))
 }
@@ -166,7 +177,7 @@ train_wp_structural <- function(wp_features, use_possession = FALSE,
 #' @export
 predict_wp_structural <- function(wp_model, wp_features, team_agnostic = FALSE) {
   dt <- data.table::as.data.table(wp_features)
-  x <- .wp_structural_frame(dt)
+  x <- .wp_structural_frame(dt, as.character(wp_model$extra_features))
   if (isTRUE(team_agnostic)) x[, elo_diff := 0]
   fn <- wp_model$feature_names
   sgn <- data.table::fifelse(x$home_has_ball == 1L, 1, -1)
