@@ -47,6 +47,7 @@ worker/src/ep-model.js scoreChainRows lines 289-333 and afl/match.qmd:600).
 Other win probability: 
 \code{\link{add_wp_match_elo}()},
 \code{\link{add_wp_vars}()},
+\code{\link{add_wp_xi_strength}()},
 \code{\link{aggregate_player_game_wpa}()},
 \code{\link{create_wp_features}()},
 \code{\link{load_wp_model}()},

@@ -30,6 +30,7 @@ time remaining, and team strength indicators.
 Other win probability: 
 \code{\link{add_wp_match_elo}()},
 \code{\link{add_wp_vars}()},
+\code{\link{add_wp_xi_strength}()},
 \code{\link{aggregate_player_game_wpa}()},
 \code{\link{assign_wpa_credit}()},
 \code{\link{load_wp_model}()},

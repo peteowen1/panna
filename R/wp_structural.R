@@ -64,6 +64,68 @@ add_wp_match_elo <- function(wp_features, match_elo, min_coverage = 0.95,
   dt
 }
 
+#' Join starting-XI strength onto WP features
+#'
+#' Adds \code{xi_diff} = home XI strength minus away XI strength. A team's XI
+#' strength is 11 x the mean rating of its rated starters, each starter's rating
+#' taken from the latest as-of snapshot dated BEFORE match day
+#' (\code{snapshot <= match_date - 1}, at most \code{roll_days} old). Use a
+#' leak-free as-of rating such as \code{career_panna_asof.parquet} (each monthly
+#' snapshot fitted only on matches up to its date); the weekly PSR is NOT
+#' leak-free for model evaluation, because its coefficients are fitted on all
+#' seasons (panna#273, 2026-11-10). A team with fewer than \code{min_rated}
+#' rated starters gets \code{NA}, never 0.
+#'
+#' @param wp_features Output of \code{\link{create_wp_features}} (needs
+#'   \code{match_id}, \code{team_id}, \code{is_home}).
+#' @param lineups Lineups with \code{match_id}, \code{team_id},
+#'   \code{player_id}, \code{match_date}, \code{is_starter}.
+#' @param ratings As-of ratings: \code{player_id}, \code{ref_date} (or
+#'   \code{snapshot_date}) and \code{panna} (or \code{rating}).
+#' @param roll_days Oldest snapshot accepted, in days (default 62: monthly
+#'   snapshots).
+#' @param min_rated Fewest rated starters for a team value (default 9).
+#'
+#' @return \code{wp_features} as a data.table with \code{xi_diff}; attribute
+#'   \code{xi_table} holds the per team-match values.
+#' @family win probability
+#' @export
+add_wp_xi_strength <- function(wp_features, lineups, ratings, roll_days = 62L,
+                               min_rated = 9L) {
+  dt <- data.table::as.data.table(wp_features)
+  lu <- data.table::as.data.table(lineups)
+  rt <- data.table::as.data.table(ratings)
+  dcol <- intersect(c("ref_date", "snapshot_date"), names(rt))[1]
+  vcol <- intersect(c("panna", "rating"), names(rt))[1]
+  if (is.na(dcol) || is.na(vcol) || !"player_id" %in% names(rt)) {
+    cli::cli_abort("{.arg ratings} needs {.val player_id}, a date ({.val ref_date}) and a value ({.val panna}).")
+  }
+  need_lu <- c("match_id", "team_id", "player_id", "match_date", "is_starter")
+  miss <- setdiff(need_lu, names(lu))
+  if (length(miss)) cli::cli_abort("{.arg lineups} is missing {.val {miss}}.")
+  rt <- rt[!is.na(get(vcol)), .(player_id, snap = as.Date(get(dcol)), r = as.numeric(get(vcol)))]
+  data.table::setkey(rt, player_id, snap)
+  st <- unique(lu[is_starter %in% TRUE & match_id %in% unique(dt$match_id),
+                  .(match_id, team_id, player_id, snap = as.Date(substr(as.character(match_date), 1, 10)) - 1L)])
+  j <- rt[st, on = .(player_id, snap), roll = roll_days, .(match_id, team_id, r = x.r)]
+  xi <- j[, .(n_starters = .N, n_rated = sum(!is.na(r)), xi = 11 * mean(r, na.rm = TRUE)), by = .(match_id, team_id)]
+  xi[n_rated < min_rated, xi := NA_real_]
+  home <- dt[is_home == 1L, .(home_team_id = team_id[1]), by = match_id]
+  away <- dt[is_home == 0L, .(away_team_id = team_id[1]), by = match_id]
+  m <- merge(home, away, by = "match_id", all = TRUE)
+  m[xi, xi_home := i.xi, on = .(match_id, home_team_id = team_id)]
+  m[xi, xi_away := i.xi, on = .(match_id, away_team_id = team_id)]
+  m[, xi_diff := xi_home - xi_away]
+  n_na <- m[is.na(xi_diff), .N]
+  if (n_na > 0L) {
+    cli::cli_alert_warning("No XI strength for {n_na} of {nrow(m)} match{?es} (fewer than {min_rated} rated starters on a side, or no lineup); left NA.")
+  }
+  if ("xi_diff" %in% names(dt)) dt[, xi_diff := NULL]
+  dt[m, xi_diff := i.xi_diff, on = "match_id"]
+  data.table::setattr(dt, "xi_table", xi)
+  dt
+}
+
 # Home-frame model inputs from create_wp_features() output. score_diff and
 # red_card_diff are already home frame there (R/wp_model.R).
 .wp_structural_frame <- function(dt, extra = character()) {

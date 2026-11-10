@@ -42,6 +42,7 @@ values.
 Other win probability: 
 \code{\link{add_wp_match_elo}()},
 \code{\link{add_wp_vars}()},
+\code{\link{add_wp_xi_strength}()},
 \code{\link{assign_wpa_credit}()},
 \code{\link{create_wp_features}()},
 \code{\link{load_wp_model}()},

@@ -81,6 +81,29 @@ test_that("extra_features are stored, used at prediction, NA-tolerant, and requi
   expect_error(train_wp_structural(d, extra_features = "elo_diff"), "repeats")
 })
 
+test_that("add_wp_xi_strength uses the snapshot before match day, x11 mean, NA under min_rated", {
+  wf <- data.table::data.table(match_id = c("m1", "m1", "m2", "m2"), team_id = c("H", "A", "H", "A"),
+                               is_home = c(1L, 0L, 1L, 0L))
+  lu <- data.table::rbindlist(list(
+    data.table::data.table(match_id = "m1", team_id = "H", player_id = paste0("h", 1:11), match_date = "2026-03-01", is_starter = TRUE),
+    data.table::data.table(match_id = "m1", team_id = "A", player_id = paste0("a", 1:11), match_date = "2026-03-01", is_starter = TRUE),
+    data.table::data.table(match_id = "m2", team_id = "H", player_id = paste0("h", 1:11), match_date = "2026-01-15", is_starter = TRUE),
+    data.table::data.table(match_id = "m2", team_id = "A", player_id = paste0("a", 1:11), match_date = "2026-01-15", is_starter = TRUE),
+    data.table::data.table(match_id = "m1", team_id = "H", player_id = "sub1", match_date = "2026-03-01", is_starter = FALSE)))
+  rt <- data.table::rbindlist(list(
+    data.table::data.table(player_id = paste0("h", 1:11), ref_date = as.Date("2026-02-01"), panna = 0.10),
+    data.table::data.table(player_id = paste0("h", 1:11), ref_date = as.Date("2026-03-01"), panna = 9),   # match day: never used
+    data.table::data.table(player_id = paste0("a", 1:10), ref_date = as.Date("2026-02-01"), panna = -0.05),
+    data.table::data.table(player_id = "sub1", ref_date = as.Date("2026-02-01"), panna = 5)))
+  out <- suppressMessages(add_wp_xi_strength(wf, lu, rt))
+  # m1: home 11 x 0.10 = 1.1; away 10 rated x -0.05 -> 11 x mean = -0.55; diff 1.65
+  expect_equal(out[match_id == "m1", unique(xi_diff)], 1.65, tolerance = 1e-12)
+  # m2 (2026-01-15): no snapshot on or before 2026-01-14 -> NA, not 0
+  expect_true(all(is.na(out[match_id == "m2", xi_diff])))
+  out9 <- suppressMessages(add_wp_xi_strength(wf, lu, rt, min_rated = 11L))
+  expect_true(all(is.na(out9[match_id == "m1", xi_diff])))   # away has only 10 rated
+})
+
 test_that("missing Elo or epv is refused, not filled", {
   skip_if_not_installed("xgboost")
   d <- wps_fx(n_match = 80L)

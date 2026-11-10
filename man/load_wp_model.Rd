@@ -26,6 +26,7 @@ Resolution order, matching load_epv_model() / load_xpass_model():
 Other win probability: 
 \code{\link{add_wp_match_elo}()},
 \code{\link{add_wp_vars}()},
+\code{\link{add_wp_xi_strength}()},
 \code{\link{aggregate_player_game_wpa}()},
 \code{\link{assign_wpa_credit}()},
 \code{\link{create_wp_features}()},
