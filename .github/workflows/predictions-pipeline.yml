@@ -286,6 +286,9 @@ jobs:
           # enrich calls read the consolidated opta_xmetrics_bymatch.parquet
           # from opta-latest instead.
           XMETRICS_SOURCE: remote
+          # 10b prints RSS and the process peak at each stage of each league (.rss_note), so a
+          # memory regression shows which league and stage (panna#273 dry run, 2026-11-10).
+          PANNA_LOG_RSS: '1'
         run: |
           Rscript -e "
             # Point panna at downloaded Opta data

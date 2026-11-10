@@ -816,7 +816,7 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
       .stage("net goals ledger + EPV adjustments")
 
       # --- WPA path ---
-      wp_feat <- NULL   # the ledger below reads it; never last league's
+      wp_feat <- NULL; match_results <- NULL   # the ledger below reads them; never last league's
       player_game_wpa <- tryCatch({
         match_results <- .build_match_results_from_events(events, lineups)
 
@@ -853,7 +853,7 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
       # --- WPA ledger (panna#273; additive, see where wpa_ledger_model is loaded) ---
       # Needs this league's net goals inputs (actions with xPass/xGOT, adjacency, fixtures), so it
       # runs only where that ledger was built. A failure drops these columns, never the game logs.
-      wpal_cols <- NULL
+      wpal_cols <- NULL; wpal_fx <- NULL
       if (!is.null(wpa_ledger_model) && !is.null(wp_feat) && !is.null(ng_cols)) {
         wpal_cols <- tryCatch({
           wl <- data.table::as.data.table(wp_feat)[match_id %in% unique(spadl_ng$match_id)]
@@ -867,7 +867,18 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
           # missing (the model was trained with it missing on some matches), and counted here.
           message(sprintf("    WPA ledger inputs (%s): %d matches; Elo on %d, XI on %s", league,
                           length(all_m), length(elo_m), if (is.na(xi_n)) "n/a" else xi_n))
-          fx_l <- data.table::as.data.table(ng_fx)
+          # The result comes from the events (extra time in, shootout out), the same count that
+          # labels the WP model. opta_fixtures' home/away_score is the 90-minute score: on
+          # 2026-11-10 that left 8 UCL/UECL qualifiers decided in extra time off by 0.5 and the
+          # whole league's ledger skipped. (Net goals reconciles to the fixture score: unchecked.)
+          fx_l <- data.table::as.data.table(ng_fx)[match_id %in% all_m]
+          fx_l[, `:=`(home_score = as.numeric(home_score), away_score = as.numeric(away_score))]
+          mr_l <- data.table::as.data.table(match_results)[, .(match_id, ev_home = as.numeric(home_goals), ev_away = as.numeric(away_goals))]
+          n_et <- fx_l[mr_l, on = "match_id", nomatch = NULL][, sum(ev_home != home_score | ev_away != away_score, na.rm = TRUE)]
+          fx_l[mr_l, `:=`(home_score = i.ev_home, away_score = i.ev_away), on = "match_id"]
+          if (anyNA(fx_l$home_score) || anyNA(fx_l$away_score)) stop("events give no score for some matches")
+          if (n_et > 0) message(sprintf("    WPA ledger (%s): %d match%s scored from the events, not the 90-minute fixture score (extra time)",
+                                        league, n_et, if (n_et == 1) "" else "es"))
           run_ledger <- function(mids, agnostic) {
             w <- wl[match_id %in% mids]
             if (agnostic) w[is.na(elo_diff), elo_diff := 0]   # zeroed by team_agnostic anyway
@@ -884,6 +895,7 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
             out[tv, `:=`(wpa_team = i.wpa_neutral, wpa_team_start = i.wpa_start),
                 on = c("match_id", "player_id")]
           } else out[, `:=`(wpa_team = NA_real_, wpa_team_start = NA_real_)]
+          wpal_fx <- fx_l   # the post-fold check below uses the same results
           rm(wl, ag); out
         }, error = function(e) {
           message(sprintf("    WPA ledger SKIPPED for %s: %s", league, conditionMessage(e)))
@@ -1242,7 +1254,7 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
                       wf[, c("match_id", "player_id", wpal_v), with = FALSE],
                       by = c("match_id", "player_id"), all.x = TRUE)
           # Conservation on what is published: each team's rows sum to its result minus 0.5.
-          fx_c <- data.table::as.data.table(ng_fx)[match_id %in% unique(wf$match_id)]
+          fx_c <- data.table::as.data.table(wpal_fx)[match_id %in% unique(wf$match_id)]
           fx_c[, res_home := data.table::fifelse(home_score > away_score, 1,
                              data.table::fifelse(home_score < away_score, 0, 0.5))]
           tg <- rbind(fx_c[, .(match_id, team_id = home_team_id, target = res_home - 0.5)],
