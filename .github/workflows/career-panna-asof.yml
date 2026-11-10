@@ -19,7 +19,7 @@ on:
         default: false
   # Monthly (panna#273): 10b's XI strength reads the snapshot dated on or before the day before
   # each match, at most 62 days old, so a file left a month stale costs XI on new matches.
-  # 20:00 UTC on the 2nd = 7am Sydney on the 3rd. A scheduled run publishes; it runs main's copy.
+  # 20:00 UTC on the 2nd = 7am Sydney on the 3rd in summer (AEDT), 6am in winter. A scheduled run publishes; it runs main's copy.
   schedule:
     - cron: "0 20 2 * *"
   push:

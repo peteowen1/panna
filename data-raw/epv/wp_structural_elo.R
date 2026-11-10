@@ -16,10 +16,22 @@ WP_ELO_EXTRA_LEAGUES <- c("BEL", "MEX", "SAU", "AUS", "MLS", "ARG", "BRA", "LIB"
 #' @param out_dir Folder for the step-01 fixture tables and match_elo.parquet.
 #' @param rebuild TRUE rebuilds from the current fixtures (serving: new results every week);
 #'   FALSE reuses match_elo.parquet when present (training reruns).
+#' @param isolate TRUE builds in a child R process (callr): step 01 runs library(dplyr) and
+#'   devtools::load_all(), which would otherwise attach dplyr and reload the package inside the
+#'   caller (10b) mid-run. The child's memory is also handed back when it exits.
 #' @return data.table, one row per played match: match_id, match_date, home/away Elo, elo_diff.
-wp_structural_match_elo <- function(out_dir, rebuild = FALSE) {
+wp_structural_match_elo <- function(out_dir, rebuild = FALSE, isolate = TRUE) {
   elo_path <- file.path(out_dir, "match_elo.parquet")
   if (!rebuild && file.exists(elo_path)) return(data.table::as.data.table(arrow::read_parquet(elo_path)))
+  if (isTRUE(isolate)) {
+    callr::r(function(out_dir, rebuild) {
+      suppressMessages(devtools::load_all(".", quiet = TRUE))
+      source("data-raw/epv/wp_structural_elo.R")
+      invisible(wp_structural_match_elo(out_dir, rebuild = rebuild, isolate = FALSE))
+    }, args = list(out_dir = normalizePath(out_dir, mustWork = FALSE), rebuild = rebuild),
+    wd = getwd(), show = TRUE)
+    return(data.table::as.data.table(arrow::read_parquet(elo_path)))
+  }
   t0 <- Sys.time()
   fx_list <- list()
   for (grp in c("base", "extra")) {

@@ -149,4 +149,10 @@ test_that("ng_fold_unpublished folds any value columns and keeps team totals", {
                                               value_cols = "wpa_x"))
   expect_equal(sum(out$wpa_x), 0.35, tolerance = 1e-12)
   expect_equal(out[player_id == "a", wpa_x], 0.2 + 0.05 * 0.75, tolerance = 1e-12)
+  # A column NA for the whole match (team-value WPA where the match has no Elo) stays NA, not 0.
+  ng[, wpa_y := NA_real_]
+  out2 <- suppressMessages(ng_fold_unpublished(ng, data.frame(match_id = "m", player_id = c("a", "b")),
+                                               value_cols = c("wpa_x", "wpa_y")))
+  expect_true(all(is.na(out2$wpa_y)))
+  expect_equal(sum(out2$wpa_x), 0.35, tolerance = 1e-12)
 })

@@ -192,14 +192,15 @@ wpa_ledger_model <- if (exists("wp_structural_model_override")) wp_structural_mo
   if (file.exists(.p)) readRDS(.p) else { message(sprintf("  WPA ledger OFF: no structural WP model at %s", .p)); NULL }
 }
 wpa_elo <- NULL; wpa_cpa <- NULL
-if (!is.null(wpa_ledger_model)) {
-  if (!identical(wpa_ledger_model$type, "structural")) stop("wp_structural model is not a train_wp_structural() fit")
+if (!is.null(wpa_ledger_model)) tryCatch({
+  if (!identical(wpa_ledger_model$type, "structural")) stop("the model is not a train_wp_structural() fit")
   source("data-raw/epv/wp_structural_elo.R")
-  # Rebuilt every run: this week's results move every later match's pre-match Elo.
+  # Rebuilt every run (this week's results move every later match's pre-match Elo), in a child
+  # R process so step 01's library()/load_all() calls stay out of this one.
   wpa_elo <- wp_structural_match_elo(file.path(cache_dir, "wp_structural"), rebuild = TRUE)
   if ("xi_diff" %in% wpa_ledger_model$extra_features) {
     .cpa_path <- file.path(opta_data_dir(), "career_panna_asof.parquet")
-    if (!file.exists(.cpa_path)) stop("WPA ledger: the model needs XI strength and ", .cpa_path, " is missing")
+    if (!file.exists(.cpa_path)) stop("the model needs XI strength and ", .cpa_path, " is missing")
     wpa_cpa <- data.table::as.data.table(arrow::read_parquet(.cpa_path, col_select = c("player_id", "ref_date", "panna")))
     # Snapshots are monthly and add_wp_xi_strength() reaches back 62 days, so an old file shows
     # up as matches with no XI. Said here so a stale file is visible before the per-league counts.
@@ -208,7 +209,11 @@ if (!is.null(wpa_ledger_model)) {
                     as.integer(Sys.Date() - as.Date(max(wpa_cpa$ref_date)))))
   }
   message(sprintf("  WPA ledger ON: structural model, inputs %s", paste(wpa_ledger_model$feature_names, collapse = ", ")))
-}
+}, error = function(e) {
+  # The ledger is additive: a setup failure turns it off for the run, never the game logs.
+  message(sprintf("!! WPA ledger OFF for this run: setup failed (%s)", conditionMessage(e)))
+  wpa_ledger_model <<- NULL; wpa_elo <<- NULL; wpa_cpa <<- NULL
+})
 # xG and xGOT that price every shot in the game logs and the net goals ledger.
 # Unset, the default published models. To switch to the context models, a driver
 # sets xg_model_override <- load_xg_model(name = "xg_model_v5") and
