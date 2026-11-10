@@ -33,8 +33,16 @@ if (nzchar(Sys.getenv("GATE_UNITS"))) {
 }
 say("units: %d train, %d hold-out", units[role == "train", .N], units[role == "hold", .N])
 
-md <- as.data.table(readRDS("C:/dev/pannaverse/panna/data-raw/cache-predictions-opta/04_match_dataset.rds"))
-elo <- unique(md[!is.na(elo_diff), .(match_id, elo_diff)], by = "match_id"); rm(md)
+# Pre-match Elo: every league from elo_all_leagues.R when present, else the 14 competitions in 04_match_dataset.
+elo_all <- file.path(out, "match_elo_all.parquet")
+elo <- if (file.exists(elo_all)) {
+  say("Elo source: %s", elo_all)
+  as.data.table(arrow::read_parquet(elo_all, col_select = c("match_id", "elo_diff")))
+} else {
+  say("Elo source: 04_match_dataset.rds (14 competitions only)")
+  as.data.table(readRDS("C:/dev/pannaverse/panna/data-raw/cache-predictions-opta/04_match_dataset.rds"))[, .(match_id, elo_diff)]
+}
+elo <- unique(elo[!is.na(elo_diff)], by = "match_id")
 
 keep <- unique(c("match_id", "action_id", "team_id", "period_id", "time_seconds", "score_diff", "is_home",
                  "red_card_diff", "time_remaining", "is_second_half", "is_extra_time", "epv", "wp_label",
