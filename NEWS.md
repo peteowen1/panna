@@ -8,6 +8,15 @@
   at 0 (the site's team-agnostic WPA). Hold-out, seasons ending 2026, 14 competitions, 4,203 matches:
   log loss 0.4841 vs 0.5031 for the published model, and a goal is worth 31 lost possessions instead
   of 6. Not wired into any pipeline yet; the published WP model is unchanged.
+- `train_wp_structural()` now defaults to `use_possession = TRUE` (SEP, chosen 2026-11-10), and
+  `team_agnostic = TRUE` zeroes the starting-XI gap `xi_diff` as well as the Elo gap, so the
+  team-agnostic view carries no team strength at all.
+- `ng_fold_unpublished()` gains `value_cols`, so the WPA ledger's columns fold the same way.
+- Step 10b builds the WPA ledger when a structural WP model is supplied (`wp_structural_model_override`
+  or `_path`): additive columns `wpa_neutral` (+ `_offence`, `_defence`; team-agnostic, each team sums to
+  result - 0.5), `wpa_team` and `wpa_team_start` (team-value, real Elo + XI gap; NA where a match has no
+  Elo). Pre-match Elo for every league comes from `data-raw/epv/wp_structural_elo.R`, shared with 05d.
+  Off by default until the model is published. `career-panna-asof.yml` runs monthly.
 
 # panna 0.3.117
 

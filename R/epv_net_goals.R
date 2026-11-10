@@ -1909,16 +1909,19 @@ ng_adjust_for_rating <- function(player_game, positions, by_season = TRUE,
 #' @param published A frame with the `match_id` + `player_id` pairs that will be
 #'   published.
 #' @param verbose Print what was folded. Default `TRUE`.
+#' @param value_cols The value columns to fold, first one used in the report.
+#'   Default the three net goals columns; the WPA ledger (panna#273) passes its
+#'   own.
 #'
 #' @return `ng` restricted to the published pairs, with each team's totals
 #'   preserved exactly.
 #'
 #' @family net_goals
 #' @export
-ng_fold_unpublished <- function(ng, published, verbose = TRUE) {
+ng_fold_unpublished <- function(ng, published, verbose = TRUE,
+                                value_cols = c("net_goals", "ng_offensive", "ng_defensive")) {
   d <- data.table::as.data.table(ng)
-  need <- c("match_id", "player_id", "team_id", "minutes_played",
-            "net_goals", "ng_offensive", "ng_defensive")
+  need <- c("match_id", "player_id", "team_id", "minutes_played", value_cols)
   missing <- setdiff(need, names(d))
   if (length(missing)) {
     cli::cli_abort("{.fn ng_fold_unpublished} needs column{?s} {.val {missing}}.")
@@ -1936,7 +1939,7 @@ ng_fold_unpublished <- function(ng, published, verbose = TRUE) {
     return(d[])
   }
 
-  vcols <- c("net_goals", "ng_offensive", "ng_defensive")
+  vcols <- value_cols
   # What each team is owed by players the frame will not carry.
   owed <- d[.published == FALSE, lapply(.SD, sum, na.rm = TRUE),
             by = .(match_id, team_id), .SDcols = vcols]
@@ -1959,7 +1962,7 @@ ng_fold_unpublished <- function(ng, published, verbose = TRUE) {
   for (v in vcols) keep[, (v) := get(v) + get(paste0("owed_", v)) * .w]
 
   n_folded <- sum(!d$.published)
-  v_folded <- sum(d[.published == FALSE]$net_goals, na.rm = TRUE)
+  v_folded <- sum(d[.published == FALSE][[vcols[1]]], na.rm = TRUE)
   keep[, c(".published", ".w", paste0("owed_", vcols)) := NULL]
 
   # A team that has NO published rows cannot receive its own value back. Report
@@ -1969,13 +1972,13 @@ ng_fold_unpublished <- function(ng, published, verbose = TRUE) {
   if (nrow(orphan_teams) > 0) {
     cli::cli_warn(paste0(
       "{nrow(orphan_teams)} team-match{?es} have unpublished value but no ",
-      "published rows to fold it into; {round(sum(orphan_teams$owed_net_goals), 3)} ",
-      "goals cannot be placed."))
+      "published rows to fold it into; {round(sum(orphan_teams[[paste0('owed_', vcols[1])]]), 3)} ",
+      "of {.field {vcols[1]}} cannot be placed."))
   }
 
   if (isTRUE(verbose)) {
     cli::cli_alert_success(paste0(
-      "Folded {n_folded} unpublished row{?s} worth {round(v_folded, 3)} goals ",
+      "Folded {n_folded} unpublished row{?s} worth {round(v_folded, 3)} ({vcols[1]}) ",
       "back to their teams; published team totals now match the ledger exactly."))
   }
   keep[]

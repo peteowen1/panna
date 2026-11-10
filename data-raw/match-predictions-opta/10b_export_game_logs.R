@@ -181,6 +181,34 @@ message(sprintf("  Alias (game_logs.parquet) → %s", current_season_alias))
 epv_model   <- if (exists("epv_model_override")) epv_model_override else load_epv_model()
 xpass_model <- load_xpass_model()
 wp_model    <- if (exists("wp_model_override")) wp_model_override else load_wp_model()
+# WPA ledger (panna#273, ADDITIVE: the published wpa_* columns above are untouched). The structural
+# WP model (SEP + XI strength, 05d_train_wp_structural.R) scores every action twice -- team-agnostic
+# (both teams level, start 50/50) and team-value (the real Elo + XI gap) -- and wpa_build_ledger()
+# makes each team's players sum to its result minus 0.5. Off when no structural model is found: it is
+# not published yet, so until it is a driver sets wp_structural_model_override or _path.
+wpa_ledger_model <- if (exists("wp_structural_model_override")) wp_structural_model_override else {
+  .p <- if (exists("wp_structural_model_path")) wp_structural_model_path else
+    file.path("data-raw", "cache", "epv", "wp_structural", "wp_structural_model.rds")
+  if (file.exists(.p)) readRDS(.p) else { message(sprintf("  WPA ledger OFF: no structural WP model at %s", .p)); NULL }
+}
+wpa_elo <- NULL; wpa_cpa <- NULL
+if (!is.null(wpa_ledger_model)) {
+  if (!identical(wpa_ledger_model$type, "structural")) stop("wp_structural model is not a train_wp_structural() fit")
+  source("data-raw/epv/wp_structural_elo.R")
+  # Rebuilt every run: this week's results move every later match's pre-match Elo.
+  wpa_elo <- wp_structural_match_elo(file.path(cache_dir, "wp_structural"), rebuild = TRUE)
+  if ("xi_diff" %in% wpa_ledger_model$extra_features) {
+    .cpa_path <- file.path(opta_data_dir(), "career_panna_asof.parquet")
+    if (!file.exists(.cpa_path)) stop("WPA ledger: the model needs XI strength and ", .cpa_path, " is missing")
+    wpa_cpa <- data.table::as.data.table(arrow::read_parquet(.cpa_path, col_select = c("player_id", "ref_date", "panna")))
+    # Snapshots are monthly and add_wp_xi_strength() reaches back 62 days, so an old file shows
+    # up as matches with no XI. Said here so a stale file is visible before the per-league counts.
+    message(sprintf("  WPA ledger: career Panna as-of %d snapshots, latest %s (%d days old)",
+                    data.table::uniqueN(wpa_cpa$ref_date), max(wpa_cpa$ref_date),
+                    as.integer(Sys.Date() - as.Date(max(wpa_cpa$ref_date)))))
+  }
+  message(sprintf("  WPA ledger ON: structural model, inputs %s", paste(wpa_ledger_model$feature_names, collapse = ", ")))
+}
 # xG and xGOT that price every shot in the game logs and the net goals ledger.
 # Unset, the default published models. To switch to the context models, a driver
 # sets xg_model_override <- load_xg_model(name = "xg_model_v5") and
@@ -626,6 +654,7 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
 
       ng_cols <- NULL   # reset per league: a skip must not inherit the last one's
       ng_pay <- NULL; ng_pre <- NULL
+      spadl_ng <- NULL; ng_adj <- NULL; ng_fx <- NULL   # the WPA ledger reuses these; never last league's
       # --- Net goals ledger (ADDITIVE; every production column above is
       # untouched). Three columns join the frame: `net_goals` and its two
       # halves. The ledger allocates each action so a team's players sum to
@@ -672,8 +701,9 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
         }
         ng_fx <- as.data.frame(load_opta_fixtures(league, season = league_season,
                                                   source = "local"))
+        ng_adj <- ng_build_adjacency(events, verbose = FALSE)
         ng_pay <- ng_build_ledger(spadl_ng,
-                                  adj = ng_build_adjacency(events, verbose = FALSE),
+                                  adj = ng_adj,
                                   fixtures = ng_fx, lineups = lineups, verbose = FALSE)
         # Which shot-aftermath line this league-season used, said now and with
         # the league's name: a small tournament borrows the default line, and
@@ -781,6 +811,7 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
       .stage("net goals ledger + EPV adjustments")
 
       # --- WPA path ---
+      wp_feat <- NULL   # the ledger below reads it; never last league's
       player_game_wpa <- tryCatch({
         match_results <- .build_match_results_from_events(events, lineups)
 
@@ -813,6 +844,48 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
       })
 
       .stage("WPA")
+
+      # --- WPA ledger (panna#273; additive, see where wpa_ledger_model is loaded) ---
+      # Needs this league's net goals inputs (actions with xPass/xGOT, adjacency, fixtures), so it
+      # runs only where that ledger was built. A failure drops these columns, never the game logs.
+      wpal_cols <- NULL
+      if (!is.null(wpa_ledger_model) && !is.null(wp_feat) && !is.null(ng_cols)) {
+        wpal_cols <- tryCatch({
+          wl <- data.table::as.data.table(wp_feat)[match_id %in% unique(spadl_ng$match_id)]
+          wl <- suppressMessages(add_wp_match_elo(wl, wpa_elo, min_coverage = 0, drop_missing = FALSE))
+          if (!is.null(wpa_cpa)) wl <- suppressMessages(add_wp_xi_strength(wl, lineups, wpa_cpa))
+          all_m <- unique(wl$match_id)
+          elo_m <- unique(wl$match_id[!is.na(wl$elo_diff)])
+          xi_n  <- if ("xi_diff" %in% names(wl)) data.table::uniqueN(wl$match_id[!is.na(wl$xi_diff)]) else NA_integer_
+          # A match with no Elo gets no team-value WPA (NA, never scored as an even match); the
+          # team-agnostic view needs no strength input, so it covers every match. No XI is scored as
+          # missing (the model was trained with it missing on some matches), and counted here.
+          message(sprintf("    WPA ledger inputs (%s): %d matches; Elo on %d, XI on %s", league,
+                          length(all_m), length(elo_m), if (is.na(xi_n)) "n/a" else xi_n))
+          fx_l <- data.table::as.data.table(ng_fx)
+          run_ledger <- function(mids, agnostic) {
+            w <- wl[match_id %in% mids]
+            if (agnostic) w[is.na(elo_diff), elo_diff := 0]   # zeroed by team_agnostic anyway
+            w <- add_wp_vars(w, wpa_ledger_model, centre = FALSE, team_agnostic = agnostic)
+            data.table::as.data.table(wpa_build_ledger(
+              spadl_ng[spadl_ng$match_id %in% mids, ], w[, .(match_id, action_id, team_id, wp, wpa)],
+              fixtures = fx_l[match_id %in% mids], lineups = lineups, adj = ng_adj, verbose = TRUE))
+          }
+          ag <- run_ledger(all_m, agnostic = TRUE)
+          out <- ag[, .(match_id, player_id, team_id, minutes_played, wpa_neutral,
+                        wpa_neutral_offence = wpa_offence, wpa_neutral_defence = wpa_defence)]
+          if (length(elo_m)) {
+            tv <- run_ledger(elo_m, agnostic = FALSE)
+            out[tv, `:=`(wpa_team = i.wpa_neutral, wpa_team_start = i.wpa_start),
+                on = c("match_id", "player_id")]
+          } else out[, `:=`(wpa_team = NA_real_, wpa_team_start = NA_real_)]
+          rm(wl, ag); out
+        }, error = function(e) {
+          message(sprintf("    WPA ledger SKIPPED for %s: %s", league, conditionMessage(e)))
+          NULL
+        })
+        .rss_note("after WPA ledger")
+      }
       # --- PSV path ---
       # Centre on the league-season's FULL box-score population, then keep only
       # the rows that have game logs (event coverage). compute_player_psv()
@@ -1152,6 +1225,38 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
                             nrow(bd), data.table::uniqueN(bd$category)))
           }
         }
+      }
+      if (!is.null(wpal_cols)) {
+        # Same fold as net goals: a substitute who never touched the ball is paid by the ledger but
+        # has no row here, so their value goes back to their team-mates by minutes.
+        wpal_v <- c("wpa_neutral", "wpa_neutral_offence", "wpa_neutral_defence", "wpa_team", "wpa_team_start")
+        game_ratings <- tryCatch({
+          wf <- ng_fold_unpublished(wpal_cols, data.table::as.data.table(game_ratings)[, .(match_id, player_id)],
+                                    verbose = FALSE, value_cols = wpal_v)
+          gr <- merge(data.table::as.data.table(game_ratings),
+                      wf[, c("match_id", "player_id", wpal_v), with = FALSE],
+                      by = c("match_id", "player_id"), all.x = TRUE)
+          # Conservation on what is published: each team's rows sum to its result minus 0.5.
+          fx_c <- data.table::as.data.table(ng_fx)[match_id %in% unique(wf$match_id)]
+          fx_c[, res_home := data.table::fifelse(home_score > away_score, 1,
+                             data.table::fifelse(home_score < away_score, 0, 0.5))]
+          tg <- rbind(fx_c[, .(match_id, team_id = home_team_id, target = res_home - 0.5)],
+                      fx_c[, .(match_id, team_id = away_team_id, target = 0.5 - res_home)])
+          tt <- gr[!is.na(wpa_neutral), .(n = sum(wpa_neutral), t = sum(wpa_team)), by = .(match_id, team_id)]
+          tt[tg, target := i.target, on = c("match_id", "team_id")]
+          gap_n <- max(abs(tt$n - tt$target), na.rm = TRUE)
+          gap_t <- suppressWarnings(max(abs(tt$t - tt$target), na.rm = TRUE))
+          if (anyNA(tt$target) || gap_n > 1e-6 || (is.finite(gap_t) && gap_t > 1e-6)) {
+            stop(sprintf("published rows do not conserve (agnostic gap %.3g, team-value gap %.3g, %d team-matches without a result)",
+                         gap_n, gap_t, sum(is.na(tt$target))))
+          }
+          message(sprintf("    WPA ledger: %d of %d published rows; team-value on %d; every team within %.1g of result - 0.5",
+                          sum(!is.na(gr$wpa_neutral)), nrow(gr), sum(!is.na(gr$wpa_team)), max(gap_n, gap_t, na.rm = TRUE)))
+          gr
+        }, error = function(e) {
+          message(sprintf("    WPA ledger DROPPED for %s: %s", league, conditionMessage(e)))
+          game_ratings
+        })
       }
       game_ratings[, league := league]
       game_ratings[, season := season]
@@ -1531,6 +1636,8 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
       # intersect() above drops it silently in that case, which is intended.
       "net_goals", "ng_offensive", "ng_defensive", "ng_recon",
       "wpa_total", "wpa_as_actor", "wpa_as_receiver",
+      # WPA ledger (panna#273): present only when a structural WP model was loaded.
+      "wpa_neutral", "wpa_neutral_offence", "wpa_neutral_defence", "wpa_team", "wpa_team_start",
       "psv", "osv", "dsv", "psv_league_offset",
       "goals_minus_xgot", "placement_added", "xgot",
       "gsaa", "gsaa_per90", "xgot_faced", "goals_conceded",

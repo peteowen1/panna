@@ -7,7 +7,7 @@
 \usage{
 train_wp_structural(
   wp_features,
-  use_possession = FALSE,
+  use_possession = TRUE,
   nrounds = 600L,
   max_depth = 4L,
   eta = 0.1,
@@ -26,9 +26,9 @@ predict_wp_structural(wp_model, wp_features, team_agnostic = FALSE)
 \code{wp_label}, joined to Elo by \code{\link{add_wp_match_elo}}.}
 
 \item{use_possession}{Add \code{home_has_ball} as an input (default
-\code{FALSE}). With strength in the model this measures what possession is
-worth beyond team quality; 2026-11-10 EPL hold-out: 1.6 points, no gain in
-log loss.}
+\code{TRUE}: the SEP model Pete chose 2026-11-10). With strength in the
+model this measures what possession is worth beyond team quality;
+2026-11-10 EPL hold-out: 1.6 points, no gain in log loss.}
 
 \item{nrounds, max_depth, eta, nfolds, min_child_weight, early_stopping_rounds, seed}{XGBoost / CV settings.}
 
@@ -42,9 +42,10 @@ so prediction needs the same columns.}
 
 \item{wp_model}{A model from \code{train_wp_structural()}.}
 
-\item{team_agnostic}{Score with the Elo gap set to 0, i.e. as if the two
-teams were equally strong (the site's team-agnostic WPA view). Home
-advantage stays in.}
+\item{team_agnostic}{Score with every team-strength input set to 0 -- the
+Elo gap and, when the model has it, the starting-XI gap \code{xi_diff} --
+i.e. as if the two teams were equally strong (the site's team-agnostic WPA
+view). Home advantage stays in.}
 }
 \value{
 A list of class \code{panna_wp_structural} with \code{model},
