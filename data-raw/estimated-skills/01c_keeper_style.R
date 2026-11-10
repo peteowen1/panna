@@ -51,7 +51,10 @@ cat(sprintf("Saved to %s (%s)\n", out_path, format(file.mtime(out_path))))
 # pannadata build-blog-data passes it to R2 as football/keeper-style.parquet.
 kst <- build_keeper_style_table(ms, ks)
 kst_path <- file.path(dirname(out_path), "keeper-style.parquet")
-arrow::write_parquet(kst, kst_path)
+# Sorted by team_id in ~20 row groups (like game-logs, pannadata#225): the site
+# reads two clubs per match page and skips row groups by team_id min/max.
+data.table::setorder(kst, team_id, season_end_year, stat, after_date)
+arrow::write_parquet(kst, kst_path, chunk_size = max(1000L, ceiling(nrow(kst) / 20)))
 data.table::fwrite(kst, sub("\\.parquet$", ".csv", kst_path))
 cat(sprintf("Keeper style table: %s rows, seasons %s, %d club-seasons, latest after_date %s -> %s (+ .csv)\n",
             format(nrow(kst), big.mark = ","), paste(sort(unique(kst$season_end_year)), collapse = "/"),
