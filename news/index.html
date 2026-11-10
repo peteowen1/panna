@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.116</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.117</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,10 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.117" id="panna-03117">panna 0.3.117<a class="anchor" aria-label="anchor" href="#panna-03117"></a></h2>
+<ul><li>Keeper style (<code>_kadj</code>, panna#429): a club new to the data (promoted from a tier we don’t cover, or a cup side) now counts as an average club (style 0) and gets the in-season club shift from its matches this season. Before, its keepers kept the raw value all season: on 2026-11-10 that was 24 of the game logs’ 343 teams. The published <code>keeper-style.parquet</code> carries these clubs with <code>club_style</code> 0, and is now sorted by <code>team_id</code> in about 20 row groups so the site reads a few KB per match page (ITG, pannadata#225 pattern). The first season in the data still stays raw. Keeper PSR was trained on the old values for these rows, so the next step 07 retrain picks it up.</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.116" id="panna-03116">panna 0.3.116<a class="anchor" aria-label="anchor" href="#panna-03116"></a></h2>
 <ul><li>Step 10b applies the club-adjusted keeper columns (<code>_kadj</code>, panna#429) after trimming match stats to the seasons it builds, not on the full 2.1M-row table. On the 16 GB GitHub runner the full-table pass ran out of memory: the daily predictions run lost its runner three times on 2026-11-09/10, so no game logs, blog data or keeper-style published after 2026-11-08. The values are unchanged (the in-season club term reads only the same club-season, and the trim keeps whole seasons); a new test in <code>test-keeper-style.R</code> checks it.</li>

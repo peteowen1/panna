@@ -1,5 +1,18 @@
 # Changelog
 
+## panna 0.3.117
+
+- Keeper style (`_kadj`, panna#429): a club new to the data (promoted
+  from a tier we don’t cover, or a cup side) now counts as an average
+  club (style 0) and gets the in-season club shift from its matches this
+  season. Before, its keepers kept the raw value all season: on
+  2026-11-10 that was 24 of the game logs’ 343 teams. The published
+  `keeper-style.parquet` carries these clubs with `club_style` 0, and is
+  now sorted by `team_id` in about 20 row groups so the site reads a few
+  KB per match page (ITG, pannadata#225 pattern). The first season in
+  the data still stays raw. Keeper PSR was trained on the old values for
+  these rows, so the next step 07 retrain picks it up.
+
 ## panna 0.3.116
 
 - Step 10b applies the club-adjusted keeper columns (`_kadj`, panna#429)
