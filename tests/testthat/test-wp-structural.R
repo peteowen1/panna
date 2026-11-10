@@ -37,7 +37,7 @@ test_that("add_wp_match_elo joins pre-match Elo, reports and drops uncovered mat
 test_that("train/predict: possession POV, monotone in lead and strength, agnostic sets the gap to 0", {
   skip_if_not_installed("xgboost")
   d <- wps_fx()
-  m <- suppressMessages(train_wp_structural(d, nrounds = 60L, nfolds = 3L))
+  m <- suppressMessages(train_wp_structural(d, use_possession = FALSE, nrounds = 60L, nfolds = 3L))
   expect_s3_class(m, "panna_wp_structural")
   expect_false("home_has_ball" %in% m$feature_names)
   probe <- data.table::data.table(match_id = "p", team_id = "H", time_remaining = 0.3,
@@ -53,6 +53,7 @@ test_that("train/predict: possession POV, monotone in lead and strength, agnosti
   # Team-agnostic: the Elo gap is ignored.
   ag <- predict_wp(m, probe, team_agnostic = TRUE)
   expect_equal(ag[4], ag[2], tolerance = 1e-6); expect_equal(ag[5], ag[2], tolerance = 1e-6)
+  expect_true(isTRUE(formals(train_wp_structural)$use_possession))   # SEP is the default
   # Threat: more epv for the possessor never lowers its win chance.
   thr <- data.table::copy(probe[2])[rep(1, 3)][, epv := c(-0.1, 0, 0.3)]
   pt <- predict_wp(m, thr)
@@ -124,4 +125,34 @@ test_that("add_wp_vars with a structural model: raw match total = result minus o
   open_home <- if (out$is_home[1] == 1L) out$wp[1] else 1 - out$wp[1]
   res_home <- if (one$is_home[1] == 1L) one$wp_label[1] else 1 - one$wp_label[1]
   expect_equal(sum(home_frame), res_home - open_home, tolerance = 1e-6)
+})
+
+test_that("team_agnostic zeroes the XI gap as well as the Elo gap", {
+  skip_if_not_installed("xgboost")
+  d <- wps_fx(n_match = 150L)
+  d[, xi_diff := elo_diff / 100 + stats::rnorm(.N, 0, 0.1)]
+  m <- suppressMessages(train_wp_structural(d, nrounds = 30L, nfolds = 2L, extra_features = "xi_diff"))
+  probe <- data.table::data.table(match_id = "p", team_id = "H", time_remaining = 0.5, score_diff = 0,
+                                  red_card_diff = 0L, is_second_half = 1L, is_extra_time = 0L, is_home = 1L,
+                                  epv = 0, elo_diff = c(0, 300, -300), xi_diff = c(0, 3, -3))
+  ag <- predict_wp(m, probe, team_agnostic = TRUE)
+  expect_equal(ag[2], ag[1], tolerance = 1e-9); expect_equal(ag[3], ag[1], tolerance = 1e-9)
+  # Same as scoring an explicitly even match.
+  even <- data.table::copy(probe[1])
+  expect_equal(predict_wp(m, even), ag[1], tolerance = 1e-9)
+})
+
+test_that("ng_fold_unpublished folds any value columns and keeps team totals", {
+  ng <- data.table::data.table(match_id = "m", player_id = c("a", "b", "c"), team_id = "T",
+                               minutes_played = c(90, 30, 5), wpa_x = c(0.2, 0.1, 0.05))
+  out <- suppressMessages(ng_fold_unpublished(ng, data.frame(match_id = "m", player_id = c("a", "b")),
+                                              value_cols = "wpa_x"))
+  expect_equal(sum(out$wpa_x), 0.35, tolerance = 1e-12)
+  expect_equal(out[player_id == "a", wpa_x], 0.2 + 0.05 * 0.75, tolerance = 1e-12)
+  # A column NA for the whole match (team-value WPA where the match has no Elo) stays NA, not 0.
+  ng[, wpa_y := NA_real_]
+  out2 <- suppressMessages(ng_fold_unpublished(ng, data.frame(match_id = "m", player_id = c("a", "b")),
+                                               value_cols = c("wpa_x", "wpa_y")))
+  expect_true(all(is.na(out2$wpa_y)))
+  expect_equal(sum(out2$wpa_x), 0.35, tolerance = 1e-12)
 })

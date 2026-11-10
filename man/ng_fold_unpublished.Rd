@@ -4,7 +4,12 @@
 \alias{ng_fold_unpublished}
 \title{Fold value owed to unpublished players back into their team}
 \usage{
-ng_fold_unpublished(ng, published, verbose = TRUE)
+ng_fold_unpublished(
+  ng,
+  published,
+  verbose = TRUE,
+  value_cols = c("net_goals", "ng_offensive", "ng_defensive")
+)
 }
 \arguments{
 \item{ng}{Per-game ledger output from \code{ng_player_game()}. Needs \code{match_id},
@@ -15,6 +20,10 @@ ng_fold_unpublished(ng, published, verbose = TRUE)
 published.}
 
 \item{verbose}{Print what was folded. Default \code{TRUE}.}
+
+\item{value_cols}{The value columns to fold, first one used in the report.
+Default the three net goals columns; the WPA ledger (panna#273) passes its
+own.}
 }
 \value{
 \code{ng} restricted to the published pairs, with each team's totals

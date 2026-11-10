@@ -17,13 +17,18 @@ on:
         description: Refit the year-by-year skill-SPM prior (03_skill_spm_asof.rds) first, with 03's default target decay; with upload, also publish it to predictions-cache
         type: boolean
         default: false
+  # Monthly (panna#273): 10b's XI strength reads the snapshot dated on or before the day before
+  # each match, at most 62 days old, so a file left a month stale costs XI on new matches.
+  # 20:00 UTC on the 2nd = 7am Sydney on the 3rd in summer (AEDT), 6am in winter. A scheduled run publishes; it runs main's copy.
+  schedule:
+    - cron: "0 20 2 * *"
   push:
     branches: ["career-panna-asof*"]
     paths: [".github/workflows/career-panna-asof.yml", "data-raw/estimated-skills/09b_career_panna_asof.R"]
 
 env:
   PANNA_PUBLISH_DISABLED: ${{ (github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev') && 'true' || 'false' }}
-  UPLOAD: ${{ inputs.upload && 'true' || 'false' }}
+  UPLOAD: ${{ (github.event_name == 'schedule' || inputs.upload) && 'true' || 'false' }}
   REFIT_PRIOR: ${{ inputs.refit_prior && 'true' || 'false' }}
   GH_TOKEN: ${{ github.token }}
 

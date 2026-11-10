@@ -28,11 +28,7 @@ TEST_END_YEAR   <- if (exists("test_end_year")) test_end_year else 2026L
 TRAIN_EVERY     <- if (exists("train_every")) train_every else 8L
 LEAGUE_FILTER   <- if (exists("wp_struct_leagues")) wp_struct_leagues else NULL
 SPADL_DIR       <- file.path("data-raw", "cache", "epv", "spadl")
-# Elo: the predictions run's competitions plus every other league with Opta data (elo_all_leagues.R).
-ELO_BASE_LEAGUES <- c("ENG", "ESP", "GER", "ITA", "FRA", "NED", "POR", "TUR", "ENG2", "SCO", "UCL", "UEL", "UECL",
-                      "WC", "EURO", "AFCON", "COPA", "GOLD", "ACUP", "GULF", "WCQ_UEFA", "WCQ_CONMEBOL", "WCQ_CAF",
-                      "WCQ_AFC", "EUROQ", "AFCONQ", "ACUPQ", "NL", "INTL_FR")
-ELO_EXTRA_LEAGUES <- c("BEL", "MEX", "SAU", "AUS", "MLS", "ARG", "BRA", "LIB", "SUD", "ACLE", "CAFCL", "CCC", "LGC", "CWC")
+source("data-raw/epv/wp_structural_elo.R")   # WP_ELO_*_LEAGUES, wp_structural_match_elo(): shared with 10b
 for (d in c(WP_STRUCT_DIR, FEATS_DIR)) dir.create(d, recursive = TRUE, showWarnings = FALSE)
 say <- function(...) message(format(Sys.time(), "%H:%M:%S "), sprintf(...))
 say("05d: train seasons ending %s, test %d, 1 row in %d; output %s",
@@ -40,28 +36,7 @@ say("05d: train seasons ending %s, test %d, 1 row in %d; output %s",
 
 # 2. Pre-match Elo for every league ----
 elo_path <- file.path(WP_STRUCT_DIR, "match_elo.parquet")
-if (!file.exists(elo_path)) {
-  fx_list <- list()
-  for (grp in list(base = ELO_BASE_LEAGUES, extra = ELO_EXTRA_LEAGUES)) {
-    cd <- file.path(WP_STRUCT_DIR, "fixtures", if (identical(grp, ELO_BASE_LEAGUES)) "base" else "extra")
-    dir.create(cd, recursive = TRUE, showWarnings = FALSE)
-    if (!file.exists(file.path(cd, "01_fixture_results.rds"))) {
-      local({ leagues <- grp; cache_dir <- cd
-              source("data-raw/match-predictions-opta/01_build_fixture_results.R", local = TRUE) })
-    }
-    fx_list[[length(fx_list) + 1L]] <- as.data.table(readRDS(file.path(cd, "01_fixture_results.rds")))
-  }
-  allr <- rbindlist(fx_list, fill = TRUE)
-  allr <- unique(allr[match_status == "Played"][order(match_date)], by = "match_id")
-  er <- compute_match_elos(as.data.frame(allr), k = 20, home_advantage = 88, initial_elo = 1500,
-                           k_table = ELO_MATCH_TYPE_K, cross_conf_mult = ELO_CROSS_CONF_MULT,
-                           conf_priors = ELO_CONFEDERATION_PRIORS, use_venue_factor = TRUE)
-  pm <- unique(as.data.table(er$per_match), by = "match_id")
-  stopifnot(nrow(pm) > 0, mean(!is.na(pm$elo_diff)) > 0.99)
-  arrow::write_parquet(pm, elo_path)
-  say("Elo: %d played matches, %d competitions, last match %s", nrow(pm), uniqueN(allr$league), max(allr$match_date))
-}
-elo <- as.data.table(arrow::read_parquet(elo_path))
+elo <- wp_structural_match_elo(WP_STRUCT_DIR, rebuild = FALSE)
 
 # 3. As-of career Panna (leak-free XI strength) ----
 cpa_path <- file.path(opta_data_dir(), "career_panna_asof.parquet")

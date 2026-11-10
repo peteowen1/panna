@@ -18,6 +18,10 @@
 
 .WP_STRUCTURAL_BASE <- c("time_remaining", "m_home", "red_home", "is_second_half",
                          "is_extra_time", "elo_diff")
+# Team-strength inputs: zeroed for the team-agnostic view. A new strength input
+# (a lineup rating, a betting line) must be added here too, or the agnostic view
+# quietly keeps it.
+.WP_STRENGTH_FEATURES <- c("elo_diff", "xi_diff")
 
 #' Join pre-match team strength onto WP features
 #'
@@ -156,9 +160,9 @@ add_wp_xi_strength <- function(wp_features, lineups, ratings, roll_days = 62L,
 #' @param wp_features Output of \code{\link{create_wp_features}} with
 #'   \code{wp_label}, joined to Elo by \code{\link{add_wp_match_elo}}.
 #' @param use_possession Add \code{home_has_ball} as an input (default
-#'   \code{FALSE}). With strength in the model this measures what possession is
-#'   worth beyond team quality; 2026-11-10 EPL hold-out: 1.6 points, no gain in
-#'   log loss.
+#'   \code{TRUE}: the SEP model Pete chose 2026-11-10). With strength in the
+#'   model this measures what possession is worth beyond team quality;
+#'   2026-11-10 EPL hold-out: 1.6 points, no gain in log loss.
 #' @param nrounds,max_depth,eta,nfolds,min_child_weight,early_stopping_rounds,seed
 #'   XGBoost / CV settings.
 #' @param weight Optional per-row training weights (same length as the rows kept
@@ -173,7 +177,7 @@ add_wp_xi_strength <- function(wp_features, lineups, ratings, roll_days = 62L,
 #'   \code{optimal_nrounds} and \code{type = "structural"}.
 #' @family win probability
 #' @export
-train_wp_structural <- function(wp_features, use_possession = FALSE,
+train_wp_structural <- function(wp_features, use_possession = TRUE,
                                 nrounds = 600L, max_depth = 4L, eta = 0.1,
                                 nfolds = 5L, min_child_weight = 50L,
                                 early_stopping_rounds = 20L, seed = 42L,
@@ -231,16 +235,19 @@ train_wp_structural <- function(wp_features, use_possession = FALSE,
 
 #' @rdname train_wp_structural
 #' @param wp_model A model from \code{train_wp_structural()}.
-#' @param team_agnostic Score with the Elo gap set to 0, i.e. as if the two
-#'   teams were equally strong (the site's team-agnostic WPA view). Home
-#'   advantage stays in.
+#' @param team_agnostic Score with every team-strength input set to 0 -- the
+#'   Elo gap and, when the model has it, the starting-XI gap \code{xi_diff} --
+#'   i.e. as if the two teams were equally strong (the site's team-agnostic WPA
+#'   view). Home advantage stays in.
 #' @return \code{predict_wp_structural()}: the possession team's win chance per
 #'   row, live threat included via the next-goal mixture.
 #' @export
 predict_wp_structural <- function(wp_model, wp_features, team_agnostic = FALSE) {
   dt <- data.table::as.data.table(wp_features)
   x <- .wp_structural_frame(dt, as.character(wp_model$extra_features))
-  if (isTRUE(team_agnostic)) x[, elo_diff := 0]
+  if (isTRUE(team_agnostic)) {
+    for (f in intersect(.WP_STRENGTH_FEATURES, names(x))) data.table::set(x, j = f, value = 0)
+  }
   fn <- wp_model$feature_names
   sgn <- data.table::fifelse(x$home_has_ball == 1L, 1, -1)
   H_at <- function(add) {

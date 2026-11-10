@@ -286,6 +286,9 @@ jobs:
           # enrich calls read the consolidated opta_xmetrics_bymatch.parquet
           # from opta-latest instead.
           XMETRICS_SOURCE: remote
+          # 10b prints RSS and the process peak at each stage of each league (.rss_note), so a
+          # memory regression shows which league and stage (panna#273 dry run, 2026-11-10).
+          PANNA_LOG_RSS: '1'
         run: |
           Rscript -e "
             # Point panna at downloaded Opta data
@@ -407,6 +410,13 @@ jobs:
               # either tag actually gets uploaded, manifest-last per tag.
               step_13_publish_release_data  = TRUE
             )
+
+            # WPA ledger in 10b (panna#273): the structural WP model from the pannamodels epv
+            # release. A failed download leaves the path missing and 10b says the ledger is OFF.
+            wp_structural_model_path <- file.path(tempdir(), 'wp_structural_model.rds')
+            .wps_dl <- system2('gh', c('release', 'download', 'epv', '-R', 'peteowen1/pannamodels',
+                                       '-p', 'wp_structural_model.rds', '-O', wp_structural_model_path, '--clobber'))
+            cat('wp_structural_model.rds download exit', .wps_dl, '| md5', if (file.exists(wp_structural_model_path)) unname(tools::md5sum(wp_structural_model_path)) else 'none', '\n')
 
             source('data-raw/match-predictions-opta/run_predictions_opta.R', chdir = FALSE)
             if (isTRUE(pipeline_failed)) quit(status = 1)
