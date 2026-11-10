@@ -281,3 +281,32 @@ test_that("_kadj on whole kept seasons equals _kadj on the full table (10b appli
   # Note: the trim here is by season_end_year, the unit of the club-season key. It guards 10b's
   # whole-season trim, not a trim by date, which would cut club-seasons and change values.
 })
+
+test_that("a club new to the data gets style 0 plus the in-season shift, and the published table carries it", {
+  sim <- make_keeper_league(seed = 12)
+  # A promoted club: only in 2025, with a strong habit (+10) no earlier season can see.
+  kp <- names(sim$keeper_eff)[length(sim$keeper_eff)]
+  newc <- data.table::data.table(match_id = paste("new", 1:30), player_id = kp, team_id = "c99",
+                                 match_date = as.Date("2024-08-01") + 7L * (1:30), league = "L1",
+                                 season_end_year = 2025L, position = "Goalkeeper", total_minutes = 90,
+                                 long_balls_p90 = 25 + sim$keeper_eff[[kp]] + stats::rnorm(30, 0, 6))
+  all <- rbind(sim$dt, newc)
+  st <- fit_keeper_style_asof(all, stats = "long_balls_p90", verbose = FALSE)
+  expect_false("c99" %in% st$team_id)                     # no as-of style: it is new
+  adj <- add_kstyle(data.table::copy(all), st, in_season_k = 5, verbose = FALSE)
+  c99 <- adj[team_id == "c99"][order(match_date)]
+  expect_equal(c99$long_balls_p90_kadj[1], c99$long_balls_p90[1])   # first match: style 0, no shift yet
+  late <- c99[match_date > as.Date("2024-12-01")]
+  expect_lt(mean(late$long_balls_p90_kadj), mean(late$long_balls_p90) - 5)  # the shift takes most of the +10 out
+  # The first season still has no fit and stays raw.
+  first <- adj[season_end_year == 2021L]
+  expect_equal(first$long_balls_p90_kadj, first$long_balls_p90)
+
+  tab <- panna:::build_keeper_style_table(data.table::copy(all), st, in_season_k = 5, seasons = 2025L)
+  t99 <- tab[team_id == "c99"]
+  expect_gt(nrow(t99), 1)
+  expect_true(all(t99$club_style == 0))
+  tb <- data.table::copy(tab)[, look := after_date + 1L]
+  m <- tb[data.table::copy(c99)[, look := match_date], on = .(team_id, season_end_year, look), roll = TRUE]
+  expect_equal(m$long_balls_p90 - m$club_style - m$shift, m$long_balls_p90_kadj, tolerance = 1e-9)
+})

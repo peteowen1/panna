@@ -157,9 +157,9 @@ fit_keeper_style_asof <- function(match_stats, stats = .keeper_style_stats(),
 #' Writes `<stat>_kadj` for each modelled stat: the raw value minus the
 #' as-of club style for that keeper's club and season. ADDITIVE, like
 #' `.add_territory_features()`: the raw columns are untouched. Outfield rows,
-#' and keeper rows whose club has no style yet (first season in the data, or a
-#' club new to it), keep the raw value, and the count is reported rather than
-#' silently guessed.
+#' and keeper rows in the first season of the data (no fit), keep the raw
+#' value, and the count is reported rather than silently guessed. A club new
+#' to the data in a later season gets club style 0 plus the in-season shift.
 #'
 #' In-season club term (Pete chose it 2026-11-08, over the prior-seasons-only
 #' version): the club's shift this season, from its keepers' matches on EARLIER
@@ -194,7 +194,8 @@ fit_keeper_style_asof <- function(match_stats, stats = .keeper_style_stats(),
     data.table::set(dt, j = out_col, value = out)
     n_used <- sum(p$use); n_gk <- sum(parts$is_gk)
     n_na <- sum(parts$is_gk & !is.finite(p$raw)); n_nostyle <- n_gk - n_used - n_na
-    if (verbose) cli::cli_inform("{out_col}: club style applied to {n_used} of {n_gk} keeper rows; {n_nostyle} keep the raw value (no earlier season for that club), {n_na} have no value")
+    n_new <- sum(p$new_club)
+    if (verbose) cli::cli_inform("{out_col}: club style applied to {n_used} of {n_gk} keeper rows ({n_new} at clubs new to the data, style 0 + in-season shift); {n_nostyle} keep the raw value (no fit for that season), {n_na} have no value")
   }
   dt
 }
@@ -262,6 +263,13 @@ fit_keeper_style_asof <- function(match_stats, stats = .keeper_style_stats(),
     st <- style[stat == s]
     cstyle <- st$club_style[match(key, paste(st$team_id, st$season_end_year))]
     raw <- as.numeric(dt[[s]])
+    # A club new to the data (promoted from a tier we don't cover, or a cup
+    # side) has no as-of style: it counts as an average club (0) so the
+    # in-season term can still learn its habit from this season's matches
+    # (Pete, 2026-11-10; before, its keepers stayed raw all season). Only in
+    # seasons that have a fit: the first season in the data stays raw.
+    new_club <- is_gk & is.na(cstyle) & is.finite(raw) & yr %in% st$season_end_year
+    cstyle[new_club] <- 0
     use <- is_gk & is.finite(cstyle) & is.finite(raw)
     if (do_season && anyNA(md[use])) cli::cli_abort("{sum(is.na(md[use]))} keeper rows have no match_date; the in-season term would count them as earlier than every match.", class = "panna_keeper_style_error")
     shift <- rep(0, length(raw))
@@ -275,7 +283,7 @@ fit_keeper_style_asof <- function(match_stats, stats = .keeper_style_stats(),
       hit <- match(paste(key, md), paste(day$ck, day$md))
       shift[use] <- day$shift[hit[use]]
     }
-    out[[s]] <- list(raw = raw, cstyle = cstyle, use = use, shift = shift, day = day)
+    out[[s]] <- list(raw = raw, cstyle = cstyle, use = use, new_club = new_club, shift = shift, day = day)
   }
   list(is_gk = is_gk, yr = yr, key = key, stats = out)
 }
@@ -288,8 +296,9 @@ fit_keeper_style_asof <- function(match_stats, stats = .keeper_style_stats(),
 #' `<stat>_kadj = raw - club_style - shift`, where `shift` comes from the
 #' club-season's row with the LATEST `after_date` strictly before the match
 #' date. The first row of every club-season has `after_date` 1900-01-01 and
-#' `shift` 0 (no earlier match). A club-season with no row keeps raw values,
-#' as do outfield players. Built from `.keeper_style_parts()`, the code
+#' `shift` 0 (no earlier match). Clubs new to the data appear with
+#' `club_style` 0. A club-season with no row keeps raw values, as do outfield
+#' players. Built from `.keeper_style_parts()`, the code
 #' `.add_keeper_style_features()` uses, so the lookup reproduces the
 #' pipeline's `_kadj` columns exactly (tested).
 #'
@@ -319,8 +328,13 @@ build_keeper_style_table <- function(dt, style, is_gk = NULL, in_season_k = 20, 
     p <- parts$stats[[s]]
     st <- style[stat == s & season_end_year %in% seasons]
     if (!nrow(st)) next
-    base <- st[, .(team_id = as.character(team_id), season_end_year = as.integer(season_end_year), stat = s,
-                   after_date = start, club_style, shift = 0, n90_before = 0)]
+    # Clubs new to the data get style 0 in .keeper_style_parts(); publish them too.
+    nk <- unique(data.table::data.table(team_id = as.character(dt$team_id[p$new_club]), season_end_year = parts$yr[p$new_club]))
+    nk <- nk[season_end_year %in% seasons]
+    base <- data.table::rbindlist(list(
+      st[, .(team_id = as.character(team_id), season_end_year = as.integer(season_end_year), club_style)],
+      nk[, .(team_id, season_end_year, club_style = 0)]))
+    base <- base[, .(team_id, season_end_year, stat = s, after_date = start, club_style, shift = 0, n90_before = 0)]
     rows <- list(base)
     if (!is.null(p$day) && nrow(p$day)) {
       d <- data.table::copy(p$day)
