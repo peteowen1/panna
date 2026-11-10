@@ -875,9 +875,13 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
           fx_l[, `:=`(home_score = as.numeric(home_score), away_score = as.numeric(away_score))]
           mr_l <- data.table::as.data.table(match_results)[, .(match_id, ev_home = as.numeric(home_goals), ev_away = as.numeric(away_goals))]
           n_et <- fx_l[mr_l, on = "match_id", nomatch = NULL][, sum(ev_home != home_score | ev_away != away_score, na.rm = TRUE)]
+          n_noev <- sum(!fx_l$match_id %in% mr_l$match_id)
+          if (n_noev > 0) message(sprintf("    WPA ledger (%s): %d match%s have no events score and keep the 90-minute fixture score",
+                                          league, n_noev, if (n_noev == 1) "" else "es"))
           fx_l[mr_l, `:=`(home_score = i.ev_home, away_score = i.ev_away), on = "match_id"]
-          if (anyNA(fx_l$home_score) || anyNA(fx_l$away_score)) stop("events give no score for some matches")
-          if (n_et > 0) message(sprintf("    WPA ledger (%s): %d match%s scored from the events, not the 90-minute fixture score (extra time)",
+          if (anyNA(fx_l$home_score) || anyNA(fx_l$away_score)) stop("no score (events or fixture) for some matches")
+          # Usually extra time; incomplete events would also differ, and conservation can't see that.
+          if (n_et > 0) message(sprintf("    WPA ledger (%s): %d match%s scored from the events, which differ from the 90-minute fixture score",
                                         league, n_et, if (n_et == 1) "" else "es"))
           run_ledger <- function(mids, agnostic) {
             w <- wl[match_id %in% mids]
