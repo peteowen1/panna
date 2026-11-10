@@ -10,7 +10,22 @@ library(data.table)
 out <- Sys.getenv("WPA273_DIR", "data-raw/cache/wpa273")
 scratch <- file.path(out, "fixture_extra"); dir.create(scratch, showWarnings = FALSE)
 
-base <- as.data.table(readRDS("data-raw/cache-predictions-opta/01_fixture_results.rds"))
+# The base leagues are rebuilt too, into scratch: the local pipeline cache can be weeks old
+# (2026-11-10: built 2026-10-10, so Liverpool's last four matches were still "Fixture").
+scratch_base <- file.path(out, "fixture_base"); dir.create(scratch_base, showWarnings = FALSE)
+f_base <- file.path(scratch_base, "01_fixture_results.rds")
+if (!file.exists(f_base)) {
+  # The predictions run's own league list (run_predictions_opta.R), internationals included, so
+  # national-team Elo matches the pipeline's.
+  local({
+    cache_dir <- scratch_base
+    leagues <- c("ENG", "ESP", "GER", "ITA", "FRA", "NED", "POR", "TUR", "ENG2", "SCO", "UCL", "UEL", "UECL",
+                 "WC", "EURO", "AFCON", "COPA", "GOLD", "ACUP", "GULF", "WCQ_UEFA", "WCQ_CONMEBOL", "WCQ_CAF",
+                 "WCQ_AFC", "EUROQ", "AFCONQ", "ACUPQ", "NL", "INTL_FR")
+    source("data-raw/match-predictions-opta/01_build_fixture_results.R", local = TRUE)
+  })
+}
+base <- as.data.table(readRDS(f_base))
 message(sprintf("existing fixture results: %d rows, leagues: %s", nrow(base), paste(sort(unique(base$league)), collapse = " ")))
 
 extra <- c("BEL", "MEX", "SAU", "AUS", "MLS", "ARG", "BRA", "LIB", "SUD", "ACLE", "CAFCL", "CCC", "LGC", "CWC")
