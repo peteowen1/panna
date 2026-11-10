@@ -4,7 +4,7 @@
 \alias{add_wp_vars}
 \title{Add win probability and WPA to SPADL data}
 \usage{
-add_wp_vars(wp_features, wp_model, centre = TRUE)
+add_wp_vars(wp_features, wp_model, centre = TRUE, team_agnostic = FALSE)
 }
 \arguments{
 \item{wp_features}{SPADL features with WP model features. MUST contain:
@@ -26,6 +26,10 @@ Predictions are clamped to \code{[0, 1]} by \code{\link{predict_wp}}.}
 \item{centre}{Centre WPA per match (default \code{TRUE}, unchanged). Pass
 \code{FALSE} for the raw change, whose match total is the result minus the
 opening win chance -- what \code{\link{wpa_build_ledger}} needs.}
+
+\item{team_agnostic}{Structural models only: score as if both teams were
+equally strong (Elo gap 0), the site's team-agnostic WPA view. Passed to
+\code{\link{predict_wp}}.}
 }
 \value{
 The input data.table with added \code{wp} (possession-POV
@@ -58,6 +62,7 @@ WPA is centered per-match (\code{wpa - mean(wpa, na.rm=TRUE)} by
 }
 \seealso{
 Other win probability: 
+\code{\link{add_wp_match_elo}()},
 \code{\link{aggregate_player_game_wpa}()},
 \code{\link{assign_wpa_credit}()},
 \code{\link{create_wp_features}()},
@@ -65,6 +70,7 @@ Other win probability:
 \code{\link{predict_wp}()},
 \code{\link{save_wp_model}()},
 \code{\link{train_wp_model}()},
+\code{\link{train_wp_structural}()},
 \code{\link{wpa_build_ledger}()}
 }
 \concept{win probability}

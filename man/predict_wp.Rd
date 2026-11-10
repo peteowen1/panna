@@ -4,22 +4,29 @@
 \alias{predict_wp}
 \title{Predict win probability}
 \usage{
-predict_wp(wp_model, wp_features)
+predict_wp(wp_model, wp_features, team_agnostic = FALSE)
 }
 \arguments{
-\item{wp_model}{Output of \code{\link{train_wp_model}}.}
+\item{wp_model}{Output of \code{\link{train_wp_model}} or
+\code{\link{train_wp_structural}} (dispatched to
+\code{\link{predict_wp_structural}}).}
 
-\item{wp_features}{SPADL features from \code{\link{create_wp_features}}.}
+\item{wp_features}{SPADL features from \code{\link{create_wp_features}}
+(plus \code{elo_diff} from \code{\link{add_wp_match_elo}} for a structural
+model).}
+
+\item{team_agnostic}{Structural models only: score with the Elo gap set to 0.}
 }
 \value{
-Numeric vector of win probabilities (home team perspective),
-same length as \code{nrow(wp_features)}.
+Numeric vector of win probabilities for the team performing each
+action (possession POV), same length as \code{nrow(wp_features)}.
 }
 \description{
 Scores each action's game state with win probability using a trained model.
 }
 \seealso{
 Other win probability: 
+\code{\link{add_wp_match_elo}()},
 \code{\link{add_wp_vars}()},
 \code{\link{aggregate_player_game_wpa}()},
 \code{\link{assign_wpa_credit}()},
@@ -27,6 +34,7 @@ Other win probability:
 \code{\link{load_wp_model}()},
 \code{\link{save_wp_model}()},
 \code{\link{train_wp_model}()},
+\code{\link{train_wp_structural}()},
 \code{\link{wpa_build_ledger}()}
 }
 \concept{win probability}

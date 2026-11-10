@@ -88,7 +88,7 @@ test_that("xGOT and an old epv_delta on the actions change nothing (goals-unit r
 test_that("add_wp_vars(centre = FALSE) keeps the raw change; the default still centres", {
   d <- data.table::data.table(match_id = "m1", team_id = c("H", "A", "H"), is_home = c(1L, 0L, 1L),
                               wp_label = c(1, 0, 1), fake_wp = c(0.54, 0.40, 0.70))
-  testthat::local_mocked_bindings(predict_wp = function(wp_model, dt) dt$fake_wp)
+  testthat::local_mocked_bindings(predict_wp = function(wp_model, dt, ...) dt$fake_wp)
   raw <- add_wp_vars(data.table::copy(d), wp_model = NULL, centre = FALSE)
   # 1 -> 2 flips possession: (1 - 0.40) - 0.54 = 0.06; 2 -> 3 flips: (1 - 0.70) - 0.40 = -0.10;
   # last row falls back to its label, same team: 1 - 0.70 = 0.30.

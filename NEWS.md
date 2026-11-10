@@ -1,3 +1,14 @@
+# panna 0.3.118
+
+- New structural win probability model (panna#273): `train_wp_structural()` predicts the home team's
+  win chance from the scoreboard (margin, time, red cards, half, extra time) plus the pre-match Elo gap
+  (`add_wp_match_elo()`), with live threat as the chance of the next goal. Who has the ball is not an
+  input by default (`use_possession = FALSE`). `predict_wp()` and `add_wp_vars()` use it whenever they
+  are given one, so `wpa_build_ledger()` works unchanged; `team_agnostic = TRUE` scores with the Elo gap
+  at 0 (the site's team-agnostic WPA). Hold-out, seasons ending 2026, 14 competitions, 4,203 matches:
+  log loss 0.4841 vs 0.5031 for the published model, and a goal is worth 31 lost possessions instead
+  of 6. Not wired into any pipeline yet; the published WP model is unchanged.
+
 # panna 0.3.117
 
 - Keeper style (`_kadj`, panna#429): a club new to the data (promoted from a tier we don't cover, or a

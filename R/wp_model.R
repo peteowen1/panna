@@ -598,17 +598,28 @@ train_wp_model <- function(wp_features, nrounds = 500L, max_depth = 4L,
 #'
 #' Scores each action's game state with win probability using a trained model.
 #'
-#' @param wp_model Output of \code{\link{train_wp_model}}.
-#' @param wp_features SPADL features from \code{\link{create_wp_features}}.
+#' @param wp_model Output of \code{\link{train_wp_model}} or
+#'   \code{\link{train_wp_structural}} (dispatched to
+#'   \code{\link{predict_wp_structural}}).
+#' @param wp_features SPADL features from \code{\link{create_wp_features}}
+#'   (plus \code{elo_diff} from \code{\link{add_wp_match_elo}} for a structural
+#'   model).
+#' @param team_agnostic Structural models only: score with the Elo gap set to 0.
 #'
-#' @return Numeric vector of win probabilities (home team perspective),
-#'   same length as \code{nrow(wp_features)}.
+#' @return Numeric vector of win probabilities for the team performing each
+#'   action (possession POV), same length as \code{nrow(wp_features)}.
 #'
 #' @family win probability
 #' @export
-predict_wp <- function(wp_model, wp_features) {
+predict_wp <- function(wp_model, wp_features, team_agnostic = FALSE) {
   if (!requireNamespace("xgboost", quietly = TRUE)) {
     cli::cli_abort("Package {.pkg xgboost} required for WP prediction")
+  }
+  if (.is_wp_structural(wp_model)) {
+    return(predict_wp_structural(wp_model, wp_features, team_agnostic = team_agnostic))
+  }
+  if (isTRUE(team_agnostic)) {
+    cli::cli_abort("{.arg team_agnostic} needs a structural WP model ({.fn train_wp_structural}); this model has no strength input.")
   }
 
   dt <- data.table::as.data.table(wp_features)
@@ -678,13 +689,16 @@ predict_wp <- function(wp_model, wp_features) {
 #' @param centre Centre WPA per match (default \code{TRUE}, unchanged). Pass
 #'   \code{FALSE} for the raw change, whose match total is the result minus the
 #'   opening win chance -- what \code{\link{wpa_build_ledger}} needs.
+#' @param team_agnostic Structural models only: score as if both teams were
+#'   equally strong (Elo gap 0), the site's team-agnostic WPA view. Passed to
+#'   \code{\link{predict_wp}}.
 #'
 #' @return The input data.table with added \code{wp} (possession-POV
 #'   probability) and \code{wpa} (acting-team-POV delta) columns.
 #'
 #' @family win probability
 #' @export
-add_wp_vars <- function(wp_features, wp_model, centre = TRUE) {
+add_wp_vars <- function(wp_features, wp_model, centre = TRUE, team_agnostic = FALSE) {
   required <- c("match_id", "team_id", "is_home", "wp_label")
   missing <- setdiff(required, names(wp_features))
   if (length(missing) > 0L) {
@@ -709,7 +723,7 @@ add_wp_vars <- function(wp_features, wp_model, centre = TRUE) {
   # `wp_next - wp` deltas (case-a only), which silently produced ~0.7
   # WPA swings every possession switch -> 30x season-WPA inflation when
   # the new possession-POV model went live with step 10b on 2026-05-29.
-  dt[, wp := predict_wp(wp_model, dt)]
+  dt[, wp := predict_wp(wp_model, dt, team_agnostic = team_agnostic)]
 
   dt[, wp_next       := data.table::shift(wp, type = "lead"),      by = match_id]
   dt[, team_id_next  := data.table::shift(team_id, type = "lead"), by = match_id]
