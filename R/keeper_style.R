@@ -268,7 +268,10 @@ fit_keeper_style_asof <- function(match_stats, stats = .keeper_style_stats(),
     # in-season term can still learn its habit from this season's matches
     # (Pete, 2026-11-10; before, its keepers stayed raw all season). Only in
     # seasons that have a fit: the first season in the data stays raw.
-    new_club <- is_gk & is.na(cstyle) & is.finite(raw) & yr %in% st$season_end_year
+    # A missing team_id is not a new club: paste() would pool every such row
+    # into one pseudo-club "NA <year>" (review, 2026-11-10).
+    new_club <- is_gk & is.na(cstyle) & is.finite(raw) & !is.na(dt$team_id) & !is.na(yr) &
+      yr %in% st$season_end_year
     cstyle[new_club] <- 0
     use <- is_gk & is.finite(cstyle) & is.finite(raw)
     if (do_season && anyNA(md[use])) cli::cli_abort("{sum(is.na(md[use]))} keeper rows have no match_date; the in-season term would count them as earlier than every match.", class = "panna_keeper_style_error")

@@ -310,3 +310,15 @@ test_that("a club new to the data gets style 0 plus the in-season shift, and the
   m <- tb[data.table::copy(c99)[, look := match_date], on = .(team_id, season_end_year, look), roll = TRUE]
   expect_equal(m$long_balls_p90 - m$club_style - m$shift, m$long_balls_p90_kadj, tolerance = 1e-9)
 })
+
+test_that("keeper rows with no team_id stay raw and stay out of the published table", {
+  sim <- make_keeper_league(seed = 13, last_shift = 4)
+  st <- fit_keeper_style_asof(sim$dt, stats = "long_balls_p90", verbose = FALSE)
+  dt <- data.table::copy(sim$dt)
+  idx <- which(dt$position == "Goalkeeper" & dt$season_end_year == 2025L)[1:6]
+  dt[idx, team_id := NA_character_]
+  adj <- add_kstyle(data.table::copy(dt), st, verbose = FALSE)
+  expect_equal(adj$long_balls_p90_kadj[idx], adj$long_balls_p90[idx])
+  tab <- panna:::build_keeper_style_table(data.table::copy(dt), st, seasons = 2025L)
+  expect_false(anyNA(tab$team_id))
+})
