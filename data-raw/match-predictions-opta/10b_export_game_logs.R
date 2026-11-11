@@ -1266,12 +1266,17 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
           wf[data.table::as.data.table(wpal_cols), `:=`(wpa_neutral_own = i.wpa_neutral_own, wpa_neutral_won = i.wpa_neutral_won,
                                                         wpa_team_own = i.wpa_team_own, wpa_team_won = i.wpa_team_won),
              on = c("match_id", "player_id")]
+          # Every published row comes from wpal_cols, so own/won must be found; a miss is a join
+          # bug and is not filled with 0 (that would quietly turn it all into `shared`).
           for (vw in c("neutral", "team")) {
             tot <- paste0("wpa_", vw); o <- paste0(tot, "_own"); w <- paste0(tot, "_won")
-            wf[!is.na(get(tot)) & is.na(get(o)), (o) := 0]
-            wf[!is.na(get(tot)) & is.na(get(w)), (w) := 0]
+            n_miss <- sum(!is.na(wf[[tot]]) & (is.na(wf[[o]]) | is.na(wf[[w]])))
+            if (n_miss > 0) stop(sprintf("%d published rows have a %s total but no own/won part", n_miss, tot))
             wf[, (paste0(tot, "_shared")) := get(tot) - get(o) - get(w)]
           }
+          # What the fold moved into `shared` (substitutes with no published row), for the log.
+          moved <- sum(abs(wf$wpa_neutral -
+            data.table::as.data.table(wpal_cols)[wf, on = c("match_id", "player_id"), x.wpa_neutral]), na.rm = TRUE)
           gr <- merge(data.table::as.data.table(game_ratings),
                       wf[, c("match_id", "player_id", wpal_v), with = FALSE],
                       by = c("match_id", "player_id"), all.x = TRUE)
@@ -1289,8 +1294,8 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
             stop(sprintf("published rows do not conserve (agnostic gap %.3g, team-value gap %.3g, %d team-matches without a result)",
                          gap_n, gap_t, sum(is.na(tt$target))))
           }
-          message(sprintf("    WPA ledger: %d of %d published rows; team-value on %d; every team within %.1g of result - 0.5",
-                          sum(!is.na(gr$wpa_neutral)), nrow(gr), sum(!is.na(gr$wpa_team)), max(gap_n, gap_t, na.rm = TRUE)))
+          message(sprintf("    WPA ledger: %d of %d published rows; team-value on %d; every team within %.1g of result - 0.5; %.3f folded into shared from unpublished substitutes",
+                          sum(!is.na(gr$wpa_neutral)), nrow(gr), sum(!is.na(gr$wpa_team)), max(gap_n, gap_t, na.rm = TRUE), moved))
           gr
         }, error = function(e) {
           message(sprintf("    WPA ledger DROPPED for %s: %s", league, conditionMessage(e)))
