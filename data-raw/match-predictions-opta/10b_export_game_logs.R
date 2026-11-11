@@ -892,13 +892,17 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
               fixtures = fx_l[match_id %in% mids], lineups = lineups, adj = ng_adj, verbose = TRUE))
           }
           ag <- run_ledger(all_m, agnostic = TRUE)
+          # torp's channels: own (on the ball) + won (named for winning it) + shared (team share
+          # and the start). Offence/defence is not published: it books every lost ball to offence
+          # and every regain to defence, -1.95 / +1.95 per team-match on ENG (Pete, 2026-11-11).
           out <- ag[, .(match_id, player_id, team_id, minutes_played, wpa_neutral,
-                        wpa_neutral_offence = wpa_offence, wpa_neutral_defence = wpa_defence)]
+                        wpa_neutral_own = wpa_own, wpa_neutral_won = wpa_won)]
           if (length(elo_m)) {
             tv <- run_ledger(elo_m, agnostic = FALSE)
-            out[tv, `:=`(wpa_team = i.wpa_neutral, wpa_team_start = i.wpa_start),
-                on = c("match_id", "player_id")]
-          } else out[, `:=`(wpa_team = NA_real_, wpa_team_start = NA_real_)]
+            out[tv, `:=`(wpa_team = i.wpa_neutral, wpa_team_own = i.wpa_own, wpa_team_won = i.wpa_won,
+                         wpa_team_start = i.wpa_start), on = c("match_id", "player_id")]
+          } else out[, `:=`(wpa_team = NA_real_, wpa_team_own = NA_real_, wpa_team_won = NA_real_,
+                            wpa_team_start = NA_real_)]
           wpal_fx <- fx_l   # the post-fold check below uses the same results
           rm(wl, ag); out
         }, error = function(e) {
@@ -1250,10 +1254,24 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
       if (!is.null(wpal_cols)) {
         # Same fold as net goals: a substitute who never touched the ball is paid by the ledger but
         # has no row here, so their value goes back to their team-mates by minutes.
-        wpal_v <- c("wpa_neutral", "wpa_neutral_offence", "wpa_neutral_defence", "wpa_team", "wpa_team_start")
+        # Only the totals are folded; a folded-in value is the team's, not the receiver's own play,
+        # so it lands in `shared` (shared = total - own - won), as torp's ledger does.
+        wpal_fold <- c("wpa_neutral", "wpa_team", "wpa_team_start")
+        wpal_v <- c("wpa_neutral", "wpa_neutral_own", "wpa_neutral_won", "wpa_neutral_shared",
+                    "wpa_team", "wpa_team_own", "wpa_team_won", "wpa_team_shared", "wpa_team_start")
         game_ratings <- tryCatch({
           wf <- ng_fold_unpublished(wpal_cols, data.table::as.data.table(game_ratings)[, .(match_id, player_id)],
-                                    verbose = FALSE, value_cols = wpal_v)
+                                    verbose = FALSE, value_cols = wpal_fold)
+          wf <- wf[, c("match_id", "player_id", wpal_fold), with = FALSE]
+          wf[data.table::as.data.table(wpal_cols), `:=`(wpa_neutral_own = i.wpa_neutral_own, wpa_neutral_won = i.wpa_neutral_won,
+                                                        wpa_team_own = i.wpa_team_own, wpa_team_won = i.wpa_team_won),
+             on = c("match_id", "player_id")]
+          for (vw in c("neutral", "team")) {
+            tot <- paste0("wpa_", vw); o <- paste0(tot, "_own"); w <- paste0(tot, "_won")
+            wf[!is.na(get(tot)) & is.na(get(o)), (o) := 0]
+            wf[!is.na(get(tot)) & is.na(get(w)), (w) := 0]
+            wf[, (paste0(tot, "_shared")) := get(tot) - get(o) - get(w)]
+          }
           gr <- merge(data.table::as.data.table(game_ratings),
                       wf[, c("match_id", "player_id", wpal_v), with = FALSE],
                       by = c("match_id", "player_id"), all.x = TRUE)
@@ -1658,7 +1676,8 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
       "net_goals", "ng_offensive", "ng_defensive", "ng_recon",
       "wpa_total", "wpa_as_actor", "wpa_as_receiver",
       # WPA ledger (panna#273): present only when a structural WP model was loaded.
-      "wpa_neutral", "wpa_neutral_offence", "wpa_neutral_defence", "wpa_team", "wpa_team_start",
+      "wpa_neutral", "wpa_neutral_own", "wpa_neutral_won", "wpa_neutral_shared",
+      "wpa_team", "wpa_team_own", "wpa_team_won", "wpa_team_shared", "wpa_team_start",
       "psv", "osv", "dsv", "psv_league_offset",
       "goals_minus_xgot", "placement_added", "xgot",
       "gsaa", "gsaa_per90", "xgot_faced", "goals_conceded",

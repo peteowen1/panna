@@ -13,9 +13,12 @@
   team-agnostic view carries no team strength at all.
 - `ng_fold_unpublished()` gains `value_cols`, so the WPA ledger's columns fold the same way.
 - Step 10b builds the WPA ledger when a structural WP model is supplied (`wp_structural_model_override`
-  or `_path`): additive columns `wpa_neutral` (+ `_offence`, `_defence`; team-agnostic, each team sums to
-  result - 0.5), `wpa_team` and `wpa_team_start` (team-value, real Elo + XI gap; NA where a match has no
-  Elo). Pre-match Elo for every league comes from `data-raw/epv/wp_structural_elo.R`, shared with 05d.
+  or `_path`): additive columns `wpa_neutral` (team-agnostic, each team sums to result - 0.5),
+  `wpa_team` and `wpa_team_start` (team-value, real Elo + XI gap; NA where a match has no Elo), each
+  split torp's way into `_own` (on-ball acts), `_won` (balls won and shots stopped where the feed
+  names the player) and `_shared` (the team share and the even start). `wpa_build_ledger()` returns
+  `wpa_own`, `wpa_won` and `wpa_shared`. Offence/defence is not published: it booked every lost ball to
+  offence and every regain to defence, -1.95 / +1.95 per team-match on ENG 2026-27. Pre-match Elo for every league comes from `data-raw/epv/wp_structural_elo.R`, shared with 05d.
   Off by default until the model is published. `career-panna-asof.yml` runs monthly.
 
 # panna 0.3.117

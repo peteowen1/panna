@@ -49,6 +49,12 @@ test_that("each team sums to its result minus 0.5, and the start term is spread 
   expect_equal(pg[team_id == "A", unique(round(wpa_start, 12))], round(-0.04 / 11, 12))
   # The parts add up to the ledger value on every row.
   expect_equal(pg$wpa_offence + pg$wpa_defence + pg$wpa_start, pg$wpa_neutral, tolerance = 1e-12)
+  # torp's channels add up too; the start sits in `shared`, and `won` is only the named role.
+  expect_equal(pg$wpa_own + pg$wpa_won + pg$wpa_shared, pg$wpa_neutral, tolerance = 1e-12)
+  expect_equal(pg$wpa_won, if ("wpa_defender" %in% names(pg)) pg$wpa_defender else rep(0, nrow(pg)),
+               tolerance = 1e-12)
+  pools <- intersect(c("wpa_pool_off_spread", "wpa_pool_def_spread"), names(pg))
+  expect_equal(pg$wpa_shared, rowSums(as.matrix(pg[, pools, with = FALSE])) + pg$wpa_start, tolerance = 1e-12)
   tg <- attr(pg, "targets")
   expect_equal(sort(tg$target), c(-0.5, 0.5))
   expect_equal(nrow(pg), 22L)
