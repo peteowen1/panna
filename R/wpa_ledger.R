@@ -151,6 +151,12 @@ wpa_build_ledger <- function(actions, wp_actions, fixtures, lineups, adj = NULL,
   shared_r <- intersect(roles, c("pool_off_spread", "pool_def_spread"))
   won_r <- intersect(roles, "defender")
   own_r <- setdiff(roles, c(shared_r, won_r))
+  # Named so a new engine role is a decision, not a silent default into `own`.
+  own_known <- c("actor", "receiver", "shooter", "stopper_rebound",
+                 "shot_strike", "shot_finish", "shot_aftermath")
+  if (length(unk <- setdiff(own_r, own_known))) {
+    cli::cli_abort("WPA ledger: role{?s} {.val {unk}} not assigned to own, won or shared; add {?it/them} in {.fn wpa_build_ledger}.")
+  }
   rsum <- function(r) if (length(r)) rowSums(as.matrix(pg[, paste0("wpa_", r), with = FALSE]), na.rm = TRUE) else 0
   pg[, `:=`(wpa_own = rsum(own_r), wpa_won = rsum(won_r), wpa_shared = rsum(shared_r) + wpa_start)]
   ch_gap <- max(abs(pg$wpa_own + pg$wpa_won + pg$wpa_shared - pg$wpa_neutral))
