@@ -3,8 +3,7 @@
 The R5 checklist item made executable: fails loudly if any `player_id`
 appears with more than one distinct `foldid` value. Intended to be
 called on every `foldid` before it reaches
-[`glmnet::cv.glmnet()`](https://glmnet.stanford.edu/reference/cv.glmnet.html)
-–
+[`glmnet::cv.glmnet()`](https://rdrr.io/pkg/glmnet/man/cv.glmnet.html) –
 [`fit_spm_panel()`](https://peteowen1.github.io/panna/reference/fit_spm_panel.md)
 calls this on its own grouped assignment as a self-check, and it is
 exported so any other candidate/eval script constructing folds by hand
