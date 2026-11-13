@@ -207,6 +207,10 @@ jobs:
           devtools::load_all()
           pannadata_dir(pannadata_path)
           opta_data_dir(file.path(pannadata_path, "opta"))
+          # Same shot models and WPA ledger as the weekly predictions run: xG v5.2 /
+          # xGOT v3.2 (md5-checked, stops on a bad download) and the structural WP
+          # (panna#465). Without this, 10b prices shots with the old default xG.
+          source("data-raw/match-predictions-opta/ci_fetch_models.R")
           cache_dir <- file.path("data-raw", "cache-predictions-opta")
           dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
           game_log_seasons <- Sys.getenv("SEASON")
@@ -259,7 +263,7 @@ jobs:
           EOF
           set -o pipefail
           Rscript /tmp/run_10b.R 2>&1 | tee /tmp/10b.log
-          grep -E "^GAME_LOGS|centred by player-match role8|EPV adjustments skipped|missing [0-9]+ of [0-9]+ expected|Skipping" /tmp/10b.log >> "$GITHUB_STEP_SUMMARY" || true
+          grep -E "^GAME_LOGS|Shot models:|WPA ledger (ON|OFF)|centred by player-match role8|EPV adjustments skipped|missing [0-9]+ of [0-9]+ expected|Skipping" /tmp/10b.log >> "$GITHUB_STEP_SUMMARY" || true
 
       # 10b tolerates a failing league (it warns and writes the rest), which is
       # right for the weekly publish and wrong for a gate: a missing league or
