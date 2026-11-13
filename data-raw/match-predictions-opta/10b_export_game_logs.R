@@ -710,7 +710,7 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
         # difference, so extra-time matches take theirs from the events (panna#463).
         ng_fx_et <- .ng_fixtures_extra_time(ng_fx, events, lineups)
         if (attr(ng_fx_et, "n_extra_time") > 0 || attr(ng_fx_et, "n_unmatched") > 0) {
-          message(sprintf("    net goals (%s): %d extra-time match%s scored from the events (%d score%s moved); %d left at the fixture score (teams did not match)",
+          message(sprintf("    net goals (%s): %d extra-time match%s scored from the events (%d score%s moved); %d left at the fixture score (no lineups, or teams did not match)",
                           league, attr(ng_fx_et, "n_extra_time"), if (attr(ng_fx_et, "n_extra_time") == 1) "" else "es",
                           attr(ng_fx_et, "n_changed"), if (attr(ng_fx_et, "n_changed") == 1) "" else "s",
                           attr(ng_fx_et, "n_unmatched")))
