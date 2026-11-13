@@ -52,7 +52,7 @@ current_config <- list(leagues = leagues, seasons = seasons,
 # NOTE (review R060/R068/R076): there is deliberately NO cache-hit early exit here.
 # A top-level return() inside a source()d script does not stop the script, so the
 # old branch only logged and then rebuilt anyway. Making it work would serve a stale
-# 01_match_stats.rds: current_config is only (leagues, seasons, min_season, min_match_minutes), with no
+# 01_match_stats.rds: current_config is only (leagues, seasons, min_season, max_season_end_year, min_match_minutes), with no
 # data vintage, so new matches would never reach the cache. The weekly PSR snapshot
 # relies on this step rebuilding (review R001). Add a data fingerprint before ever
 # reinstating a skip.
