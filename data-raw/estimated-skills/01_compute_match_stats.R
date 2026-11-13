@@ -149,8 +149,21 @@ if (!use_rapm_cache) {
         stats$league <- league
         stats$season <- season
 
+        # Older Opta player_stats mostly lack minsPlayed (EPL 2014-15: 83.9%
+        # missing, 80 of 380 matches survived the minutes filter); lineups carry
+        # minutes_played on every row, so pass them to fill the gap (issue #469).
+        # A missing lineups table just means no fill, as before.
+        lineups <- tryCatch(
+          load_opta_lineups(league, season = season, source = "local"),
+          error = function(e) {
+            message(sprintf("  No lineups for %s (%s): minutes not filled", label, e$message))
+            NULL
+          })
+
         # Compute match-level features
-        match_level <- compute_match_level_opta_stats(stats, min_minutes = min_match_minutes)
+        match_level <- compute_match_level_opta_stats(stats, min_minutes = min_match_minutes,
+                                                      lineups = lineups)
+        rm(lineups)
 
         if (!is.null(match_level) && nrow(match_level) > 0) {
           all_stats[[label]] <- match_level
