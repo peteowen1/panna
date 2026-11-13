@@ -87,7 +87,7 @@ This is exactly what `data-raw/match-predictions-opta/_run_gamelogs_gt.R` does �
 | Script | Models | How it should load them |
 |--------|--------|--------------------------|
 | `10b_export_game_logs.R` (EPV/WPA/PSV, net goals) | EPV, WP, xPass, xG, xGOT, structural WP | `epv_model_override` + `wp_model_override` set by the caller (else default fallback → STALE); `xg_model_override` / `xgot_model_override` = xG v5.2 / xGOT v3.2 (the weekly run downloads `xg_model_v5` / `xgot_model_v3` from pannamodels `epv` since panna#465, 2026-11-13); `wp_structural_model_path` for the WPA ledger |
-| `10c_export_equity.R` (chains) | EPV, xPass | `epv_model_override` |
+| `10c_export_equity.R` (chains) | EPV, xPass, xG | `epv_model_override`; `xg_model_override`, same shot xG as 10b (panna#465) |
 | `05_train_wp_model.R` | EPV (for the WP `epv` feature) | already passes explicit `path = "data-raw/cache/epv"` ✓ |
 | `03_calculate_player_xmetrics.R` | xG | `load_xg_model()` (stable model, default OK) |
 

@@ -422,12 +422,15 @@ jobs:
             # 2026-11-13), the pannamodels epv assets xg_model_v5 / xgot_model_v3. Downloaded and
             # loaded by path, never by the bare loader, so a failed download stops the run instead
             # of pricing this week's shots with the old xG.
-            for (.sm in c('xg_model_v5', 'xgot_model_v3')) {
+            .sm_md5 <- c(xg_model_v5 = 'a98df5d1', xgot_model_v3 = '4709ead1')  # MODELS.md rows 48-49
+            for (.sm in names(.sm_md5)) {
               .sm_path <- file.path(tempdir(), paste0(.sm, '.rds'))
               .sm_dl <- system2('gh', c('release', 'download', 'epv', '-R', 'peteowen1/pannamodels',
                                         '-p', paste0(.sm, '.rds'), '-O', .sm_path, '--clobber'))
               if (!identical(as.integer(.sm_dl), 0L) || !file.exists(.sm_path)) stop(.sm, '.rds download failed (exit ', .sm_dl, ')')
-              cat(.sm, '.rds md5', unname(tools::md5sum(.sm_path)), '\n')
+              .got <- substr(unname(tools::md5sum(.sm_path)), 1, 8)
+              cat(.sm, '.rds md5', .got, '\n')
+              if (!identical(.got, .sm_md5[[.sm]])) stop(.sm, '.rds md5 ', .got, ' but MODELS.md says ', .sm_md5[[.sm]])
               assign(paste0(.sm, '_path'), .sm_path)
             }
             xg_model_override   <- load_xg_model(xg_model_v5_path)
