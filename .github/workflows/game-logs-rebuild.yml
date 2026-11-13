@@ -263,8 +263,7 @@ jobs:
             bd_out <- file.path(cache_dir, sprintf("%s_%s.parquet", bd_kind, game_log_seasons))
             if (file.exists(bd_out)) {
               stopifnot(file.rename(bd_out, sub("[.]parquet$", sprintf("__part%dof%d.parquet", part, nparts), bd_out)))
-            } else cat(sprintf("NO_BREAKDOWN %s part %d: %s not written
-", game_log_seasons, part, basename(bd_out)))
+            } else cat(sprintf("NO_BREAKDOWN %s part %d: %s not written\n", game_log_seasons, part, basename(bd_out)))
           }
           gl <- arrow::read_parquet(part_out)
           cat(sprintf("GAME_LOGS %s part %d: %d rows, %d matches, %d leagues (%s), %.1f min, EPV centring %s\n",
