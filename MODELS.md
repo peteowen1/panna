@@ -86,7 +86,7 @@ This is exactly what `data-raw/match-predictions-opta/_run_gamelogs_gt.R` does �
 
 | Script | Models | How it should load them |
 |--------|--------|--------------------------|
-| `10b_export_game_logs.R` (EPV/WPA/PSV) | EPV, WP, xPass | `epv_model_override` + `wp_model_override` set by the caller (else default fallback → STALE) |
+| `10b_export_game_logs.R` (EPV/WPA/PSV, net goals) | EPV, WP, xPass, xG, xGOT, structural WP | `epv_model_override` + `wp_model_override` set by the caller (else default fallback → STALE); `xg_model_override` / `xgot_model_override` = xG v5.2 / xGOT v3.2 (the weekly run downloads `xg_model_v5` / `xgot_model_v3` from pannamodels `epv` since panna#465, 2026-11-13); `wp_structural_model_path` for the WPA ledger |
 | `10c_export_equity.R` (chains) | EPV, xPass | `epv_model_override` |
 | `05_train_wp_model.R` | EPV (for the WP `epv` feature) | already passes explicit `path = "data-raw/cache/epv"` ✓ |
 | `03_calculate_player_xmetrics.R` | xG | `load_xg_model()` (stable model, default OK) |
@@ -108,13 +108,16 @@ blog_leagues       <- c(... blog leagues ...)
 game_log_seasons   <- "2025-2026"   # or a vector for backfill
 upload_game_logs   <- FALSE
 build_game_logs    <- TRUE
-use_skill_ratings  <- FALSE
+use_skill_ratings  <- TRUE    # what the weekly run uses (predictions-pipeline.yml)
 source("data-raw/match-predictions-opta/10b_export_game_logs.R")
 ```
 
 Watch the log for the provenance line — it must show the **clean** model is in
 use (overrides bypass the loader, so you'll see the override taken, not a stale
 `epv_model.rds` date).
+
+For a full-history rebuild, `rebuild_game_logs_all_seasons.R` applies this recipe (md5-checked) and
+fetches the structural WP model; set `dry_run <- FALSE` to run it.
 
 **Follow this recipe rather than sourcing `10b_export_game_logs.R` directly.**
 The step depends on config the runner sets — `use_skill_ratings` above is one —

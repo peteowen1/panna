@@ -418,6 +418,21 @@ jobs:
                                        '-p', 'wp_structural_model.rds', '-O', wp_structural_model_path, '--clobber'))
             cat('wp_structural_model.rds download exit', .wps_dl, '| md5', if (file.exists(wp_structural_model_path)) unname(tools::md5sum(wp_structural_model_path)) else 'none', '\n')
 
+            # Shot pricing in 10b (game logs + net goals): xG v5.2 / xGOT v3.2 (panna#465, Pete
+            # 2026-11-13), the pannamodels epv assets xg_model_v5 / xgot_model_v3. Downloaded and
+            # loaded by path, never by the bare loader, so a failed download stops the run instead
+            # of pricing this week's shots with the old xG.
+            for (.sm in c('xg_model_v5', 'xgot_model_v3')) {
+              .sm_path <- file.path(tempdir(), paste0(.sm, '.rds'))
+              .sm_dl <- system2('gh', c('release', 'download', 'epv', '-R', 'peteowen1/pannamodels',
+                                        '-p', paste0(.sm, '.rds'), '-O', .sm_path, '--clobber'))
+              if (!identical(as.integer(.sm_dl), 0L) || !file.exists(.sm_path)) stop(.sm, '.rds download failed (exit ', .sm_dl, ')')
+              cat(.sm, '.rds md5', unname(tools::md5sum(.sm_path)), '\n')
+              assign(paste0(.sm, '_path'), .sm_path)
+            }
+            xg_model_override   <- load_xg_model(xg_model_v5_path)
+            xgot_model_override <- load_xgot_model(xgot_model_v3_path)
+
             source('data-raw/match-predictions-opta/run_predictions_opta.R', chdir = FALSE)
             if (isTRUE(pipeline_failed)) quit(status = 1)
           "
@@ -430,7 +445,11 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: predictions-branch-run
-          path: data-raw/cache-predictions-opta/predictions.parquet
+          # The current season's game logs too (panna#465): how a shot-pricing or 10b change
+          # is compared with the published blog-latest copy before it merges.
+          path: |
+            data-raw/cache-predictions-opta/predictions.parquet
+            data-raw/cache-predictions-opta/game_logs_*.parquet
           if-no-files-found: warn
           retention-days: 14
 
