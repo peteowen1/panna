@@ -1,5 +1,6 @@
 # panna 0.3.118
 
+- Net goals now reconciles extra-time matches to their extra-time score (panna#463). `opta_fixtures.parquet` stores the 90-minute score, so step 10b's `ng_reconcile_margin()` was pulling an extra-time goal's value away from the side that scored it. 10b now rescores matches with period 3/4 events from the events (`.ng_fixtures_extra_time()`; extra time in, shootout out) and logs how many it moved. Other matches keep their fixture score. In the local events 712 matches have an extra-time goal; on UCL/UEL/UECL 2025-26, 12 of 20 extra-time matches move, and their 90-minute event scores match the fixture on 20 of 20.
 - New structural win probability model (panna#273): `train_wp_structural()` predicts the home team's
   win chance from the scoreboard (margin, time, red cards, half, extra time) plus the pre-match Elo gap
   (`add_wp_match_elo()`), with live threat as the chance of the next goal. Who has the ball is not an
