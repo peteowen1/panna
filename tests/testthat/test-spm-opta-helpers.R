@@ -320,3 +320,81 @@ test_that(".report_xmetrics_coverage flags uncovered seasons and warns only on r
   expect_null(suppressMessages(.report_xmetrics_coverage(st, NULL)))
   expect_null(suppressMessages(.report_xmetrics_coverage(st, data.frame(player_id = "a", season = "2025-2026"))))
 })
+
+
+# ===========================================================================
+# .fill_opta_minutes_from_lineups / compute_match_level_opta_stats(lineups =)
+# (issue #469: old Opta player_stats lack minsPlayed, lineups carry it)
+# ===========================================================================
+
+.minutes_fill_fixture <- function() {
+  stats <- data.frame(
+    match_id = c("m1", "m1", "m1", "m1", "m2", "m2"),
+    player_id = c("a", "b", "c", "d", "a", "e"),
+    player_name = c("A", "B", "C", "D", "A", "E"),
+    team_name = c("X", "X", "Y", "Y", "X", "Y"),
+    team_position = c("home", "home", "away", "away", "home", "away"),
+    # a: present (90); b: missing, lineup 75; c: missing, lineup 0 (unused sub);
+    # d: missing, absent from lineups; a in m2: missing, lineup 60; e: missing, lineup 5
+    minsPlayed = c(90, NA, NA, NA, NA, NA),
+    goals = c(1, 0, 0, 0, 0, 0),
+    stringsAsFactors = FALSE
+  )
+  lineups <- data.frame(
+    match_id = c("m1", "m1", "m1", "m2", "m2"),
+    player_id = c("a", "b", "c", "a", "e"),
+    minutes_played = c(80, 75, 0, 60, 5),   # a/m1 disagrees: stats value must win
+    stringsAsFactors = FALSE
+  )
+  list(stats = stats, lineups = lineups)
+}
+
+test_that(".fill_opta_minutes_from_lineups fills only missing minutes", {
+  fx <- .minutes_fill_fixture()
+  dt <- data.table::as.data.table(fx$stats)
+  data.table::setnames(dt, "minsPlayed", "total_minutes")
+
+  .fill_opta_minutes_from_lineups(dt, fx$lineups)
+
+  expect_equal(dt$total_minutes, c(90, 75, 0, NA, 60, 5))
+})
+
+test_that(".fill_opta_minutes_from_lineups is a no-op without usable lineups", {
+  fx <- .minutes_fill_fixture()
+  dt <- data.table::as.data.table(fx$stats)
+  data.table::setnames(dt, "minsPlayed", "total_minutes")
+  before <- data.table::copy(dt$total_minutes)
+
+  .fill_opta_minutes_from_lineups(dt, NULL)
+  expect_equal(dt$total_minutes, before)
+  .fill_opta_minutes_from_lineups(dt, data.frame(match_id = "m1"))
+  expect_equal(dt$total_minutes, before)
+})
+
+test_that(".fill_opta_minutes_from_lineups ignores duplicate lineup keys", {
+  fx <- .minutes_fill_fixture()
+  dt <- data.table::as.data.table(fx$stats)
+  data.table::setnames(dt, "minsPlayed", "total_minutes")
+  dup_lineups <- rbind(fx$lineups, fx$lineups)
+
+  .fill_opta_minutes_from_lineups(dt, dup_lineups)
+
+  expect_equal(nrow(dt), nrow(fx$stats))
+  expect_equal(dt$total_minutes, c(90, 75, 0, NA, 60, 5))
+})
+
+test_that("compute_match_level_opta_stats keeps matches only lineups give minutes for", {
+  fx <- .minutes_fill_fixture()
+
+  without <- suppressMessages(compute_match_level_opta_stats(fx$stats, min_minutes = 10))
+  expect_equal(without$player_id, "a")
+  expect_equal(unique(without$match_id), "m1")
+
+  with_lu <- suppressMessages(
+    compute_match_level_opta_stats(fx$stats, min_minutes = 10, lineups = fx$lineups))
+  # a/m1 (90, stats wins), b/m1 (75), a/m2 (60); c unused sub, d unknown and
+  # e (5 min < 10) stay out
+  expect_setequal(paste(with_lu$match_id, with_lu$player_id), c("m1 a", "m1 b", "m2 a"))
+  expect_equal(with_lu$total_minutes[with_lu$match_id == "m1" & with_lu$player_id == "a"], 90)
+  expect_setequal(unique(with_lu$match_id), c("m1", "m2"))
+})

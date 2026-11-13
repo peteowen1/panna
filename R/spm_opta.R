@@ -404,6 +404,48 @@
 # Match-level Opta stats (for estimated skills pipeline)
 # ============================================================================
 
+#' Fill missing player-match minutes from Opta lineups
+#'
+#' Older Opta \code{player_stats} rows often have no \code{minsPlayed}
+#' (EPL 2014-15: 83.9\% missing; GER 2014-15 similar) although
+#' \code{opta_lineups} has \code{minutes_played} on every row. On the rows
+#' where both exist they agree exactly (EPL/GER 2014-15, GER 2016-17: 0 of
+#' 12,449 differ), so lineups are a safe source. Unused substitutes have 0
+#' lineup minutes and stay below any minutes filter.
+#'
+#' @param dt A data.table of player-match stats with \code{match_id},
+#'   \code{player_id} and \code{total_minutes}. Modified in place.
+#' @param lineups Data frame with \code{match_id}, \code{player_id} and
+#'   \code{minutes_played} (from \code{load_opta_lineups()}).
+#' @return \code{dt}, invisibly, with \code{total_minutes} filled where it was
+#'   \code{NA} and lineups had a value.
+#' @keywords internal
+.fill_opta_minutes_from_lineups <- function(dt, lineups) {
+  need <- c("match_id", "player_id", "minutes_played")
+  if (is.null(lineups) || !all(need %in% names(lineups)) ||
+      !all(c("match_id", "player_id", "total_minutes") %in% names(dt))) {
+    return(invisible(dt))
+  }
+  lu <- data.table::as.data.table(lineups)[, need, with = FALSE]
+  lu <- lu[!is.na(minutes_played)]
+  # One row per key so the join cannot multiply stats rows
+  lu <- unique(lu, by = c("match_id", "player_id"))
+  idx <- match(paste(dt$match_id, dt$player_id), paste(lu$match_id, lu$player_id))
+  fill <- is.na(dt$total_minutes) & !is.na(idx)
+  n_fill <- sum(fill)
+  if (n_fill > 0L) {
+    if (is.integer(dt$total_minutes)) {
+      data.table::set(dt, j = "total_minutes", value = as.numeric(dt$total_minutes))
+    }
+    data.table::set(dt, i = which(fill), j = "total_minutes",
+                    value = as.numeric(lu$minutes_played[idx[fill]]))
+    progress_msg(sprintf("Filled minutes from lineups for %d of %d player-match rows",
+                         n_fill, nrow(dt)))
+  }
+  invisible(dt)
+}
+
+
 #' Compute match-level Opta statistics with per-90 rates
 #'
 #' Like \code{aggregate_opta_stats()} but preserves individual player-match rows
@@ -417,6 +459,13 @@
 #'   \code{minsPlayed}.
 #' @param min_minutes Minimum minutes in a single match for inclusion (default 10).
 #'   Filters out very short cameos where per-90 rates are unreliable.
+#' @param lineups Optional data frame from \code{load_opta_lineups()} for the
+#'   same matches. Older Opta \code{player_stats} mostly lack
+#'   \code{minsPlayed} (EPL 2014-15: 83.9\% missing) while lineups carry
+#'   \code{minutes_played} for every row, so without this the minutes filter
+#'   below drops those matches entirely. When supplied, missing minutes are
+#'   filled from lineups on (match_id, player_id) before the filter; minutes
+#'   already present are never overwritten.
 #'
 #' @return A data.table with one row per player-match containing:
 #'   \itemize{
@@ -435,7 +484,7 @@
 #' opta_stats <- load_opta_stats("ENG", "2024-2025")
 #' match_stats <- compute_match_level_opta_stats(opta_stats)
 #' }
-compute_match_level_opta_stats <- function(opta_stats, min_minutes = 10) {
+compute_match_level_opta_stats <- function(opta_stats, min_minutes = 10, lineups = NULL) {
   if (is.null(opta_stats) || nrow(opta_stats) == 0) {
     cli::cli_warn("No Opta stats provided.")
     return(NULL)
@@ -452,6 +501,12 @@ compute_match_level_opta_stats <- function(opta_stats, min_minutes = 10) {
   # Ensure total_minutes exists
   if (!"total_minutes" %in% names(dt) && "minsPlayed" %in% names(dt)) {
     dt[, total_minutes := as.numeric(minsPlayed)]
+  }
+
+  # Fill minutes the stats table lacks from lineups (before the filter, which
+  # would otherwise drop every row without minsPlayed)
+  if (!is.null(lineups) && "total_minutes" %in% names(dt)) {
+    .fill_opta_minutes_from_lineups(dt, lineups)
   }
 
   # Filter by minimum minutes
