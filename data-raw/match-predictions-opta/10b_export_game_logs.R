@@ -706,6 +706,16 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
         }
         ng_fx <- as.data.frame(load_opta_fixtures(league, season = league_season,
                                                   source = "local"))
+        # The fixture score is the 90-minute score; net goals reconciles each team to its goal
+        # difference, so extra-time matches take theirs from the events (panna#463).
+        ng_fx_et <- .ng_fixtures_extra_time(ng_fx, events, lineups)
+        if (attr(ng_fx_et, "n_extra_time") > 0 || attr(ng_fx_et, "n_unmatched") > 0) {
+          message(sprintf("    net goals (%s): %d extra-time match%s scored from the events (%d score%s moved); %d left at the fixture score (teams did not match)",
+                          league, attr(ng_fx_et, "n_extra_time"), if (attr(ng_fx_et, "n_extra_time") == 1) "" else "es",
+                          attr(ng_fx_et, "n_changed"), if (attr(ng_fx_et, "n_changed") == 1) "" else "s",
+                          attr(ng_fx_et, "n_unmatched")))
+        }
+        ng_fx <- as.data.frame(ng_fx_et); rm(ng_fx_et)
         ng_adj <- ng_build_adjacency(events, verbose = FALSE)
         ng_pay <- ng_build_ledger(spadl_ng,
                                   adj = ng_adj,
@@ -870,7 +880,8 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
           # The result comes from the events (extra time in, shootout out), the same count that
           # labels the WP model. opta_fixtures' home/away_score is the 90-minute score: on
           # 2026-11-10 that left 8 UCL/UECL qualifiers decided in extra time off by 0.5 and the
-          # whole league's ledger skipped. (Net goals reconciles to the fixture score: unchecked.)
+          # whole league's ledger skipped. (ng_fx already carries the extra-time scores since panna#463,
+          # so n_et below counts only normal matches where the events and the fixture disagree.)
           fx_l <- data.table::as.data.table(ng_fx)[match_id %in% all_m]
           fx_l[, `:=`(home_score = as.numeric(home_score), away_score = as.numeric(away_score))]
           mr_l <- data.table::as.data.table(match_results)[, .(match_id, ev_home = as.numeric(home_goals), ev_away = as.numeric(away_goals))]
