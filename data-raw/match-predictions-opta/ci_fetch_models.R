@@ -13,9 +13,17 @@
 #                             md5-checked, so a failed or wrong download stops the run instead
 #                             of pricing this week's shots with the old xG.
 
-.gh_epv_download <- function(asset, dest) {
-  system2("gh", c("release", "download", "epv", "-R", "peteowen1/pannamodels",
-                  "-p", asset, "-O", dest, "--clobber"))
+# Three tries: with 20 rebuild jobs downloading at once, one structural-WP download
+# failed outright (game-logs-rebuild run 43410608936, 2001-02 part 2) and turned the
+# WPA ledger off for that job.
+.gh_epv_download <- function(asset, dest, tries = 3L) {
+  for (i in seq_len(tries)) {
+    code <- system2("gh", c("release", "download", "epv", "-R", "peteowen1/pannamodels",
+                            "-p", asset, "-O", dest, "--clobber"))
+    if (identical(as.integer(code), 0L) && file.exists(dest)) return(0L)
+    if (i < tries) { cat(asset, "download failed (exit", code, "), retry", i, "\n"); Sys.sleep(15 * i) }
+  }
+  code
 }
 
 wp_structural_model_path <- file.path(tempdir(), "wp_structural_model.rds")
