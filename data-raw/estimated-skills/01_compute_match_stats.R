@@ -153,11 +153,13 @@ if (!use_rapm_cache) {
         # minutes on only 80 of 380 matches), and compute_match_level_opta_stats() drops
         # rows without minutes. The lineups carry minutes_played on every row, so fill
         # the gaps from there (panna#469). Rows that have minsPlayed keep it.
+        if (!"minsPlayed" %in% names(stats)) stats$minsPlayed <- NA_real_
         if (anyNA(stats$minsPlayed)) {
+          lu_err <- NULL
           lu <- tryCatch(load_opta_lineups(league, season = season, source = "local"),
-                         error = function(e) NULL)
+                         error = function(e) { lu_err <<- conditionMessage(e); NULL })
           if (!is.null(lu) && nrow(lu) > 0 && "minutes_played" %in% names(lu)) {
-            lu <- unique(data.table::as.data.table(lu)[!is.na(minutes_played),
+            lu <- unique(data.table::as.data.table(lu)[!is.na(minutes_played) & !is.na(player_id) & !is.na(match_id),
                            .(match_id, player_id, lu_minutes = as.numeric(minutes_played))],
                          by = c("match_id", "player_id"))
             stats <- data.table::as.data.table(stats)
@@ -169,8 +171,9 @@ if (!use_rapm_cache) {
                                               label, n_filled, n_na))
             stats <- as.data.frame(stats)
           } else {
-            message(sprintf("  %s: %d rows lack minsPlayed and no lineup minutes to fill them",
-                            label, sum(is.na(stats$minsPlayed))))
+            message(sprintf("  %s: %d rows lack minsPlayed and no lineup minutes to fill them%s",
+                            label, sum(is.na(stats$minsPlayed)),
+                            if (is.null(lu_err)) "" else paste0(" (lineups failed to load: ", lu_err, ")")))
           }
         }
 
