@@ -149,6 +149,31 @@ if (!use_rapm_cache) {
         stats$league <- league
         stats$season <- season
 
+        # Older Opta player_stats mostly lack minsPlayed (EPL 2014-15: 83.9% of rows,
+        # minutes on only 80 of 380 matches), and compute_match_level_opta_stats() drops
+        # rows without minutes. The lineups carry minutes_played on every row, so fill
+        # the gaps from there (panna#469). Rows that have minsPlayed keep it.
+        if (anyNA(stats$minsPlayed)) {
+          lu <- tryCatch(load_opta_lineups(league, season = season, source = "local"),
+                         error = function(e) NULL)
+          if (!is.null(lu) && nrow(lu) > 0 && "minutes_played" %in% names(lu)) {
+            lu <- unique(data.table::as.data.table(lu)[!is.na(minutes_played),
+                           .(match_id, player_id, lu_minutes = as.numeric(minutes_played))],
+                         by = c("match_id", "player_id"))
+            stats <- data.table::as.data.table(stats)
+            n_na <- sum(is.na(stats$minsPlayed))
+            stats[lu, on = c("match_id", "player_id"),
+                  minsPlayed := data.table::fifelse(is.na(minsPlayed), i.lu_minutes, as.numeric(minsPlayed))]
+            n_filled <- n_na - sum(is.na(stats$minsPlayed))
+            if (n_filled > 0) message(sprintf("  %s: filled minsPlayed for %d of %d rows from lineups",
+                                              label, n_filled, n_na))
+            stats <- as.data.frame(stats)
+          } else {
+            message(sprintf("  %s: %d rows lack minsPlayed and no lineup minutes to fill them",
+                            label, sum(is.na(stats$minsPlayed))))
+          }
+        }
+
         # Compute match-level features
         match_level <- compute_match_level_opta_stats(stats, min_minutes = min_match_minutes)
 
