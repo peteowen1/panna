@@ -179,16 +179,26 @@ jobs:
       - name: Rebuild match stats (skills step 01)
         env:
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
+          SEASON: ${{ matrix.season }}
         run: |
           cat > /tmp/run_step01.R << 'EOF'
           pannadata_path <- Sys.getenv("PANNADATA_DIR")
           devtools::load_all()
           pannadata_dir(pannadata_path)
           opta_data_dir(file.path(pannadata_path, "opta"))
-          # Every season, not the skills default of 2013-14 on: 10b scores PSV from
-          # these stats, and game logs go back to 1999-2000 (Pete 2026-11-14; the
-          # published pre-2013 logs carry PSV on every row).
-          min_season <- "1999-2000"
+          # 10b scores PSV from these stats, and game logs go back to 1999-2000
+          # (Pete 2026-11-14: the published pre-2013 logs carry PSV on every row).
+          # Seasons ending 2013 or earlier build 1999-2000..2014; later seasons keep
+          # the skills default (2013-14 on). One table of every season ran step 01
+          # out of the runner's 16 GB (run 43528875551).
+          .sey <- extract_season_end_year(Sys.getenv("SEASON"))
+          if (!is.na(.sey) && .sey <= 2013) {
+            min_season <- "1999-2000"
+            max_season_end_year <- 2014
+          }
+          cat("Step 01 for", Sys.getenv("SEASON"), ": min_season",
+              if (exists("min_season")) min_season else "(default)", "max end year",
+              if (exists("max_season_end_year")) max_season_end_year else "none", "\n")
           run_steps <- list(
             step_01_compute_match_stats = TRUE, step_02_estimate_skills = FALSE,
             step_01c_keeper_style = TRUE,

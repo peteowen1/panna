@@ -32,6 +32,10 @@ leagues <- if (exists("leagues")) leagues else
 
 seasons <- if (exists("seasons")) seasons else NULL
 min_season <- if (exists("min_season")) min_season else "2013-2014"
+# Optional upper bound (season END year, so calendar-year and tournament labels
+# compare correctly). NULL = no bound. game-logs-rebuild.yml sets it for pre-2013
+# seasons: 1999-2014 in one table fits a 16 GB runner, 1999-2027 does not.
+max_season_end_year <- if (exists("max_season_end_year")) max_season_end_year else NULL
 min_match_minutes <- if (exists("min_match_minutes")) min_match_minutes else 10
 apply_context_adjustments <- if (exists("apply_context_adjustments")) apply_context_adjustments else FALSE
 
@@ -42,6 +46,7 @@ config_path <- file.path(cache_dir, "01_config.rds")
 
 current_config <- list(leagues = leagues, seasons = seasons,
                        min_season = min_season,
+                       max_season_end_year = max_season_end_year,
                        min_match_minutes = min_match_minutes)
 
 # NOTE (review R060/R068/R076): there is deliberately NO cache-hit early exit here.
@@ -130,6 +135,10 @@ if (!use_rapm_cache) {
 
     if (!is.null(seasons)) available_seasons <- intersect(available_seasons, seasons)
     if (!is.null(min_season)) available_seasons <- available_seasons[available_seasons >= min_season]
+    if (!is.null(max_season_end_year) && length(available_seasons)) {
+      available_seasons <- available_seasons[
+        vapply(available_seasons, extract_season_end_year, numeric(1)) <= max_season_end_year]
+    }
 
     message(sprintf("\n--- %s: %d seasons ---", league, length(available_seasons)))
 
