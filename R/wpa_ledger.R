@@ -49,7 +49,11 @@
 #'
 #' @return One row per player-match: `wpa_neutral` (the ledger value),
 #'   `wpa_offence`, `wpa_defence`, `wpa_start` (`wpa_offence + wpa_defence +
-#'   wpa_start = wpa_neutral`), and one `wpa_<role>` column per engine role.
+#'   wpa_start = wpa_neutral`), torp's three channels `wpa_own` (on-ball acts),
+#'   `wpa_won` (balls won and shots stopped, where the feed names him) and
+#'   `wpa_shared` (his minutes' share of the team pools plus `wpa_start`), with
+#'   `wpa_own + wpa_won + wpa_shared = wpa_neutral`, and one `wpa_<role>`
+#'   column per engine role.
 #'   Attribute `targets`: per team-match, its result, target, opening win chance
 #'   and the gap after the build.
 #' @family win probability
@@ -133,6 +137,32 @@ wpa_build_ledger <- function(actions, wp_actions, fixtures, lineups, adj = NULL,
   pg[, wpa_start := .shift * .mins / .tot_mins]
   pg[, wpa_neutral := wpa_neutral + wpa_start]
   pg[, c(".mins", ".shift", ".tot_mins") := NULL]
+
+  # torp's three channels (.np_v4_channels(), torp#263), not offence/defence.
+  # Offence/defence puts every ball a team loses in its players' offence and
+  # every ball it wins back in their defence, so on ENG 2026-27 a team's
+  # offence averaged -1.95 a match and 94% of player-matches were negative
+  # (Pete, 2026-11-11). Here the unnamed team share is its own channel:
+  #   own    -- what the player did on the ball (actor, receiver, shooter, rebound)
+  #   won    -- what the feed names him for winning or stopping (role "defender")
+  #   shared -- his minutes' share of the team pools, plus the even start
+  roles <- sub("^wpa_", "", grep("^wpa_", names(pg), value = TRUE))
+  roles <- setdiff(roles, c("neutral", "offence", "defence", "start"))
+  shared_r <- intersect(roles, c("pool_off_spread", "pool_def_spread"))
+  won_r <- intersect(roles, "defender")
+  own_r <- setdiff(roles, c(shared_r, won_r))
+  # Named so a new engine role is a decision, not a silent default into `own`.
+  own_known <- c("actor", "receiver", "shooter", "stopper_rebound",
+                 "shot_strike", "shot_finish", "shot_aftermath")
+  if (length(unk <- setdiff(own_r, own_known))) {
+    cli::cli_abort("WPA ledger: role{?s} {.val {unk}} not assigned to own, won or shared; add {?it/them} in {.fn wpa_build_ledger}.")
+  }
+  rsum <- function(r) if (length(r)) rowSums(as.matrix(pg[, paste0("wpa_", r), with = FALSE]), na.rm = TRUE) else 0
+  pg[, `:=`(wpa_own = rsum(own_r), wpa_won = rsum(won_r), wpa_shared = rsum(shared_r) + wpa_start)]
+  ch_gap <- max(abs(pg$wpa_own + pg$wpa_won + pg$wpa_shared - pg$wpa_neutral))
+  if (!is.finite(ch_gap) || ch_gap > tol) {
+    cli::cli_abort("WPA ledger: own + won + shared misses the total by {signif(ch_gap, 3)}; roles seen: {.val {roles}}.")
+  }
 
   tt <- pg[, .(total = sum(wpa_neutral)), by = .(match_id, team_id)]
   tg[tt, total := i.total, on = c("match_id", "team_id")]

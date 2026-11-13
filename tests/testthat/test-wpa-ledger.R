@@ -49,8 +49,34 @@ test_that("each team sums to its result minus 0.5, and the start term is spread 
   expect_equal(pg[team_id == "A", unique(round(wpa_start, 12))], round(-0.04 / 11, 12))
   # The parts add up to the ledger value on every row.
   expect_equal(pg$wpa_offence + pg$wpa_defence + pg$wpa_start, pg$wpa_neutral, tolerance = 1e-12)
+  # torp's channels add up too; the start sits in `shared`, and `won` is only the named role.
+  expect_equal(pg$wpa_own + pg$wpa_won + pg$wpa_shared, pg$wpa_neutral, tolerance = 1e-12)
+  expect_equal(pg$wpa_won, if ("wpa_defender" %in% names(pg)) pg$wpa_defender else rep(0, nrow(pg)),
+               tolerance = 1e-12)
+  pools <- intersect(c("wpa_pool_off_spread", "wpa_pool_def_spread"), names(pg))
+  expect_equal(pg$wpa_shared, rowSums(as.matrix(pg[, pools, with = FALSE])) + pg$wpa_start, tolerance = 1e-12)
   tg <- attr(pg, "targets")
   expect_equal(sort(tg$target), c(-0.5, 0.5))
+})
+
+test_that("a turnover puts the winner's named share in `won` and the passer's blame in `own`", {
+  # Action 2 becomes a1's FAILED pass, -0.04 in A's frame (home +0.04), won back by h2
+  # (action 3). The goal is cut to +0.22 so home still totals 1 - 0.54 = 0.46:
+  # 0.10 + 0.04 + 0.10 + 0.22. Default shares: exec_blame 0.30, named_share 0.70.
+  #   a1 own: -0.04 x 0.30 = -0.012 (A's pool carries the other -0.028)
+  #   h2 won: +0.04 x 0.70 = +0.028 (H's pool carries the other +0.012)
+  act <- wpa_fx_actions(); act$result[2] <- "fail"
+  # What ng_build_adjacency() would say: the ball changed hands after action 2, to h2.
+  act$true_possession_change <- c(FALSE, TRUE, FALSE, FALSE)
+  act$true_next_player <- c(NA, "h2", NA, NA)
+  act$gap_player_id <- NA_character_
+  wp <- wpa_fx_wp(); wp$wpa[2] <- -0.04; wp$wpa[4] <- 0.22
+  pg <- wpa_build_ledger(act, wp, wpa_fx_fixtures(), wpa_fx_lineup(), verbose = FALSE)
+  expect_equal(pg[player_id == "h2", wpa_won], 0.028, tolerance = 1e-12)
+  expect_equal(sum(pg$wpa_won), 0.028, tolerance = 1e-12)
+  expect_equal(pg[player_id == "a1", wpa_own], -0.012, tolerance = 1e-12)
+  expect_equal(pg$wpa_own + pg$wpa_won + pg$wpa_shared, pg$wpa_neutral, tolerance = 1e-12)
+  expect_equal(pg[, sum(wpa_neutral), by = team_id][order(team_id), V1], c(-0.5, 0.5), tolerance = 1e-12)
   expect_equal(nrow(pg), 22L)
 })
 
