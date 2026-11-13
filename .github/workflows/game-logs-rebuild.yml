@@ -142,11 +142,19 @@ jobs:
           for f in opta_player_stats.parquet opta_shots.parquet opta_shot_events.parquet \
                    opta_events.parquet opta_lineups.parquet opta_fixtures.parquet \
                    opta_skills.parquet opta_match_stats.parquet opta_xmetrics.parquet \
-                   opta_match_xg.parquet opta-catalog.json; do
+                   opta_match_xg.parquet opta_xmetrics_bymatch.parquet \
+                   opta_epr_weekly.parquet opta_psr_weekly.parquet opta-catalog.json; do
             gh release download opta-latest --repo peteowen1/pannadata --pattern "$f" --dir "$OPTA_DIR" \
               && echo "  Downloaded $f" || echo "  Skipped $f (not found)"
           done
-          for f in opta_lineups.parquet opta_fixtures.parquet opta_player_stats.parquet opta-catalog.json; do
+          # The WPA ledger's XI strength reads the as-of career Panna (panna#273); without
+          # it 10b turns the ledger OFF for the whole run. Same source as the weekly run.
+          for f in career_panna.parquet career_panna_asof.parquet; do
+            gh release download ratings-data --repo peteowen1/pannadata --pattern "$f" --dir "$OPTA_DIR" \
+              && echo "  Downloaded $f" || echo "  Skipped $f (not found)"
+          done
+          for f in opta_lineups.parquet opta_fixtures.parquet opta_player_stats.parquet opta-catalog.json \
+                   opta_shot_events.parquet opta_xmetrics_bymatch.parquet career_panna_asof.parquet; do
             [ -f "$OPTA_DIR/$f" ] || { echo "FATAL: required $f missing"; exit 1; }
           done
 
@@ -318,7 +326,7 @@ jobs:
           # published season (issue #376).
           PUBLISHED_LOGS="/tmp/pub/game_logs_${SEASON}.parquet" FAILURE_MARKER="$marker" \
             Rscript data-raw/match-predictions-opta/check_rebuild_leagues.R || bad=1
-          if grep -nE "EPV adjustments skipped|SEASON .* ABORTED|join FAILED|INCOMPLETE|role8 EPV centring FAILED" /tmp/10b.log; then
+          if grep -nE "EPV adjustments skipped|SEASON .* ABORTED|join FAILED|INCOMPLETE|role8 EPV centring FAILED|WPA ledger OFF|The history does not cover these matches" /tmp/10b.log; then
             echo "::error title=Season $SEASON incomplete::10b logged a skipped or failed stage (lines above)"; bad=1
           fi
           # An empty part is accepted only after the two checks above: a part
