@@ -1,7 +1,11 @@
 # rebuild_game_logs_all_seasons.R
 # Full-history force-rebuild of the blog game-logs (all shipped seasons).
 #
-# Why this exists (pannaverse/docs/plans/LIVE-PSV-UNBLOCK-2026-07-20.md):
+# 2026-11-13 (panna#465): models updated to the MODELS.md recipe (v5.1 EPV/WP pack, xG v5.2 /
+# xGOT v3.2, structural WP for the WPA ledger). The next run carries every 10b change since
+# July into the published history: net goals + extra time (#463), the piero rename, WPA (#273).
+#
+# Original purpose, July 2026 (pannaverse/docs/plans/LIVE-PSV-UNBLOCK-2026-07-20.md):
 #   (a) restore/refresh psv/osv/dsv under the STANDARD skills-model pricing
 #       after the retired reliability-lambda display experiment (2026-07-20
 #       audit: lambda is a skill estimator, wrong family for per-game
@@ -47,22 +51,46 @@ if (!dir.exists(cache_dir)) dir.create(cache_dir, recursive = TRUE)
 # NEVER rely on the silent default loader for a game-logs rebuild — the
 # local/pannadata fallback copies are the pre-overhaul (over-reactive)
 # EPV/WP models and would ship stale values across every rebuilt season.
-epv_override_path <- "data-raw/cache/epv/epv_model_xg_clean_full.rds"
-wp_override_path  <- "data-raw/cache/epv/wp_final_d2repl_reg/wp_model.rds"
-if (!file.exists(epv_override_path)) {
-  stop("EPV override model missing: ", epv_override_path,
-       " -- MODELS.md's canonical clean model is required for a game-logs rebuild.")
+# The MODELS.md recipe (2026-11-13, panna#465): EPV/WP from the 2026-09 v5.1 pack, shots
+# priced with xG v5.2 / xGOT v3.2 -- the same set the weekly predictions run uses, so the
+# rebuilt history matches what each Wednesday run writes for the current season. Each file
+# is checked against the md5 MODELS.md records, so a stale local copy stops the run.
+.pinned_models <- list(
+  epv  = list(path = "data-raw/cache/epv/pack-2026-09/epv_model_v51v0.rds",   md5 = "739407d2"),
+  wp   = list(path = "data-raw/cache/epv/pack-2026-09/wp_v51/wp_model.rds",   md5 = "1e57310d"),
+  xg   = list(path = "data-raw/cache/epv/xg-vnext/xg_model_v5_2.rds",         md5 = "a98df5d1"),
+  xgot = list(path = "data-raw/cache/epv/xg-vnext/xgot_model_v3_2.rds",       md5 = "4709ead1")
+)
+for (.nm in names(.pinned_models)) {
+  .m <- .pinned_models[[.nm]]
+  if (!file.exists(.m$path)) {
+    stop(sprintf("%s model missing: %s -- the MODELS.md recipe model is required for a game-logs rebuild.",
+                 .nm, .m$path))
+  }
+  .md5 <- substr(unname(tools::md5sum(.m$path)), 1, 8)
+  if (!identical(.md5, .m$md5)) {
+    stop(sprintf("%s model %s has md5 %s, MODELS.md says %s -- wrong file.", .nm, .m$path, .md5, .m$md5))
+  }
+  message(sprintf("%-4s override: %s (md5 %s)", .nm, .m$path, .md5))
 }
-if (!file.exists(wp_override_path)) {
-  stop("WP override model missing: ", wp_override_path,
-       " -- MODELS.md's canonical clean model is required for a game-logs rebuild.")
+epv_model_override  <- readRDS(.pinned_models$epv$path)
+wp_model_override   <- readRDS(.pinned_models$wp$path)
+xg_model_override   <- load_xg_model(.pinned_models$xg$path)
+xgot_model_override <- load_xgot_model(.pinned_models$xgot$path)
+
+# WPA ledger (panna#273): the structural WP model is not kept locally; fetch the published
+# copy from the pannamodels epv release, as the weekly run does. Without it 10b turns the
+# ledger off, and the rebuilt seasons would ship without the WPA columns -- so stop instead.
+if (!exists("wp_structural_model_path", inherits = FALSE)) {
+  wp_structural_model_path <- file.path(tempdir(), "wp_structural_model.rds")
+  .wps_dl <- system2("gh", c("release", "download", "epv", "-R", "peteowen1/pannamodels",
+                             "-p", "wp_structural_model.rds", "-O", wp_structural_model_path, "--clobber"))
+  if (!identical(as.integer(.wps_dl), 0L) || !file.exists(wp_structural_model_path)) {
+    stop("wp_structural_model.rds download failed (exit ", .wps_dl, ")")
+  }
 }
-epv_model_override <- readRDS(epv_override_path)
-wp_model_override  <- readRDS(wp_override_path)
-message(sprintf("EPV override: %s (mtime %s)", epv_override_path,
-                format(file.info(epv_override_path)$mtime)))
-message(sprintf("WP override:  %s (mtime %s)", wp_override_path,
-                format(file.info(wp_override_path)$mtime)))
+message(sprintf("WPA structural WP: %s (md5 %s)", wp_structural_model_path,
+                substr(unname(tools::md5sum(wp_structural_model_path)), 1, 8)))
 
 # --- Pricing: STANDARD skills-model pricing (reliability-lambda retired from
 # the display path, 2026-07-20 audit — see plan doc). 10b defaults the
