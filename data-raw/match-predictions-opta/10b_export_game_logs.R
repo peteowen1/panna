@@ -267,8 +267,18 @@ if (has_match_stats) {
     all_match_stats[, season_end_year :=
                       as.integer(.sey_map[as.character(season)])]
   }
-  all_match_stats[, .is_gk_full := .detect_gk_rows(all_match_stats)]
-  all_match_stats[, .pos_grp_full := .psv_pos_grp(all_match_stats, .is_gk_full)]
+  # Hand the resolvers only the columns they read. resolve_position_group()
+  # starts with as.data.table(dt), a full deep copy even of a data.table: on the
+  # 421-column table that is another ~8 GB, and once panna#469 kept every pre-2015
+  # match (2.1M -> 2.49M rows) it took every game-logs rebuild job over the
+  # runner's 16 GB (run 43514707691). Same columns in, same answers out.
+  .res_cols <- intersect(c("player_id", "position", "primary_position",
+                           "total_minutes", "season_end_year"), names(all_match_stats))
+  .res_dt <- all_match_stats[, .res_cols, with = FALSE]
+  .is_gk_res <- .detect_gk_rows(.res_dt)
+  all_match_stats[, .is_gk_full := .is_gk_res]
+  all_match_stats[, .pos_grp_full := .psv_pos_grp(.res_dt, .is_gk_res)]
+  rm(.res_dt, .is_gk_res)
   # Report the live figure only -- a baked-in "was X%" baseline would keep
   # printing a fixed historical number as though it were a current comparison.
   # The 2026-09-14 measurement (3.52% -> 0.77% of rows, 2.24% -> 0.44% of
