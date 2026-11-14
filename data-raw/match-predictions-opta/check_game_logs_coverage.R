@@ -15,6 +15,8 @@
 #         enrich_match_stats_with_xmetrics() aborts a league with none;
 #       * rows whose published psv was only the league offset: the pre-R007 code filled a
 #         missing PSV with 0, so that "PSV" never existed;
+#       * matches whose source gives no player a position (all blank or "Substitute"): no
+#         position, no PSV (Pete 2026-11-14); pos_grp is lost with it and explained the same way;
 #   - piero/piero_value_p90/piero_percentile where neither file has psv: the old code
 #     shipped an EPV-only piero there, R007 makes it NA.
 #
@@ -81,7 +83,19 @@ if (!is.na(xm_f)) {
 } else {
   cat("no --xmetrics given: losses on matches without xMetrics count as unexplained\n")
 }
-m[, .expl_psv := expl_cameo | expl_fake | expl_noxm]
+# No position, no PSV (Pete 2026-11-14): 10b leaves out of PSV every match whose source gives
+# no player a position (all blank or "Substitute"), so its rows lose psv AND pos_grp. Judged on
+# the REBUILT file's whole match, the same test 10b applies. UEL 2019-20, UECL 2022-23, CAFCL.
+expl_nopos <- rep(FALSE, nrow(m))
+if ("position" %in% names(d)) {
+  pos_matches <- unique(d$match_id[!is.na(d$position) & !d$position %in% c("", "Substitute")])
+  expl_nopos <- !m$match_id %in% pos_matches
+  cat(sprintf("matches with no player positions in the rebuild: %d (their psv/pos_grp losses are explained)\n",
+              uniqueN(m$match_id[expl_nopos])))
+} else {
+  cat("rebuild has no position column: no-position losses count as unexplained\n")
+}
+m[, .expl_psv := expl_cameo | expl_fake | expl_noxm | expl_nopos]
 # R007 (Pete 2026-10-11): no PSV means NA piero, never an EPV-only one. A published
 # piero where the published psv was ALSO missing was that EPV-only piero, so losing
 # it is the rule working -- but only when the rebuild has no psv either (a rebuild
@@ -94,6 +108,7 @@ out <- rbindlist(lapply(cols, function(cc) {
   lost_row <- is.na(n) & !is.na(o)
   ex <- if (cc %in% psv_family) m$.expl_psv else rep(FALSE, nrow(m))
   if (cc %in% piero_cols) ex <- ex | expl_nopsv
+  if (cc == "pos_grp") ex <- expl_nopos   # pos_grp comes out of PSV scoring
   data.table(league = m$league, lost = lost_row, unexpl = lost_row & !ex, gained = !is.na(n) & is.na(o))[
     , .(rows = .N, lost = sum(lost), unexplained = sum(unexpl), gained = sum(gained)), by = league][
     , col := cc]
