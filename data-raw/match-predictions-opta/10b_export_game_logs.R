@@ -1115,6 +1115,26 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
         })
       }
 
+      # Matches whose source gives NO player a position (every row blank or
+      # "Substitute", e.g. 81 of 143 CAFCL 2022-23 matches, POR 2014-15 whole)
+      # get NA PSV: no position, no PSV (Pete, 2026-11-14). Kept out of the
+      # population too, because there they fall through to the "OTHER" role and
+      # can push the whole league under compute_player_psv()'s 50%-resolve
+      # guard (R/psr.R), which then drops PSV even for matches that DO have
+      # positions. That started when #470 filled their minutes from lineups.
+      if (!is.null(psv_pop) && nrow(psv_pop) > 0L && "position" %in% names(psv_pop)) {
+        .has_pos <- !is.na(psv_pop$position) & !(psv_pop$position %in% c("", "Substitute"))
+        .pos_matches <- unique(psv_pop$match_id[.has_pos])
+        .no_pos <- setdiff(unique(psv_pop$match_id), .pos_matches)
+        if (length(.no_pos) > 0L) {
+          message(sprintf("    PSV: %d of %d match(es) have no player positions in the source -- PSV left NA for them (%d of their player-games are in game logs)",
+                          length(.no_pos), data.table::uniqueN(psv_pop$match_id),
+                          sum(psv_pop$match_id %in% intersect(.no_pos, league_match_ids))))
+          psv_pop <- psv_pop[match_id %in% .pos_matches]
+        }
+        rm(.has_pos, .pos_matches, .no_pos)
+      }
+
       if (!is.null(psv_pop) && nrow(psv_pop) > 0L) {
         tryCatch({
           # .is_gk_full / .pos_grp_full: resolved once on the full population
