@@ -25,6 +25,7 @@
 # Env:  GL_PACK_DIR  directory holding game_logs_/ng_breakdown_/ng_player_breakdown_<season>.parquet
 #                    (default data-raw/cache-predictions-opta)
 #       GL_SEASONS   space-separated season labels (default: the 23 published seasons)
+#       GL_NO_NG_SEASONS  seasons allowed to have no net goals (default "2007-2008")
 suppressMessages(devtools::load_all(quiet = TRUE))
 C <- Sys.getenv("GL_PACK_DIR", "data-raw/cache-predictions-opta")
 SEASONS <- strsplit(trimws(Sys.getenv("GL_SEASONS", paste(
@@ -53,7 +54,17 @@ n_ng <- vapply(src, function(f) {
   x <- arrow::read_parquet(f, col_select = "net_goals")$net_goals; sum(!is.na(x))
 }, numeric(1))
 has_bd <- n_ng > 0
-if (any(!has_bd)) cat(sprintf("NO NET GOALS (absent or NA on every row, so no breakdown to publish): %s\n",
+# Which seasons may have no net goals is a FIXED list, not read off the data: 10b
+# drops the net-goals columns on a reconcile error (it logs "net goals DROPPED"),
+# and a season that lost them that way must stop here, not publish without them.
+NO_NG_SEASONS <- strsplit(trimws(Sys.getenv("GL_NO_NG_SEASONS", "2007-2008")), "\\s+")[[1]]
+if (any(!has_bd & !SEASONS %in% NO_NG_SEASONS))
+  stop("season(s) with no net goals that are not on the no-net-goals list (", paste(NO_NG_SEASONS, collapse = ", "),
+       "): ", paste(SEASONS[!has_bd & !SEASONS %in% NO_NG_SEASONS], collapse = ", "), " -- check 10b's log for 'net goals DROPPED'")
+if (any(has_bd & SEASONS %in% NO_NG_SEASONS))
+  stop("season(s) on the no-net-goals list now HAVE net goals -- update GL_NO_NG_SEASONS: ",
+       paste(SEASONS[has_bd & SEASONS %in% NO_NG_SEASONS], collapse = ", "))
+if (any(!has_bd)) cat(sprintf("NO NET GOALS (on the list; absent or NA on every row, so no breakdown to publish): %s\n",
                               paste(SEASONS[!has_bd], collapse = ", ")))
 # Columns a season is allowed to lack; added as all-NA when staged.
 fill_cols <- lapply(seq_along(SEASONS), function(i) c(if (pre_psv[i]) PSV_COLS, if (pre_spm[i]) "spm_overall",
