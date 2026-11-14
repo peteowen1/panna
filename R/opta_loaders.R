@@ -1158,6 +1158,31 @@ enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
   # fail_if_missing_frac (which only tracks missing FILES) cannot see.
   # Healthy coverage is ~98% (measured 2026-07-18).
   matched_frac <- if (length(idx)) mean(!is.na(idx)) else 0
+  # Zero matches has two causes. If none of these MATCHES is in the xMetrics
+  # table at all, it is a coverage gap, not key drift: opta_xmetrics_bymatch
+  # starts at 2013-14, so every older league-season lands here (game-logs
+  # rebuild run 43529961875: all 2012-13 leagues). Treat it like the
+  # missing-file case above: fail only when the caller demanded the features,
+  # else warn and return the box-score stats unchanged. It counts as a gap only
+  # when the ids also have the SAME SHAPE as the xMetrics ids (length, and
+  # lowercase alphanumeric or not): a reformatted id ("m1" vs "888", "123" vs
+  # "123.0") shares no matches either, and that is key drift, which still stops
+  # below, as do matches present with no player-match pair.
+  .id_shape <- function(x) unique(paste(nchar(x), grepl("^[a-z0-9]+$", x)))
+  .ms_ids <- unique(as.character(match_stats$match_id))
+  if (nrow(xm) > 0 && matched_frac == 0 && length(idx) &&
+      !any(.ms_ids %in% xm$match_id) &&
+      all(.id_shape(.ms_ids) %in% .id_shape(unique(as.character(xm$match_id))))) {
+    gapmsg <- sprintf(paste0(
+      "No per-match xMetrics for any of these %d matches (%d rows): coverage gap ",
+      "(xmetrics_bymatch starts at 2013-14), not key drift."),
+      data.table::uniqueN(match_stats$match_id), length(idx))
+    if (is.finite(fail_if_missing_frac)) {
+      stop(gapmsg, " Refusing to proceed (fail_if_missing_frac is set).", call. = FALSE)
+    }
+    warning(gapmsg, " Proceeding WITHOUT xG features.", call. = FALSE)
+    return(match_stats)
+  }
   if (nrow(xm) > 0 && matched_frac == 0) {
     stop("xMetrics join matched 0 of ", length(idx), " match_stats rows despite ",
          nrow(xm), " xmetrics rows - player_id/match_id key mismatch ",

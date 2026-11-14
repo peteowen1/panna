@@ -505,6 +505,37 @@ test_that("remote xMetrics enrichment errors when the join matches zero rows", {
   )
 })
 
+test_that("matches absent from xMetrics but with same-shape ids are a coverage gap, not key drift", {
+  # A pre-2013-14 league-season: real Opta-style ids, none of them in the
+  # xMetrics table (which starts at 2013-14). Box-score stats come back
+  # unchanged with a warning; a caller that demanded the features stops.
+  ms <- data.frame(
+    player_id = c("aaaa1", "aaaa2"), match_id = c("mmmm1", "mmmm1"),
+    league = "EPL", season = "2010-2011", total_minutes = 90,
+    goals_p90 = c(1, 0), stringsAsFactors = FALSE
+  )
+  xm_remote <- data.frame(player_id = c("aaaa1", "bbbb2"), match_id = c("mmmm7", "mmmm8"),
+                          xg_per90 = 0.5, stringsAsFactors = FALSE)
+  testthat::local_mocked_bindings(query_remote_opta_parquet = function(...) xm_remote)
+  expect_warning(
+    out <- enrich_match_stats_with_xmetrics(ms, keeper_style = FALSE, verbose = FALSE, source = "remote"),
+    "coverage gap.*Proceeding WITHOUT xG features")
+  expect_equal(nrow(out), 2L)
+  expect_equal(out$goals_p90, c(1, 0))
+  expect_false("xg_per90" %in% names(out))
+  expect_error(
+    enrich_match_stats_with_xmetrics(ms, keeper_style = FALSE, verbose = FALSE, source = "remote",
+                                     fail_if_missing_frac = 0.6),
+    "coverage gap.*Refusing to proceed")
+  # the same matches present but no player-match pair is key drift: still stops
+  xm_drift <- data.frame(player_id = c("zzzz1", "zzzz2"), match_id = c("mmmm1", "mmmm1"),
+                         xg_per90 = 0.5, stringsAsFactors = FALSE)
+  testthat::local_mocked_bindings(query_remote_opta_parquet = function(...) xm_drift)
+  expect_error(
+    enrich_match_stats_with_xmetrics(ms, keeper_style = FALSE, verbose = FALSE, source = "remote"),
+    "matched 0 of")
+})
+
 test_that(".sql_path quotes a path with an apostrophe so DuckDB can read it", {
   skip_if_not_installed("duckdb")
   skip_if_not_installed("arrow")
