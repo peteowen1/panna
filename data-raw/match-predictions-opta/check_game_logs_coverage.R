@@ -14,7 +14,9 @@
 #       * matches with no xMetrics (opta_xmetrics_bymatch.parquet): PSV needs them, and
 #         enrich_match_stats_with_xmetrics() aborts a league with none;
 #       * rows whose published psv was only the league offset: the pre-R007 code filled a
-#         missing PSV with 0, so that "PSV" never existed.
+#         missing PSV with 0, so that "PSV" never existed;
+#   - piero/piero_value_p90/piero_percentile where neither file has psv: the old code
+#     shipped an EPV-only piero there, R007 makes it NA.
 #
 # Usage (from panna/):
 #   Rscript data-raw/match-predictions-opta/check_game_logs_coverage.R \
@@ -80,11 +82,18 @@ if (!is.na(xm_f)) {
   cat("no --xmetrics given: losses on matches without xMetrics count as unexplained\n")
 }
 m[, .expl_psv := expl_cameo | expl_fake | expl_noxm]
+# R007 (Pete 2026-10-11): no PSV means NA piero, never an EPV-only one. A published
+# piero where the published psv was ALSO missing was that EPV-only piero, so losing
+# it is the rule working -- but only when the rebuild has no psv either (a rebuild
+# with psv and no piero is a real loss). AUS/POR 2013-14 (rebuild 43520406299).
+expl_nopsv <- if (all(c("psv.o", "psv.n") %in% names(m))) is.na(m[["psv.o"]]) & is.na(m[["psv.n"]]) else rep(FALSE, nrow(m))
+piero_cols <- intersect(c("piero", "piero_value_p90", "piero_percentile"), cols)
 
 out <- rbindlist(lapply(cols, function(cc) {
   n <- m[[paste0(cc, ".n")]]; o <- m[[paste0(cc, ".o")]]
   lost_row <- is.na(n) & !is.na(o)
   ex <- if (cc %in% psv_family) m$.expl_psv else rep(FALSE, nrow(m))
+  if (cc %in% piero_cols) ex <- ex | expl_nopsv
   data.table(league = m$league, lost = lost_row, unexpl = lost_row & !ex, gained = !is.na(n) & is.na(o))[
     , .(rows = .N, lost = sum(lost), unexplained = sum(unexpl), gained = sum(gained)), by = league][
     , col := cc]
@@ -93,7 +102,7 @@ out[, fail := unexplained > pmax(0.01 * rows, 0)]
 rep <- out[lost > 0.01 * rows | fail][order(-fail, league, col)]
 options(width = 200)
 if (nrow(rep)) {
-  cat("\n(league, column) cells that lost coverage (lost = published non-NA now NA; unexplained = not cameo/no-xMetrics/fake-PSV):\n")
+  cat("\n(league, column) cells that lost coverage (lost = published non-NA now NA; unexplained = not cameo/no-xMetrics/fake-PSV/piero-without-PSV):\n")
   print(rep[, .(league, col, rows, lost, unexplained, gained, fail)], nrows = 500)
 } else cat("\nno column lost more than 1% of a league's rows\n")
 if (length(lost_cols)) cat("\nCOLUMNS ABSENT from the rebuild:", paste(lost_cols, collapse = " "), "\n")
