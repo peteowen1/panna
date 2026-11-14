@@ -718,3 +718,53 @@ build_where_clause <- function(filters, prefix = TRUE) {
   }
   res
 }
+
+#' Bind a list of tables like rbindlist(fill = TRUE), freeing the inputs as it goes
+#'
+#' `data.table::rbindlist()` holds every input AND the full result at once, so its
+#' peak is twice the result. Skills step 01 binds ~2.5M player-match rows x 421
+#' columns (8.4 GB a copy), which put the peak at ~16.9 GB and killed 16 GB GitHub
+#' runners (panna#475). This builds the result one column at a time and drops that
+#' column from every input once copied, so the peak is the result plus one column.
+#'
+#' Each column is bound by rbindlist itself (one single-column table per input,
+#' a typed-NA column where an input lacks it), so type coercion and NA filling
+#' follow rbindlist's rules. Columns come out in order of first appearance, as
+#' rbindlist(use.names = TRUE, fill = TRUE) gives them.
+#'
+#' DESTRUCTIVE: the inputs are emptied column by column. The caller's list is
+#' invalid afterwards; pass it once and drop it.
+#'
+#' @param tables A list of data.frames / data.tables (NULL elements skipped).
+#' @return A data.table, identical to `rbindlist(tables, use.names = TRUE, fill = TRUE)`.
+#' @keywords internal
+.rbindlist_freeing <- function(tables) {
+  tables <- Filter(Negate(is.null), tables)
+  if (!length(tables)) return(data.table::data.table())
+  # A data.frame input is converted (one copy of that input); only data.table inputs
+  # are freed in the CALLER's list, because only they are modified by reference.
+  for (i in seq_along(tables)) {
+    if (!data.table::is.data.table(tables[[i]])) tables[[i]] <- data.table::as.data.table(tables[[i]])
+  }
+  cols <- unique(unlist(lapply(tables, names), use.names = FALSE))
+  n <- vapply(tables, nrow, integer(1))
+  out <- vector("list", length(cols)); names(out) <- cols
+  k <- 0L
+  for (cc in cols) {
+    # Freed columns are only reclaimed at a collection, and R grows the heap rather
+    # than collect, so without this the peak stays ~2x the result (measured).
+    k <- k + 1L
+    if (k %% 20L == 0L) invisible(gc(verbose = FALSE))
+    parts <- lapply(seq_along(tables), function(i) {
+      v <- tables[[i]][[cc]]
+      data.table::data.table(x = if (is.null(v)) rep(NA, n[i]) else v)
+    })
+    out[[cc]] <- data.table::rbindlist(parts, use.names = TRUE, fill = TRUE)[["x"]]
+    rm(parts)
+    for (i in seq_along(tables)) {
+      if (cc %in% names(tables[[i]])) data.table::set(tables[[i]], j = cc, value = NULL)
+    }
+  }
+  data.table::setDT(out)
+  out
+}

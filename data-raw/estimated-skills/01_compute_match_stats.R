@@ -212,7 +212,17 @@ if (n_failed > 0 && n_attempted > 0) {
   }
 }
 
-match_stats <- data.table::rbindlist(all_stats, fill = TRUE, use.names = TRUE)
+# Not rbindlist(): it holds every league-season AND the result at once. At 2.49M
+# rows x 421 columns (8.4 GB a copy) that peaked at ~16.9 GB and killed 16 GB
+# GitHub runners in this step (panna#475: 13 lost in the panna#465 rebuilds).
+# .rbindlist_freeing() gives the identical table, binding one column at a time and
+# freeing it from the inputs, so the peak is the result plus one column.
+.mem_gb <- function() sum(gc(verbose = FALSE)[, 2]) / 1024
+message(sprintf("  R heap before combining: %.1f GB", .mem_gb()))
+match_stats <- .rbindlist_freeing(all_stats)
+rm(all_stats); invisible(gc(verbose = FALSE))
+message(sprintf("  R heap after combining: %.1f GB (gc max used this run: %.1f GB)",
+                .mem_gb(), sum(gc(verbose = FALSE)[, 6]) / 1024))
 
 if (nrow(match_stats) < 100) {
   stop(sprintf("Only %d match stats loaded (expected 300k+). Too few to proceed.", nrow(match_stats)))
