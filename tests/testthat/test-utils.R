@@ -304,3 +304,47 @@ test_that(".as_df_no_copy shares columns and writes the same parquet as as.data.
   arrow::write_parquet(df, p2)
   expect_identical(unname(tools::md5sum(p1)), unname(tools::md5sum(p2)))
 })
+
+
+# ===========================================================================
+# .rbindlist_consume — column-wise bind, no 2x peak (panna#475)
+# ===========================================================================
+
+test_that(".rbindlist_consume matches rbindlist(fill, use.names) and consumes its input", {
+  mk <- function() list(
+    data.table::data.table(a = 1:2, b = c("x", "y"), d = as.Date("2020-01-01") + 0:1),
+    data.table::data.table(b = "z", c = 2.5, a = 3L),                  # different order, new col, no d
+    data.table::data.table(a = 4:5, b = c("p", "q"), d = as.Date("2021-01-01") + 0:1, c = c(1, NA)),
+    NULL,
+    data.table::data.table()
+  )
+  expected <- data.table::rbindlist(mk(), fill = TRUE, use.names = TRUE)
+  lst <- mk()
+  got <- .rbindlist_consume(lst)
+  expect_equal(got, expected)
+  expect_identical(names(got), names(expected))
+  expect_true(data.table::is.data.table(got))
+  # pieces are emptied (that is the memory saving) ...
+  expect_true(all(vapply(lst[1:3], ncol, integer(1)) == 0L))
+  # ... and the result is independent of them
+  expect_equal(nrow(got), 5L)
+})
+
+test_that(".rbindlist_consume handles empty and single-element lists", {
+  expect_equal(nrow(.rbindlist_consume(list())), 0L)
+  expect_equal(nrow(.rbindlist_consume(list(NULL))), 0L)
+  one <- data.table::data.table(a = 1:3)
+  expect_equal(.rbindlist_consume(list(one)), data.table::data.table(a = 1:3))
+})
+
+test_that(".rbindlist_consume coerces mixed types like rbindlist", {
+  mk <- function() list(data.table::data.table(a = 1L, f = factor("u")),
+                        data.table::data.table(a = 2.5, f = factor("v")))
+  expect_equal(.rbindlist_consume(mk()), data.table::rbindlist(mk(), fill = TRUE, use.names = TRUE))
+})
+
+test_that(".log_rss reports the peak RSS (VmHWM) on Linux", {
+  skip_if_not(file.exists("/proc/self/status"))
+  msgs <- capture_messages(.log_rss("peak-test"))
+  expect_true(any(grepl("peak RSS=[0-9]+ MB", msgs)))
+})

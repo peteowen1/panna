@@ -212,7 +212,15 @@ if (n_failed > 0 && n_attempted > 0) {
   }
 }
 
-match_stats <- data.table::rbindlist(all_stats, fill = TRUE, use.names = TRUE)
+# Memory (panna#475): this table is ~8 GB (2.5M rows x ~420 cols). A plain
+# rbindlist(all_stats) holds the per-league list AND the result (~2x, the step's
+# peak on the 16 GB runner), and keeping all_stats alive afterwards doubles what
+# the rest of the step holds. .rbindlist_consume() binds column-by-column and
+# empties the pieces as it goes; rm() then drops the (now empty) list.
+.log_rss("01: before combining per-league match stats")
+match_stats <- .rbindlist_consume(all_stats)
+rm(list = intersect(c("all_stats", "match_level"), ls())); gc(verbose = FALSE)
+.log_rss("01: after combining (peak RSS above = in-call peak of the combine)")
 
 if (nrow(match_stats) < 100) {
   stop(sprintf("Only %d match stats loaded (expected 300k+). Too few to proceed.", nrow(match_stats)))
@@ -280,4 +288,5 @@ if (isTRUE(apply_context_adjustments)) {
 # pipelines days later (panna#128, #133) with no warning at generation time.
 save_cache_with_meta(match_stats, cache_path, pipeline = "estimated-skills")
 saveRDS(current_config, config_path)
+.log_rss("01: after save (final peak RSS = the step's peak; target < 13 GB, panna#475)")
 message(sprintf("\nSaved to: %s", cache_path))

@@ -243,6 +243,55 @@ progress_msg <- function(msg, verbose = TRUE) {
 }
 
 
+#' Row-bind a list of data.tables without holding two full copies
+#'
+#' \code{data.table::rbindlist(lst)} needs the list AND the result alive at
+#' once, so binding N pieces peaks at roughly 2x the combined table. For the
+#' skills step-01 table (2.5M rows x ~420 columns, ~8 GB) that 2x is what hits
+#' the 16 GB runner limit (panna#475). This binds one column at a time and
+#' drops that column from every piece (by reference) as soon as it is copied
+#' into the result, so the peak is the result plus one column.
+#'
+#' Semantics match \code{rbindlist(lst, fill = TRUE, use.names = TRUE)}:
+#' columns are matched by name, ordered by first appearance, a column missing
+#' from a piece is filled with NA, and types are coerced the same way.
+#'
+#' \strong{The pieces are consumed}: every element of \code{lst} is left
+#' with zero columns, and any other reference to the same data.table sees that
+#' too. Pass only tables you no longer need.
+#'
+#' @param lst A list of data.tables (NULL / zero-row elements are ignored).
+#' @return A data.table.
+#' @keywords internal
+.rbindlist_consume <- function(lst) {
+  lst <- lst[!vapply(lst, function(d) is.null(d) || nrow(d) == 0L, logical(1))]
+  if (length(lst) == 0L) return(data.table::data.table())
+  if (length(lst) == 1L && data.table::is.data.table(lst[[1L]])) return(lst[[1L]])
+  # as.data.table() on a data.table can return a copy, which would defeat the
+  # consume-in-place; only convert real data.frames (those are not consumed).
+  lst <- lapply(lst, function(d) if (data.table::is.data.table(d)) d else data.table::as.data.table(d))
+  n_rows <- vapply(lst, nrow, integer(1))
+  cols <- unique(unlist(lapply(lst, names), use.names = FALSE))
+  out <- vector("list", length(cols))
+  names(out) <- cols
+  for (col in cols) {
+    pieces <- lapply(seq_along(lst), function(i) {
+      d <- lst[[i]]
+      v <- if (col %in% names(d)) d[[col]] else rep(NA, n_rows[i])
+      data.table::data.table(v = v)
+    })
+    out[[col]] <- data.table::rbindlist(pieces)[["v"]]
+    rm(pieces)
+    for (d in lst) if (col %in% names(d)) data.table::set(d, j = col, value = NULL)
+    # Freed columns are only reclaimed when R next collects; without this the
+    # garbage piles up (hundreds of MB) before the collector runs on its own.
+    if (match(col, cols) %% 10L == 0L) gc(verbose = FALSE)
+  }
+  data.table::setDT(out)
+  out
+}
+
+
 #' Log OS-level memory (RSS) alongside R's own heap at a checkpoint
 #'
 #' The panna#128 and #133 OOM hunts both hinged on the same observation:
@@ -268,11 +317,19 @@ progress_msg <- function(msg, verbose = TRUE) {
   # the exact wrong-trail failure mode this helper exists to prevent.
   heap_mb <- sum(gc(verbose = FALSE)[, 2])
   rss_mb <- NA_real_
+  hwm_mb <- NA_real_
   if (file.exists("/proc/self/status")) {
-    line <- grep("^VmRSS:", readLines("/proc/self/status"), value = TRUE)
-    if (length(line) == 1L) {
-      rss_mb <- suppressWarnings(as.numeric(gsub("[^0-9]", "", line))) / 1024
+    status <- readLines("/proc/self/status")
+    kb_mb <- function(key) {
+      line <- grep(paste0("^", key, ":"), status, value = TRUE)
+      if (length(line) == 1L) suppressWarnings(as.numeric(gsub("[^0-9]", "", line))) / 1024
+      else NA_real_
     }
+    rss_mb <- kb_mb("VmRSS")
+    # VmHWM = this process's high-water mark. An in-call peak (e.g. an
+    # rbindlist holding list + result) never shows in the checkpoints either
+    # side of it, but it does raise the HWM, so the next line reveals it.
+    hwm_mb <- kb_mb("VmHWM")
   } else if (.Platform$OS.type == "unix") {
     out <- suppressWarnings(tryCatch(
       system2("ps", c("-o", "rss=", "-p", Sys.getpid()), stdout = TRUE, stderr = FALSE),
@@ -283,10 +340,11 @@ progress_msg <- function(msg, verbose = TRUE) {
     }
   }
   progress_msg(sprintf(
-    "[rss] %s: RSS=%s MB | R heap=%.0f MB",
+    "[rss] %s: RSS=%s MB | R heap=%.0f MB%s",
     label,
     if (is.na(rss_mb)) "NA" else sprintf("%.0f", rss_mb),
-    heap_mb
+    heap_mb,
+    if (is.na(hwm_mb)) "" else sprintf(" | peak RSS=%.0f MB", hwm_mb)
   ), verbose = verbose)
   invisible(rss_mb)
 }
