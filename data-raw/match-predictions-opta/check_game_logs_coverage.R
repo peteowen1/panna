@@ -86,14 +86,20 @@ if (!is.na(xm_f)) {
 # No position, no PSV (Pete 2026-11-14): 10b leaves out of PSV every match whose source gives
 # no player a position (all blank or "Substitute"), so its rows lose psv AND pos_grp. Judged on
 # the REBUILT file's whole match, the same test 10b applies. UEL 2019-20, UECL 2022-23, CAFCL.
+# The published file must ALSO have no real position in the match: a rebuild bug that blanked
+# or coerced `position` would otherwise make every match "position-less" and excuse every PSV
+# loss. Positions that existed when the copy was published and are gone now are a regression.
 expl_nopos <- rep(FALSE, nrow(m))
-if ("position" %in% names(d)) {
-  pos_matches <- unique(d$match_id[!is.na(d$position) & !d$position %in% c("", "Substitute")])
-  expl_nopos <- !m$match_id %in% pos_matches
-  cat(sprintf("matches with no player positions in the rebuild: %d (their psv/pos_grp losses are explained)\n",
+real_pos <- function(x) unique(x$match_id[!is.na(x$position) & !x$position %in% c("", "Substitute")])
+if (all(c("position") %in% names(d)) && "position" %in% names(p)) {
+  pos_new <- real_pos(d); pos_old <- real_pos(p)
+  expl_nopos <- !m$match_id %in% pos_new & !m$match_id %in% pos_old
+  went <- setdiff(intersect(unique(m$match_id), pos_old), pos_new)
+  cat(sprintf("shared matches with no player positions in either file: %d (their psv/pos_grp losses are explained)\n",
               uniqueN(m$match_id[expl_nopos])))
+  if (length(went)) cat(sprintf("matches with positions when published but none in the rebuild: %d (NOT excused)\n", length(went)))
 } else {
-  cat("rebuild has no position column: no-position losses count as unexplained\n")
+  cat("a file has no position column: no-position losses count as unexplained\n")
 }
 m[, .expl_psv := expl_cameo | expl_fake | expl_noxm | expl_nopos]
 # R007 (Pete 2026-10-11): no PSV means NA piero, never an EPV-only one. A published
@@ -108,7 +114,9 @@ out <- rbindlist(lapply(cols, function(cc) {
   lost_row <- is.na(n) & !is.na(o)
   ex <- if (cc %in% psv_family) m$.expl_psv else rep(FALSE, nrow(m))
   if (cc %in% piero_cols) ex <- ex | expl_nopsv
-  if (cc == "pos_grp") ex <- expl_nopos   # pos_grp comes out of PSV scoring
+  # pos_grp comes out of PSV scoring; it is outside psv_family, so before this rule it had no
+  # explanation at all (ex was FALSE). Only the no-position rule excuses it, not cameos/xMetrics.
+  if (cc == "pos_grp") ex <- expl_nopos
   data.table(league = m$league, lost = lost_row, unexpl = lost_row & !ex, gained = !is.na(n) & is.na(o))[
     , .(rows = .N, lost = sum(lost), unexplained = sum(unexpl), gained = sum(gained)), by = league][
     , col := cc]
@@ -117,7 +125,7 @@ out[, fail := unexplained > pmax(0.01 * rows, 0)]
 rep <- out[lost > 0.01 * rows | fail][order(-fail, league, col)]
 options(width = 200)
 if (nrow(rep)) {
-  cat("\n(league, column) cells that lost coverage (lost = published non-NA now NA; unexplained = not cameo/no-xMetrics/fake-PSV/piero-without-PSV):\n")
+  cat("\n(league, column) cells that lost coverage (lost = published non-NA now NA; unexplained = not cameo/no-xMetrics/fake-PSV/no-position/piero-without-PSV):\n")
   print(rep[, .(league, col, rows, lost, unexplained, gained, fail)], nrows = 500)
 } else cat("\nno column lost more than 1% of a league's rows\n")
 if (length(lost_cols)) cat("\nCOLUMNS ABSENT from the rebuild:", paste(lost_cols, collapse = " "), "\n")
