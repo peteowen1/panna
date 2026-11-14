@@ -736,7 +736,12 @@ build_where_clause <- function(filters, prefix = TRUE) {
 #' invalid afterwards; pass it once and drop it.
 #'
 #' @param tables A list of data.frames / data.tables (NULL elements skipped).
-#' @return A data.table, identical to `rbindlist(tables, use.names = TRUE, fill = TRUE)`.
+#' Atomic columns only: the filler is a plain `NA`, so a list-column (rbindlist fills
+#' NULL) or integer64 column would not match rbindlist exactly. Opta match stats have
+#' neither.
+#'
+#' @return A data.table, identical to `rbindlist(tables, use.names = TRUE, fill = TRUE)`
+#'   for atomic columns.
 #' @keywords internal
 .rbindlist_freeing <- function(tables) {
   tables <- Filter(Negate(is.null), tables)

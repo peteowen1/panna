@@ -221,7 +221,7 @@ if (n_failed > 0 && n_attempted > 0) {
 message(sprintf("  R heap before combining: %.1f GB", .mem_gb()))
 match_stats <- .rbindlist_freeing(all_stats)
 rm(all_stats); invisible(gc(verbose = FALSE))
-message(sprintf("  R heap after combining: %.1f GB (gc max used this run: %.1f GB)",
+message(sprintf("  R heap after combining: %.1f GB (gc max used this session: %.1f GB)",
                 .mem_gb(), sum(gc(verbose = FALSE)[, 6]) / 1024))
 
 if (nrow(match_stats) < 100) {

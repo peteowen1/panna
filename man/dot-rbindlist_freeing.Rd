@@ -7,10 +7,14 @@
 .rbindlist_freeing(tables)
 }
 \arguments{
-\item{tables}{A list of data.frames / data.tables (NULL elements skipped).}
+\item{tables}{A list of data.frames / data.tables (NULL elements skipped).
+Atomic columns only: the filler is a plain \code{NA}, so a list-column (rbindlist fills
+NULL) or integer64 column would not match rbindlist exactly. Opta match stats have
+neither.}
 }
 \value{
-A data.table, identical to \code{rbindlist(tables, use.names = TRUE, fill = TRUE)}.
+A data.table, identical to \code{rbindlist(tables, use.names = TRUE, fill = TRUE)}
+for atomic columns.
 }
 \description{
 \code{data.table::rbindlist()} holds every input AND the full result at once, so its
