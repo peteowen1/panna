@@ -316,25 +316,27 @@ if (has_match_stats) {
   message("  Note: No match stats cache — PSV will be unavailable")
 }
 
-# Seasonal SPM (used for spm_overall enrichment, filtered per-season in loop)
-skill_ratings_path <- file.path("data-raw", "cache-skills", "06_seasonal_ratings.rds")
-raw_ratings_path   <- file.path("data-raw", "cache-opta", "07_seasonal_ratings.rds")
-if (isTRUE(use_skill_ratings) && file.exists(skill_ratings_path)) {
-  seasonal_results <- readRDS(skill_ratings_path)
-} else if (file.exists(raw_ratings_path)) {
-  seasonal_results <- readRDS(raw_ratings_path)
-} else {
-  seasonal_results <- NULL
-}
-if (!is.null(seasonal_results) && !is.null(seasonal_results$seasonal_spm)) {
-  all_spm_dt <- data.table::as.data.table(seasonal_results$seasonal_spm)
+# Seasonal SPM for spm_overall: the RAW-STAT SPM from cache-opta/07_seasonal_ratings.rds,
+# always, whatever use_skill_ratings says. SPM is the box-score number (what the player's
+# season stats were worth); the skills view of a player is PSR, which game logs carry
+# separately. The skills copy (cache-skills/06 $seasonal_spm) is a different quantity:
+# it rates fewer players (2015-16: 978 of the 6,961 published players had none) and its
+# values correlate 0.85 with these. Reading 06 when present made spm_overall depend on
+# which cache happened to be on disk, which is how the 19 Oct 2026 GHA republish and the
+# panna#465 rebuild both lost spm_overall coverage (Pete, 2026-11-14: keep actuals for SPM).
+raw_ratings_path <- file.path("data-raw", "cache-opta", "07_seasonal_ratings.rds")
+seasonal_spm_raw <- if (file.exists(raw_ratings_path)) readRDS(raw_ratings_path)$seasonal_spm else NULL
+if (!is.null(seasonal_spm_raw) && nrow(seasonal_spm_raw) > 0) {
+  all_spm_dt <- data.table::as.data.table(seasonal_spm_raw)
   .rss_note("after loading match stats and seasonal ratings")
-  message(sprintf("  Seasonal SPM: %d player-seasons across %d years",
-                  nrow(all_spm_dt), length(unique(all_spm_dt$season_end_year))))
+  message(sprintf("  Seasonal SPM (raw-stat, %s): %d player-seasons across %d years",
+                  raw_ratings_path, nrow(all_spm_dt), length(unique(all_spm_dt$season_end_year))))
 } else {
   all_spm_dt <- NULL
-  message("  Note: No seasonal SPM — spm_overall column will be NA")
+  warning(sprintf("No raw-stat seasonal SPM at %s: spm_overall will be NA in every game log", raw_ratings_path),
+          call. = FALSE)
 }
+rm(seasonal_spm_raw)
 
 # 3. Helpers ----
 

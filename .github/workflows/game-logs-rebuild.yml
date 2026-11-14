@@ -163,9 +163,13 @@ jobs:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
         run: |
           mkdir -p data-raw/cache-skills data-raw/cache-opta
-          # 06 is required (10b's seasonal SPM); the league offsets feed the
-          # game-logs PSV league offset.
-          for f in 06_seasonal_ratings.rds psr_league_offsets.parquet; do
+          # 07 is required: 10b's spm_overall is the raw-stat seasonal SPM in
+          # cache-opta/07_seasonal_ratings.rds, never the skills 06 copy
+          # (Pete, 2026-11-14). The league offsets feed the game-logs PSV
+          # league offset. 10b no longer reads 06.
+          gh release download predictions-cache --repo peteowen1/pannadata --pattern 07_seasonal_ratings.rds --dir data-raw/cache-opta \
+            || { echo "FATAL: required cache 07_seasonal_ratings.rds missing"; exit 1; }
+          for f in psr_league_offsets.parquet; do
             gh release download predictions-cache --repo peteowen1/pannadata --pattern "$f" --dir data-raw/cache-skills \
               || { echo "FATAL: required cache $f missing"; exit 1; }
           done
