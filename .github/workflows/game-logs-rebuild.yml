@@ -211,6 +211,10 @@ jobs:
           EPV_POSITION_GROUPING: ${{ inputs.epv_position_grouping || (contains(github.ref, 'control') && 'start_label' || 'role8') }}
         run: |
           cat > /tmp/run_10b.R << 'EOF'
+          # Print each warning when it happens: 10b reports a league's PSV failure
+          # with warning(), which R otherwise holds to the end of the run and caps
+          # at 50 -- MEX 2013-14 lost all PSV with no reason in the log (run 43520406299).
+          options(warn = 1)
           pannadata_path <- Sys.getenv("PANNADATA_DIR")
           devtools::load_all()
           pannadata_dir(pannadata_path)
