@@ -527,6 +527,11 @@ test_that("matches absent from xMetrics but with same-shape ids are a coverage g
     enrich_match_stats_with_xmetrics(ms, keeper_style = FALSE, verbose = FALSE, source = "remote",
                                      fail_if_missing_frac = 0.6),
     "coverage gap.*Refusing to proceed")
+  # a covered season (2013-14 on) missing from xMetrics is NOT a gap: still stops
+  ms_new <- transform(ms, season = "2025-2026")
+  expect_error(
+    enrich_match_stats_with_xmetrics(ms_new, keeper_style = FALSE, verbose = FALSE, source = "remote"),
+    "matched 0 of")
   # the same matches present but no player-match pair is key drift: still stops
   xm_drift <- data.frame(player_id = c("zzzz1", "zzzz2"), match_id = c("mmmm1", "mmmm1"),
                          xg_per90 = 0.5, stringsAsFactors = FALSE)

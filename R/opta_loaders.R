@@ -1170,7 +1170,14 @@ enrich_match_stats_with_xmetrics <- function(match_stats, verbose = TRUE,
   # below, as do matches present with no player-match pair.
   .id_shape <- function(x) unique(paste(nchar(x), grepl("^[a-z0-9]+$", x)))
   .ms_ids <- unique(as.character(match_stats$match_id))
+  # ...and only for seasons the table never covered (ending 2013 or earlier). A
+  # current-season slice the xMetrics have not caught up with yet (10b's box-score
+  # top-up) must not be scored as xG-free, and a wholesale id regen of a covered
+  # season must still stop.
+  .ms_sey <- if ("season" %in% names(match_stats))
+    vapply(unique(as.character(match_stats$season)), extract_season_end_year, numeric(1)) else NA_real_
   if (nrow(xm) > 0 && matched_frac == 0 && length(idx) &&
+      length(.ms_sey) && !anyNA(.ms_sey) && all(.ms_sey <= 2013) &&
       !any(.ms_ids %in% xm$match_id) &&
       all(.id_shape(.ms_ids) %in% .id_shape(unique(as.character(xm$match_id))))) {
     gapmsg <- sprintf(paste0(
