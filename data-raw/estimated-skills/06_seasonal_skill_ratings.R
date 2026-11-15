@@ -46,6 +46,25 @@ skill_features <- readRDS(file.path(cache_dir, "02_skill_features.rds"))
 # classification depending on how much of their history a given call sees.
 skill_features[, .is_gk_full := .detect_gk_rows(skill_features)]
 
+# 01_match_stats is ~2.1-2.5M rows x 421 columns (7-8 GB); the two lookups below
+# need ten of those columns. Both used to read the whole file AND wrap it in
+# as.data.table(), which deep-copies an already-data.table object, so this step
+# held two full copies (stage 06 peak 14.8 GB on run 43500764784, and an OOM on
+# the 16 GB runner once #470 grew the table, run 43686444673). Read it once, keep
+# only those columns, free the rest before anything else is built.
+ms_narrow <- local({
+  x <- readRDS(file.path(cache_dir, "01_match_stats.rds"))
+  keep <- intersect(c("player_id", "season", "season_end_year", "match_date", "competition",
+                      "league", "total_minutes", "minutes_played", "position", "position_side"),
+                    names(x))
+  x <- if (data.table::is.data.table(x)) x[, keep, with = FALSE] else
+         data.table::as.data.table(x[, keep, drop = FALSE])
+  x
+})
+invisible(gc(verbose = FALSE))
+message(sprintf("  01_match_stats narrowed to %d columns x %d rows for the role8 and league lookups",
+                ncol(ms_narrow), nrow(ms_narrow)))
+
 # Finer (role8) normalization role. `02_skill_features` carries only the BROAD
 # `primary_position` -- already collapsed to GK/DEF/MID/FWD -- so the finer
 # bucket has to come from `01_match_stats`, joined on (player_id,
@@ -55,8 +74,7 @@ skill_features[, .is_gk_full := .detect_gk_rows(skill_features)]
 # extract_season_end_year(), never from match_date -- three label formats share
 # one end year. Only consumed when the means artifact is keyed on role8.
 skill_features[, .role8_full := local({
-  msr <- data.table::as.data.table(
-    readRDS(file.path(cache_dir, "01_match_stats.rds")))
+  msr <- data.table::copy(ms_narrow)
   if (!"season_end_year" %in% names(msr)) {
     msr[, season_end_year := as.integer(extract_season_end_year(season))]
   }
@@ -91,7 +109,7 @@ cat("Skill feature rows:", nrow(skill_features), "\n")
 # the league where the player logged the most minutes. Kept as a standalone
 # lookup so it survives the skill_features rm() before section 6c.
 psr_primary_league <- local({
-  ms <- data.table::as.data.table(readRDS(file.path(cache_dir, "01_match_stats.rds")))
+  ms <- data.table::copy(ms_narrow)
   lg_col <- if ("competition" %in% names(ms)) "competition" else
             if ("league" %in% names(ms)) "league" else NULL
   m_col  <- if ("total_minutes" %in% names(ms)) "total_minutes" else
@@ -152,6 +170,7 @@ psr_primary_league <- local({
               nrow(pl), data.table::uniqueN(pl$league), n_before - nrow(pl)))
   pl
 })
+rm(ms_narrow); invisible(gc(verbose = FALSE))
 
 # Filter bad xG data (same threshold as Opta pipeline)
 filter_result <- filter_bad_xg_data(splint_data, zero_xg_threshold = ZERO_XG_THRESHOLD_OPTA, verbose = TRUE)
