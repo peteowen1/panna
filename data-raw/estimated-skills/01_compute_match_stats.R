@@ -36,6 +36,15 @@ min_match_minutes <- if (exists("min_match_minutes")) min_match_minutes else 10
 apply_context_adjustments <- if (exists("apply_context_adjustments")) apply_context_adjustments else FALSE
 
 cache_path <- file.path(cache_dir, "01_match_stats.rds")
+# Process memory as the OS sees it (Linux /proc; NA elsewhere). R's gc() misses
+# arrow's parquet buffers and memory not returned to the OS, so the runner can be
+# killed while the R heap reads well under 16 GB (panna#475). VmHWM = peak so far.
+.os_mem <- function(tag) {
+  f <- "/proc/self/status"
+  if (!file.exists(f)) return(invisible())
+  x <- readLines(f); g <- function(k) as.numeric(gsub("[^0-9]", "", grep(paste0("^", k, ":"), x, value = TRUE))) / 1024^2
+  message(sprintf("  [os mem] %s: RSS %.1f GB, peak (VmHWM) %.1f GB", tag, g("VmRSS"), g("VmHWM")))
+}
 config_path <- file.path(cache_dir, "01_config.rds")
 
 # 3. Check Cache ----
@@ -137,6 +146,7 @@ if (!use_rapm_cache) {
       label <- paste(league, season)
 
       n_attempted <- n_attempted + 1L
+      if (n_attempted %% 20L == 0L) .os_mem(sprintf("after %d league-seasons", n_attempted))
 
       tryCatch({
         stats <- load_opta_stats(league, season = season, source = "local")
@@ -212,7 +222,18 @@ if (n_failed > 0 && n_attempted > 0) {
   }
 }
 
-match_stats <- data.table::rbindlist(all_stats, fill = TRUE, use.names = TRUE)
+# Not rbindlist(): it holds every league-season AND the result at once. At 2.49M
+# rows x 421 columns (8.4 GB a copy) that peaked at ~16.9 GB and killed 16 GB
+# GitHub runners in this step (panna#475: 13 lost in the panna#465 rebuilds).
+# .rbindlist_freeing() gives the identical table, binding one column at a time and
+# freeing it from the inputs, so the peak is the result plus one column.
+.mem_gb <- function() sum(gc(verbose = FALSE)[, 2]) / 1024
+message(sprintf("  R heap before combining: %.1f GB", .mem_gb()))
+.os_mem("before combining")
+match_stats <- .rbindlist_freeing(all_stats)
+rm(all_stats); invisible(gc(verbose = FALSE))
+message(sprintf("  R heap after combining: %.1f GB (gc max used this session: %.1f GB)",
+                .mem_gb(), sum(gc(verbose = FALSE)[, 6]) / 1024))
 
 if (nrow(match_stats) < 100) {
   stop(sprintf("Only %d match stats loaded (expected 300k+). Too few to proceed.", nrow(match_stats)))
@@ -278,6 +299,8 @@ if (isTRUE(apply_context_adjustments)) {
 # save_cache_with_meta's sidecar powers the growth tripwire: this exact file
 # growing 1.2M -> 1.9M rows (panna#127 full-sync) OOMed two downstream
 # pipelines days later (panna#128, #133) with no warning at generation time.
+.os_mem("after combining, before save")
 save_cache_with_meta(match_stats, cache_path, pipeline = "estimated-skills")
+.os_mem("after save")
 saveRDS(current_config, config_path)
 message(sprintf("\nSaved to: %s", cache_path))

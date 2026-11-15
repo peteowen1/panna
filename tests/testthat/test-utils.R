@@ -304,3 +304,20 @@ test_that(".as_df_no_copy shares columns and writes the same parquet as as.data.
   arrow::write_parquet(df, p2)
   expect_identical(unname(tools::md5sum(p1)), unname(tools::md5sum(p2)))
 })
+
+test_that(".rbindlist_freeing matches rbindlist(fill = TRUE) and frees its inputs (panna#475)", {
+  mk <- function() list(
+    data.table::data.table(a = 1:3, b = c("x", "y", "z"), d = c(1.5, NA, 2)),
+    NULL,
+    data.table::data.table(b = "w", a = 4L, e = TRUE),            # new column, different order
+    data.table::data.table(a = c(5.5, 6), d = c(NA_real_, 3)),    # integer -> double coercion
+    data.table::data.table(a = integer(0), b = character(0))      # empty input
+  )
+  expect_identical(.rbindlist_freeing(mk()),
+                   data.table::rbindlist(mk(), use.names = TRUE, fill = TRUE))
+  l <- mk(); res <- .rbindlist_freeing(l)
+  expect_equal(nrow(res), 6L)
+  # data.table inputs are emptied by reference: nothing left to hold memory
+  expect_true(all(vapply(Filter(Negate(is.null), l), ncol, integer(1)) == 0L))
+  expect_identical(.rbindlist_freeing(list()), data.table::data.table())
+})
