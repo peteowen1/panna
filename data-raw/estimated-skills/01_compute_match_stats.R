@@ -42,7 +42,7 @@ cache_path <- file.path(cache_dir, "01_match_stats.rds")
 .os_mem <- function(tag) {
   f <- "/proc/self/status"
   if (!file.exists(f)) return(invisible())
-  x <- readLines(f); g <- function(k) as.numeric(sub("[^0-9]*([0-9]+).*", "\\1", grep(paste0("^", k, ":"), x, value = TRUE))) / 1024^2
+  x <- readLines(f); g <- function(k) as.numeric(gsub("[^0-9]", "", grep(paste0("^", k, ":"), x, value = TRUE))) / 1024^2
   message(sprintf("  [os mem] %s: RSS %.1f GB, peak (VmHWM) %.1f GB", tag, g("VmRSS"), g("VmHWM")))
 }
 config_path <- file.path(cache_dir, "01_config.rds")
