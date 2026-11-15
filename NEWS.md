@@ -1,5 +1,22 @@
 # panna 0.3.118
 
+- Game logs price shots with xG v5.2 / xGOT v3.2 (panna#465, #467/#468). All 23 published seasons
+  were rebuilt and published to blog-latest on 2026-11-15; `game-logs-rebuild.yml` builds any season
+  list in parts, and `pack_publish_game_logs.R` publishes from a rebuild directory (`GL_PACK_DIR`,
+  `GL_SEASONS`), filling only by-design gaps as all-NA columns (no PSV before 2013-14, no raw-stat
+  SPM before 2012-13, no net goals in 2007-08) (#477).
+- Skills step 01 fills missing `minsPlayed` from the lineups (panna#469, #470): older Opta player
+  stats lack minutes on most rows (EPL 2014-15: 80 of 380 matches kept before, 380 now).
+- Game-log `spm_overall` is always the raw-stat seasonal SPM from `cache-opta/07`, never the skills
+  copy in 06, which rated fewer players (#476). 07 is a required download in both workflows.
+- Game-log PSV: a match whose source gives no player a position gets NA PSV instead of pushing the
+  whole league under the position-resolve guard (#478); the coverage gate explains those losses only
+  when neither file has a position for the match.
+- Memory (panna#475): skills step 01 spills each league-season to disk and binds into a
+  pre-allocated table (`.spill_piece()`, `.bind_spilled()`; peak 14.6 -> 9.0 GB on a 16 GB runner,
+  identical output) (#480, #481), with `MALLOC_MMAP_THRESHOLD_` set for the skills pipeline; step 06
+  reads `01_match_stats` once, narrowed to its ten columns (stage peak 14.8 -> 8.7 GB) (#482);
+  10b resolves keeper and position groups on five columns (#472).
 - Net goals now reconciles extra-time matches to their extra-time score (panna#463). `opta_fixtures.parquet` stores the 90-minute score, so step 10b's `ng_reconcile_margin()` was pulling an extra-time goal's value away from the side that scored it. 10b now rescores matches with period 3/4 events from the events (`.ng_fixtures_extra_time()`; extra time in, shootout out) and logs how many it moved. Other matches keep their fixture score. In the local events 712 matches have an extra-time goal; on UCL/UEL/UECL 2025-26, 12 of 20 extra-time matches move, and their 90-minute event scores match the fixture on 20 of 20.
 - New structural win probability model (panna#273): `train_wp_structural()` predicts the home team's
   win chance from the scoreboard (margin, time, red cards, half, extra time) plus the pre-match Elo gap
