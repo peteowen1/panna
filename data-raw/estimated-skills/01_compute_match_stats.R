@@ -148,6 +148,7 @@ if (!use_rapm_cache) {
       label <- paste(league, season)
 
       n_attempted <- n_attempted + 1L
+      piece <- NULL
       if (n_attempted %% 20L == 0L) .os_mem(sprintf("after %d league-seasons", n_attempted))
 
       tryCatch({
@@ -192,15 +193,19 @@ if (!use_rapm_cache) {
         # Compute match-level features
         match_level <- compute_match_level_opta_stats(stats, min_minutes = min_match_minutes)
 
-        if (!is.null(match_level) && nrow(match_level) > 0) {
-          all_stats[[label]] <- .spill_piece(match_level, spill_dir)
-          message(sprintf("  %s: %d player-matches", label, nrow(match_level)))
-        }
+        if (!is.null(match_level) && nrow(match_level) > 0) piece <- match_level
 
       }, error = function(e) {
         n_failed <<- n_failed + 1L
         message(sprintf("  ERROR in %s: %s", label, e$message))
       })
+      # Spill OUTSIDE the tryCatch: a failed write (disk full) must stop the step,
+      # not be counted as one more league-season with bad data and quietly dropped.
+      if (!is.null(piece)) {
+        all_stats[[label]] <- .spill_piece(piece, spill_dir)
+        message(sprintf("  %s: %d player-matches", label, nrow(piece)))
+      }
+      piece <- NULL
     }
   }
 }
@@ -234,6 +239,8 @@ if (n_failed > 0 && n_attempted > 0) {
 .mem_gb <- function() sum(gc(verbose = FALSE)[, 2]) / 1024
 message(sprintf("  R heap before combining: %.1f GB", .mem_gb()))
 .os_mem("before combining")
+.spill_gb <- sum(file.size(vapply(all_stats, `[[`, "", "path"))) / 1024^3
+message(sprintf("  Spilled %d league-season file(s), %.2f GB on disk (%s)", length(all_stats), .spill_gb, spill_dir))
 match_stats <- .bind_spilled(all_stats)
 rm(all_stats); invisible(gc(verbose = FALSE))
 message(sprintf("  R heap after combining: %.1f GB (gc max used this session: %.1f GB)",

@@ -21,7 +21,8 @@ is the result plus one piece. The result equals
 \code{rbindlist(pieces, use.names = TRUE, fill = TRUE)} when every column is a plain
 logical / integer / double / character vector and no column mixes character with
 another type: column order is first appearance, the type is the widest of
-logical < integer < double (character stays character), and rows a piece lacks
+logical < integer < double (character stays character, and a logical piece
+beside it becomes character), and rows a piece lacks
 are NA. Anything else (factors, Dates, list-columns, character mixed with
 numbers) falls back to reading every piece and .rbindlist_freeing(), and says so.
 }

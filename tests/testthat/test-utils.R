@@ -341,4 +341,11 @@ test_that(".bind_spilled matches rbindlist(fill = TRUE) and cleans up (panna#475
     expect_identical(r2, data.table::rbindlist(bad, use.names = TRUE, fill = TRUE))
   }
   expect_identical(.bind_spilled(list()), data.table::data.table())
+  # Text beside an all-NA logical piece stays on the fast path, as rbindlist coerces it
+  tl <- list(data.table::data.table(a = c("u", "v")), data.table::data.table(a = NA))
+  expect_no_message(r3 <- .bind_spilled(lapply(tl, .spill_piece, dir = d)))
+  expect_identical(r3, data.table::rbindlist(tl, use.names = TRUE, fill = TRUE))
+  # One piece comes back as itself
+  one <- list(data.table::data.table(a = 1:2, b = c("x", "y")))
+  expect_identical(.bind_spilled(lapply(one, .spill_piece, dir = d)), one[[1]])
 })

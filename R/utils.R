@@ -788,7 +788,9 @@ build_where_clause <- function(filters, prefix = TRUE) {
 .spill_piece <- function(dt, dir) {
   dir.create(dir, showWarnings = FALSE, recursive = TRUE)
   path <- tempfile("piece_", tmpdir = dir, fileext = ".rds")
-  saveRDS(dt, path, compress = TRUE)
+  # A failed write (disk full) leaves a partial file: remove it, then re-raise.
+  tryCatch(saveRDS(dt, path, compress = TRUE),
+           error = function(e) { unlink(path); stop(e) })
   list(path = path, n = nrow(dt), cols = names(dt),
        types = vapply(dt, typeof, character(1)),
        classes = vapply(dt, function(x) class(x)[1], character(1)))
@@ -802,7 +804,8 @@ build_where_clause <- function(filters, prefix = TRUE) {
 #' `rbindlist(pieces, use.names = TRUE, fill = TRUE)` when every column is a plain
 #' logical / integer / double / character vector and no column mixes character with
 #' another type: column order is first appearance, the type is the widest of
-#' logical < integer < double (character stays character), and rows a piece lacks
+#' logical < integer < double (character stays character, and a logical piece
+#' beside it becomes character), and rows a piece lacks
 #' are NA. Anything else (factors, Dates, list-columns, character mixed with
 #' numbers) falls back to reading every piece and .rbindlist_freeing(), and says so.
 #'
@@ -813,6 +816,12 @@ build_where_clause <- function(filters, prefix = TRUE) {
 .bind_spilled <- function(spilled, delete = TRUE) {
   spilled <- Filter(Negate(is.null), spilled)
   if (!length(spilled)) return(data.table::data.table())
+  # One piece needs no bind, and reading it beside a pre-allocated copy would double it.
+  if (length(spilled) == 1L) {
+    out <- data.table::as.data.table(readRDS(spilled[[1]]$path))
+    if (delete) unlink(spilled[[1]]$path)
+    return(out)
+  }
   cols <- unique(unlist(lapply(spilled, `[[`, "cols"), use.names = FALSE))
   basic <- c("logical", "integer", "numeric", "character")
   ok <- TRUE; target <- character(length(cols)); names(target) <- cols
@@ -820,8 +829,9 @@ build_where_clause <- function(filters, prefix = TRUE) {
   for (cc in cols) {
     ty <- unlist(lapply(spilled, function(s) if (cc %in% s$cols) s$types[[cc]]), use.names = FALSE)
     cl <- unlist(lapply(spilled, function(s) if (cc %in% s$cols) s$classes[[cc]]), use.names = FALSE)
-    if (!all(cl %in% basic) || (any(ty == "character") && !all(ty == "character"))) { ok <- FALSE; break }
-    target[[cc]] <- if (all(ty == "character")) "character" else names(rank)[max(rank[ty])]
+    # Text may sit beside logical (an all-NA piece): rbindlist makes it character too.
+    if (!all(cl %in% basic) || (any(ty == "character") && !all(ty %in% c("character", "logical")))) { ok <- FALSE; break }
+    target[[cc]] <- if (any(ty == "character")) "character" else names(rank)[max(rank[ty])]
   }
   if (!ok) {
     message("  .bind_spilled: a column is not a plain vector, or mixes text with numbers -- falling back to an in-memory bind")
