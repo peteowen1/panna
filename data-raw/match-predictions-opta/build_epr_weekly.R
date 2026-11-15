@@ -194,6 +194,27 @@ gl[, season_end_year := unname(.sey_map[season])]
 if (anyNA(gl$season_end_year)) {
   cli::cli_abort("Unparseable season label{?s} in game logs: {.val {unique(gl$season[is.na(gl$season_end_year)])}}")
 }
+## Fingerprint of the SETTLED game-log history, stamped on the output and checked
+## by the incremental reuse in section 4b. Reused snapshots are only "immutable"
+## while the game logs they were fitted on are: a rebuild or re-pricing of old
+## seasons (four times between June and November 2026) changes every historical
+## snapshot, and reusing the old ones left the file stitched from several
+## vintages -- week-on-week correlation of EPR across all players fell from the
+## usual 0.999+ to 0.92 / 0.97 at the joins, with every player shifted by +0.0046
+## in one week at 2026-09-25 (pannaverse docs/reviews/FABLE-FULL-REVIEW-2026-11-15.md, W3).
+##
+## It covers matches before 1 July of the previous year, so new matches never move
+## it and it rolls forward once a year (one full rebuild each January). Sums are
+## rounded to 1 dp: the inputs are stored at 4 dp, so this is stable to summation
+## order and still moves on any real re-pricing.
+.fp_anchor <- as.Date(sprintf("%d-07-01", as.integer(format(max(gl$match_date), "%Y")) - 1L))
+.fp_rows <- gl[match_date < .fp_anchor]
+GAME_LOGS_FINGERPRINT <- sprintf("before=%s|n=%d|off=%.1f|def=%.1f|mins=%.0f",
+                                 .fp_anchor, nrow(.fp_rows),
+                                 sum(.fp_rows$epv_offensive), sum(.fp_rows$epv_defensive),
+                                 sum(.fp_rows$minutes_played, na.rm = TRUE))
+rm(.fp_rows)
+t_log(sprintf("game-log fingerprint: %s", GAME_LOGS_FINGERPRINT))
 t_log(sprintf("loaded game_logs in %.1fs: %s rows, %s players, %s matches",
               as.numeric(Sys.time()-t0, units="secs"),
               format(nrow(gl), big.mark=","),
@@ -339,6 +360,15 @@ data.table::setkey(glb, match_date)
 end_date   <- max(gl$match_date)
 start_date <- min(gl$match_date) + 90L   # skip first ~3 months (thin history)
 snapshots  <- seq(start_date, end_date, by = "week")
+## The weekly grid is anchored on the first match date, so it lands on one weekday
+## (Fridays) and every fit uses match_date < ref_date. A Wednesday run therefore
+## stopped at the previous Friday: the file published 2026-11-11 had its newest
+## snapshot at 2026-11-06 and held no match from that weekend, and by the next
+## run the "current" EPR was two weekends behind. Add one snapshot the day after
+## the newest match, as the weekly PSR file does. It is off the grid, so it is
+## never reused (section 4b drops off-grid snapshots) and only the newest exists.
+weekly_grid <- snapshots
+if (end_date + 1L > max(snapshots)) snapshots <- c(snapshots, end_date + 1L)
 t_log(sprintf("Building %d weekly snapshots: %s -> %s",
               length(snapshots), start_date, end_date))
 
@@ -382,11 +412,24 @@ if (force_full_epr) {
     existing_epr <- NULL
     .config_changed <- TRUE
   }
+  ## Same rule for the game logs themselves. A file from before the stamp existed
+  ## has no fingerprint and counts as changed: it is the mixed-vintage file.
+  .old_fp <- if (!is.null(existing_epr) && "game_logs_fingerprint" %in% names(existing_epr))
+    unique(existing_epr$game_logs_fingerprint) else NA_character_
+  if (!is.null(existing_epr) && !identical(.old_fp, GAME_LOGS_FINGERPRINT)) {
+    t_log(sprintf("game logs changed since the existing parquet was built -- full rebuild
+    was: %s
+    now: %s",
+                  paste(.old_fp, collapse = " / "), GAME_LOGS_FINGERPRINT))
+    existing_epr <- NULL
+    .config_changed <- TRUE
+  }
   if (!is.null(existing_epr) && "snapshot_date" %in% names(existing_epr) &&
       nrow(existing_epr) > 0) {
     existing_epr[, snapshot_date := as.Date(snapshot_date)]
     cutoff <- end_date - RECOMPUTE_BUFFER_DAYS
-    keep_existing <- existing_epr[snapshot_date < cutoff]
+    ## Grid dates only: a previous run's run-date snapshot is not reused.
+    keep_existing <- existing_epr[snapshot_date < cutoff & snapshot_date %in% weekly_grid]
     snapshots <- snapshots[snapshots >= cutoff]
     t_log(sprintf("Incremental: reuse %s rows (<%s), recompute %d snapshots (>=%s)",
                   format(nrow(keep_existing), big.mark = ","), cutoff,
@@ -467,6 +510,7 @@ setorder(epr_weekly, snapshot_date, player_id)
 ## Stamp what built the file, so the next incremental run can tell (section 4b).
 epr_weekly[, epr_source := EPR_SOURCE]
 epr_weekly[, epr_min_season_end_year := if (is.null(.min_sy)) NA_integer_ else as.integer(.min_sy)]
+epr_weekly[, game_logs_fingerprint := GAME_LOGS_FINGERPRINT]
 t_log(sprintf("Done fitting %d snapshots in %.1f min",
               length(snapshots),
               as.numeric(Sys.time()-t0, units="mins")))
