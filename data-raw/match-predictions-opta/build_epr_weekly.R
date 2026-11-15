@@ -6,9 +6,10 @@
 ## cwd-relative, not script-relative. Moved here from debug/keep/ 2026-06-23 so
 ## it's version-controlled and can run in CI (epr-weekly-snapshot.yml); the old
 ## location was gitignored, which is why EPR had no automated rebuild.
-## INCREMENTAL: reuses snapshots older than a 28-day buffer from the existing
-## opta_epr_weekly.parquet and recomputes only the recent window (~3 min vs
-## ~25 min full). Set EPR_FORCE_FULL_REBUILD=1 to recompute every snapshot.
+## FULL REBUILD by default (since 2026-11-15, ~25-46 min on a runner): every
+## snapshot is refitted from today's game logs, so the file is one vintage.
+## EPR_INCREMENTAL=1 reuses snapshots older than a 28-day buffer (~3 min) for a
+## quick local run; see section 4b for why that is no longer the default.
 ##
 ## Method: calculate_epr_regression() — for each snapshot date, fit a weighted
 ## ridge regression
@@ -194,29 +195,6 @@ gl[, season_end_year := unname(.sey_map[season])]
 if (anyNA(gl$season_end_year)) {
   cli::cli_abort("Unparseable season label{?s} in game logs: {.val {unique(gl$season[is.na(gl$season_end_year)])}}")
 }
-## Fingerprint of the game-log history before a date, stamped on the output and
-## checked by the incremental reuse in section 4b. Reused snapshots are only
-## "immutable" while the game logs they were fitted on are: a rebuild or
-## re-pricing of old matches (four times between June and November 2026) changes
-## every snapshot after them, and reusing the old ones left the file stitched
-## from several vintages -- week-on-week correlation of EPR across all players
-## fell from the usual 0.999+ to 0.92 / 0.97 at the joins, with every player
-## shifted by +0.0046 in one week at 2026-09-25 (pannaverse
-## docs/reviews/FABLE-FULL-REVIEW-2026-11-15.md, W3).
-##
-## Each run stamps the fingerprint of the matches before ITS reuse cutoff. The
-## next run recomputes it over the same date range from today's game logs: any
-## change to a match the old snapshots were fitted on moves it, and matches
-## played since never do. Sums are rounded to 1 dp: the inputs are stored at
-## 4 dp, so this is stable to summation order and still moves on a re-pricing.
-## Not covered: a match re-priced inside the last run's own 28-day window, which
-## touches only the one or two snapshots that leave the window each week.
-.gl_fingerprint <- function(before) {
-  r <- gl[match_date < before]
-  sprintf("before=%s|n=%d|off=%.1f|def=%.1f|mins=%.0f", format(before), nrow(r),
-          sum(r$epv_offensive, na.rm = TRUE), sum(r$epv_defensive, na.rm = TRUE),
-          sum(r$minutes_played, na.rm = TRUE))
-}
 t_log(sprintf("loaded game_logs in %.1fs: %s rows, %s players, %s matches",
               as.numeric(Sys.time()-t0, units="secs"),
               format(nrow(gl), big.mark=","),
@@ -367,8 +345,8 @@ snapshots  <- seq(start_date, end_date, by = "week")
 ## stopped at the previous Friday: the file published 2026-11-11 had its newest
 ## snapshot at 2026-11-06 and held no match from that weekend, and by the next
 ## run the "current" EPR was two weekends behind. Add one snapshot the day after
-## the newest match, as the weekly PSR file does. It is off the grid, so it is
-## never reused (section 4b drops off-grid snapshots) and only the newest exists.
+## the newest match, as the weekly PSR file does. It is off the grid, so an
+## incremental run never reuses it (section 4b) and only the newest one exists.
 weekly_grid <- snapshots
 if (end_date + 1L > max(snapshots)) snapshots <- c(snapshots, end_date + 1L)
 t_log(sprintf("Building %d weekly snapshots: %s -> %s",
@@ -386,10 +364,25 @@ out_path <- "../pannadata/data/opta/opta_epr_weekly.parquet"
 ## Set EPR_FORCE_FULL_REBUILD=1 to force all 1346 snapshots (e.g. after a
 ## method/offset change that shifts historical values).
 RECOMPUTE_BUFFER_DAYS <- 28L
-force_full_epr <- nzchar(Sys.getenv("EPR_FORCE_FULL_REBUILD"))
+## DEFAULT IS NOW A FULL REBUILD (2026-11-15). Reuse is only sound while the game
+## logs an old snapshot was fitted on have not changed, and they change in two
+## ways nothing here can see cheaply: (1) rebuilds and re-pricings -- four between
+## June and November 2026, each of which left a join in the published file
+## (week-on-week correlation of EPR across all players, normally 0.999+, was
+## 0.920 at 2026-06-26 and 0.966 at 2026-09-18, and every player moved by +0.0046
+## in one week at 2026-09-25); (2) every weekly export re-centres the in-progress
+## season's epv_*_adj columns over the whole league-season, so even "unchanged"
+## matches carry slightly different values each run. A fingerprint of the old
+## game logs was tried and dropped in review: (2) makes it differ most weeks.
+## A full rebuild is 25-46 minutes on a runner and cannot mix vintages.
+## Set EPR_INCREMENTAL=1 for a quick local run that reuses old snapshots; do not
+## publish one. EPR_FORCE_FULL_REBUILD is still honoured and wins.
+## (pannaverse docs/reviews/FABLE-FULL-REVIEW-2026-11-15.md, W3.)
+force_full_epr <- nzchar(Sys.getenv("EPR_FORCE_FULL_REBUILD")) ||
+  !nzchar(Sys.getenv("EPR_INCREMENTAL"))
 keep_existing <- NULL
 if (force_full_epr) {
-  t_log("EPR_FORCE_FULL_REBUILD set — recomputing every snapshot")
+  t_log("Full rebuild (the default; EPR_INCREMENTAL=1 reuses old snapshots) — recomputing every snapshot")
 } else if (file.exists(out_path)) {
   existing_epr <- tryCatch(as.data.table(read_parquet(out_path)),
                            error = function(e) { t_log(sprintf(
@@ -411,24 +404,6 @@ if (force_full_epr) {
     t_log(sprintf("existing parquet was built from %s (seasons >= %s), this run is %s (>= %s) -- full rebuild",
                   paste(.old_src, collapse = "/"), paste(.old_min, collapse = "/"),
                   EPR_SOURCE, .new_min))
-    existing_epr <- NULL
-    .config_changed <- TRUE
-  }
-  ## Same rule for the game logs themselves: recompute the old file's
-  ## fingerprint over ITS date range and compare. A file from before the stamp
-  ## existed has none and counts as changed -- it is the mixed-vintage file.
-  .old_fp <- if (!is.null(existing_epr) && "game_logs_fingerprint" %in% names(existing_epr))
-    unique(existing_epr$game_logs_fingerprint) else NA_character_
-  .old_before <- if (length(.old_fp) == 1L && !is.na(.old_fp)) {
-    suppressWarnings(as.Date(sub("^before=([0-9]{4}-[0-9]{2}-[0-9]{2})[|].*$", "\\1", .old_fp),
-                             format = "%Y-%m-%d"))
-  } else as.Date(NA)
-  .now_fp <- if (!is.na(.old_before)) .gl_fingerprint(.old_before) else NA_character_
-  ## is.na first: a missing stamp makes both sides NA, which identical() calls equal.
-  if (!is.null(existing_epr) && (is.na(.now_fp) || !identical(.old_fp, .now_fp))) {
-    t_log("game logs changed since the existing parquet was built -- full rebuild")
-    t_log(sprintf("    stamped: %s", paste(.old_fp, collapse = " / ")))
-    t_log(sprintf("    now:     %s", .now_fp))
     existing_epr <- NULL
     .config_changed <- TRUE
   }
@@ -518,11 +493,6 @@ setorder(epr_weekly, snapshot_date, player_id)
 ## Stamp what built the file, so the next incremental run can tell (section 4b).
 epr_weekly[, epr_source := EPR_SOURCE]
 epr_weekly[, epr_min_season_end_year := if (is.null(.min_sy)) NA_integer_ else as.integer(.min_sy)]
-## Fingerprint the matches before this run's reuse cutoff: the range the next
-## run's reused snapshots (those older than its own cutoff) were fitted on.
-GAME_LOGS_FINGERPRINT <- .gl_fingerprint(end_date - RECOMPUTE_BUFFER_DAYS)
-t_log(sprintf("game-log fingerprint: %s", GAME_LOGS_FINGERPRINT))
-epr_weekly[, game_logs_fingerprint := GAME_LOGS_FINGERPRINT]
 t_log(sprintf("Done fitting %d snapshots in %.1f min",
               length(snapshots),
               as.numeric(Sys.time()-t0, units="mins")))
