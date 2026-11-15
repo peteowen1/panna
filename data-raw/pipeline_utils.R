@@ -768,6 +768,51 @@ current_domestic_season <- function(today = Sys.Date()) {
   else sprintf("%d-%d", year - 1L, year)
 }
 
+#' The domestic season before a "YYYY-YYYY" label
+#'
+#' @param season Season label, e.g. "2026-2027".
+#' @return The label one year earlier, e.g. "2025-2026".
+previous_domestic_season <- function(season) {
+  m <- regmatches(season, regexec("^(\\d{4})-(\\d{4})$", season))[[1]]
+  if (length(m) != 3L) {
+    stop(sprintf("previous_domestic_season: '%s' is not a YYYY-YYYY season label", season),
+         call. = FALSE)
+  }
+  sprintf("%d-%d", as.integer(m[2]) - 1L, as.integer(m[3]) - 1L)
+}
+
+#' Calendar-year leagues the clock season leaves behind
+#'
+#' A calendar-year league (MLS, Argentina, Brazil) is filed under the domestic
+#' season that ENDS in its year: MLS 2026 sits in "2025-2026". From 1 August
+#' `current_domestic_season()` is "2026-2027", whose calendar label ("2027")
+#' does not exist yet, so a run that builds only the clock season skips those
+#' leagues for the last four months of their season. In 2026 their game logs
+#' stood still from 29 September to 14 November while the three leagues played
+#' 203 matches in October alone, and every run was green.
+#'
+#' This names the leagues in that state: no label for `season`, but one for the
+#' season before. The caller rebuilds them into the previous season's file.
+#' Once the new label appears in the catalog the league resolves normally and
+#' drops out of the plan.
+#'
+#' @param season The clock season, e.g. "2026-2027".
+#' @param calendar_leagues League codes with calendar-year season labels.
+#' @param season_label_leagues Passed to the resolver as `tournament_leagues`.
+#' @param resolver Season resolver; `resolve_league_season()` in production,
+#'   injected by the tests so they need no catalog.
+#' @return `list(season = <previous season>, leagues = <character>)`.
+calendar_catchup_plan <- function(season, calendar_leagues,
+                                  season_label_leagues = calendar_leagues,
+                                  resolver = resolve_league_season) {
+  prev <- previous_domestic_season(season)
+  behind <- Filter(function(lg) {
+    is.null(resolver(lg, season, tournament_leagues = season_label_leagues)) &&
+      !is.null(resolver(lg, prev, tournament_leagues = season_label_leagues))
+  }, as.character(calendar_leagues))
+  list(season = prev, leagues = as.character(behind))
+}
+
 resolve_blog_leagues <- function() {
   domestic_leagues  <- PANNA_LEAGUE_GROUPS$domestic
   calendar_leagues  <- PANNA_LEAGUE_GROUPS$calendar
