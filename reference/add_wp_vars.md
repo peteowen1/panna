@@ -8,7 +8,7 @@ event) columns.
 ## Usage
 
 ``` r
-add_wp_vars(wp_features, wp_model, centre = TRUE)
+add_wp_vars(wp_features, wp_model, centre = TRUE, team_agnostic = FALSE)
 ```
 
 ## Arguments
@@ -47,6 +47,12 @@ add_wp_vars(wp_features, wp_model, centre = TRUE)
   [`wpa_build_ledger`](https://peteowen1.github.io/panna/reference/wpa_build_ledger.md)
   needs.
 
+- team_agnostic:
+
+  Structural models only: score as if both teams were equally strong
+  (Elo gap 0), the site's team-agnostic WPA view. Passed to
+  [`predict_wp`](https://peteowen1.github.io/panna/reference/predict_wp.md).
+
 ## Value
 
 The input data.table with added `wp` (possession-POV probability) and
@@ -75,6 +81,8 @@ to remove model-calibration bias.
 ## See also
 
 Other win probability:
+[`add_wp_match_elo()`](https://peteowen1.github.io/panna/reference/add_wp_match_elo.md),
+[`add_wp_xi_strength()`](https://peteowen1.github.io/panna/reference/add_wp_xi_strength.md),
 [`aggregate_player_game_wpa()`](https://peteowen1.github.io/panna/reference/aggregate_player_game_wpa.md),
 [`assign_wpa_credit()`](https://peteowen1.github.io/panna/reference/assign_wpa_credit.md),
 [`create_wp_features()`](https://peteowen1.github.io/panna/reference/create_wp_features.md),
@@ -82,4 +90,5 @@ Other win probability:
 [`predict_wp()`](https://peteowen1.github.io/panna/reference/predict_wp.md),
 [`save_wp_model()`](https://peteowen1.github.io/panna/reference/save_wp_model.md),
 [`train_wp_model()`](https://peteowen1.github.io/panna/reference/train_wp_model.md),
+[`train_wp_structural()`](https://peteowen1.github.io/panna/reference/train_wp_structural.md),
 [`wpa_build_ledger()`](https://peteowen1.github.io/panna/reference/wpa_build_ledger.md)

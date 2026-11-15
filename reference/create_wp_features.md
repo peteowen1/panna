@@ -36,11 +36,14 @@ optionally training labels.
 ## See also
 
 Other win probability:
+[`add_wp_match_elo()`](https://peteowen1.github.io/panna/reference/add_wp_match_elo.md),
 [`add_wp_vars()`](https://peteowen1.github.io/panna/reference/add_wp_vars.md),
+[`add_wp_xi_strength()`](https://peteowen1.github.io/panna/reference/add_wp_xi_strength.md),
 [`aggregate_player_game_wpa()`](https://peteowen1.github.io/panna/reference/aggregate_player_game_wpa.md),
 [`assign_wpa_credit()`](https://peteowen1.github.io/panna/reference/assign_wpa_credit.md),
 [`load_wp_model()`](https://peteowen1.github.io/panna/reference/load_wp_model.md),
 [`predict_wp()`](https://peteowen1.github.io/panna/reference/predict_wp.md),
 [`save_wp_model()`](https://peteowen1.github.io/panna/reference/save_wp_model.md),
 [`train_wp_model()`](https://peteowen1.github.io/panna/reference/train_wp_model.md),
+[`train_wp_structural()`](https://peteowen1.github.io/panna/reference/train_wp_structural.md),
 [`wpa_build_ledger()`](https://peteowen1.github.io/panna/reference/wpa_build_ledger.md)

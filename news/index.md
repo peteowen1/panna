@@ -1,5 +1,91 @@
 # Changelog
 
+## panna 0.3.118
+
+- Game logs price shots with xG v5.2 / xGOT v3.2 (panna#465,
+  [\#467](https://github.com/peteowen1/panna/issues/467)/#468). All 23
+  published seasons were rebuilt and published to blog-latest on
+  2026-11-15; `game-logs-rebuild.yml` builds any season list in parts,
+  and `pack_publish_game_logs.R` publishes from a rebuild directory
+  (`GL_PACK_DIR`, `GL_SEASONS`), filling only by-design gaps as all-NA
+  columns (no PSV before 2013-14, no raw-stat SPM before 2012-13, no net
+  goals in 2007-08)
+  ([\#477](https://github.com/peteowen1/panna/issues/477)).
+- Skills step 01 fills missing `minsPlayed` from the lineups (panna#469,
+  [\#470](https://github.com/peteowen1/panna/issues/470)): older Opta
+  player stats lack minutes on most rows (EPL 2014-15: 80 of 380 matches
+  kept before, 380 now).
+- Game-log `spm_overall` is always the raw-stat seasonal SPM from
+  `cache-opta/07`, never the skills copy in 06, which rated fewer
+  players ([\#476](https://github.com/peteowen1/panna/issues/476)). 07
+  is a required download in both workflows.
+- Game-log PSV: a match whose source gives no player a position gets NA
+  PSV instead of pushing the whole league under the position-resolve
+  guard ([\#478](https://github.com/peteowen1/panna/issues/478)); the
+  coverage gate explains those losses only when neither file has a
+  position for the match.
+- Memory (panna#475): skills step 01 spills each league-season to disk
+  and binds into a pre-allocated table
+  ([`.spill_piece()`](https://peteowen1.github.io/panna/reference/dot-spill_piece.md),
+  [`.bind_spilled()`](https://peteowen1.github.io/panna/reference/dot-bind_spilled.md);
+  peak 14.6 -\> 9.0 GB on a 16 GB runner, identical output)
+  ([\#480](https://github.com/peteowen1/panna/issues/480),
+  [\#481](https://github.com/peteowen1/panna/issues/481)), with
+  `MALLOC_MMAP_THRESHOLD_` set for the skills pipeline; step 06 reads
+  `01_match_stats` once, narrowed to its ten columns (stage peak 14.8
+  -\> 8.7 GB) ([\#482](https://github.com/peteowen1/panna/issues/482));
+  10b resolves keeper and position groups on five columns
+  ([\#472](https://github.com/peteowen1/panna/issues/472)).
+- Net goals now reconciles extra-time matches to their extra-time score
+  (panna#463). `opta_fixtures.parquet` stores the 90-minute score, so
+  step 10b’s
+  [`ng_reconcile_margin()`](https://peteowen1.github.io/panna/reference/ng_reconcile_margin.md)
+  was pulling an extra-time goal’s value away from the side that scored
+  it. 10b now rescores matches with period 3/4 events from the events
+  ([`.ng_fixtures_extra_time()`](https://peteowen1.github.io/panna/reference/dot-ng_fixtures_extra_time.md);
+  extra time in, shootout out) and logs how many it moved. Other matches
+  keep their fixture score. In the local events 712 matches have an
+  extra-time goal; on UCL/UEL/UECL 2025-26, 12 of 20 extra-time matches
+  move, and their 90-minute event scores match the fixture on 20 of 20.
+- New structural win probability model (panna#273):
+  [`train_wp_structural()`](https://peteowen1.github.io/panna/reference/train_wp_structural.md)
+  predicts the home team’s win chance from the scoreboard (margin, time,
+  red cards, half, extra time) plus the pre-match Elo gap
+  ([`add_wp_match_elo()`](https://peteowen1.github.io/panna/reference/add_wp_match_elo.md)),
+  with live threat as the chance of the next goal. Who has the ball is
+  not an input by default (`use_possession = FALSE`).
+  [`predict_wp()`](https://peteowen1.github.io/panna/reference/predict_wp.md)
+  and
+  [`add_wp_vars()`](https://peteowen1.github.io/panna/reference/add_wp_vars.md)
+  use it whenever they are given one, so
+  [`wpa_build_ledger()`](https://peteowen1.github.io/panna/reference/wpa_build_ledger.md)
+  works unchanged; `team_agnostic = TRUE` scores with the Elo gap at 0
+  (the site’s team-agnostic WPA). Hold-out, seasons ending 2026, 14
+  competitions, 4,203 matches: log loss 0.4841 vs 0.5031 for the
+  published model, and a goal is worth 31 lost possessions instead of 6.
+  Not wired into any pipeline yet; the published WP model is unchanged.
+- [`train_wp_structural()`](https://peteowen1.github.io/panna/reference/train_wp_structural.md)
+  now defaults to `use_possession = TRUE` (SEP, chosen 2026-11-10), and
+  `team_agnostic = TRUE` zeroes the starting-XI gap `xi_diff` as well as
+  the Elo gap, so the team-agnostic view carries no team strength at
+  all.
+- [`ng_fold_unpublished()`](https://peteowen1.github.io/panna/reference/ng_fold_unpublished.md)
+  gains `value_cols`, so the WPA ledger’s columns fold the same way.
+- Step 10b builds the WPA ledger when a structural WP model is supplied
+  (`wp_structural_model_override` or `_path`): additive columns
+  `wpa_neutral` (team-agnostic, each team sums to result - 0.5),
+  `wpa_team` and `wpa_team_start` (team-value, real Elo + XI gap; NA
+  where a match has no Elo), each split torp’s way into `_own` (on-ball
+  acts), `_won` (balls won and shots stopped where the feed names the
+  player) and `_shared` (the team share and the even start).
+  [`wpa_build_ledger()`](https://peteowen1.github.io/panna/reference/wpa_build_ledger.md)
+  returns `wpa_own`, `wpa_won` and `wpa_shared`. Offence/defence is not
+  published: it booked every lost ball to offence and every regain to
+  defence, -1.95 / +1.95 per team-match on ENG 2026-27. Pre-match Elo
+  for every league comes from `data-raw/epv/wp_structural_elo.R`, shared
+  with 05d. Off by default until the model is published.
+  `career-panna-asof.yml` runs monthly.
+
 ## panna 0.3.117
 
 - Keeper style (`_kadj`, panna#429): a club new to the data (promoted

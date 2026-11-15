@@ -77,10 +77,13 @@ wpa_build_ledger(
 
 One row per player-match: `wpa_neutral` (the ledger value),
 `wpa_offence`, `wpa_defence`, `wpa_start`
-(`wpa_offence + wpa_defence + wpa_start = wpa_neutral`), and one
-`wpa_<role>` column per engine role. Attribute `targets`: per
-team-match, its result, target, opening win chance and the gap after the
-build.
+(`wpa_offence + wpa_defence + wpa_start = wpa_neutral`), torp's three
+channels `wpa_own` (on-ball acts), `wpa_won` (balls won and shots
+stopped, where the feed names him) and `wpa_shared` (his minutes' share
+of the team pools plus `wpa_start`), with
+`wpa_own + wpa_won + wpa_shared = wpa_neutral`, and one `wpa_<role>`
+column per engine role. Attribute `targets`: per team-match, its result,
+target, opening win chance and the gap after the build.
 
 ## Details
 
@@ -106,11 +109,14 @@ by minutes and reported as `wpa_start`.
 ## See also
 
 Other win probability:
+[`add_wp_match_elo()`](https://peteowen1.github.io/panna/reference/add_wp_match_elo.md),
 [`add_wp_vars()`](https://peteowen1.github.io/panna/reference/add_wp_vars.md),
+[`add_wp_xi_strength()`](https://peteowen1.github.io/panna/reference/add_wp_xi_strength.md),
 [`aggregate_player_game_wpa()`](https://peteowen1.github.io/panna/reference/aggregate_player_game_wpa.md),
 [`assign_wpa_credit()`](https://peteowen1.github.io/panna/reference/assign_wpa_credit.md),
 [`create_wp_features()`](https://peteowen1.github.io/panna/reference/create_wp_features.md),
 [`load_wp_model()`](https://peteowen1.github.io/panna/reference/load_wp_model.md),
 [`predict_wp()`](https://peteowen1.github.io/panna/reference/predict_wp.md),
 [`save_wp_model()`](https://peteowen1.github.io/panna/reference/save_wp_model.md),
-[`train_wp_model()`](https://peteowen1.github.io/panna/reference/train_wp_model.md)
+[`train_wp_model()`](https://peteowen1.github.io/panna/reference/train_wp_model.md),
+[`train_wp_structural()`](https://peteowen1.github.io/panna/reference/train_wp_structural.md)

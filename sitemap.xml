@@ -101,7 +101,9 @@
 <url><loc>https://peteowen1.github.io/panna/reference/add_red_card_to_chains.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/add_value_metrics_to_splints.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/add_weather_features.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/add_wp_match_elo.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/add_wp_vars.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/add_wp_xi_strength.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/add_xg_to_spadl.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/add_xgot_to_spadl.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/add_xpass_to_spadl.html</loc></url>
@@ -241,6 +243,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/dot-assert_skill_spm_sign_convention.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-assert_team_strength_sign_convention.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-attach_event_periods.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-bind_spilled.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-build_match_results_from_events.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-build_panel_design_matrix.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-build_rapm_row_data.html</loc></url>
@@ -289,6 +292,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/dot-ng_credit_terms_team.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-ng_defensive_acts.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-ng_defensive_value.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-ng_fixtures_extra_time.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-ng_play_type.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-ng_player_bucket.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-ng_pool_unnamed.html</loc></url>
@@ -306,6 +310,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/dot-psv_pos_grp.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-psv_position_group.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-raw_period_ends.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-rbindlist_freeing.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-read_skill_chunk.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-rename_opta_columns.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-report_model_provenance.html</loc></url>
@@ -325,6 +330,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/dot-skill_spm_defense_cols.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-skill_spm_defense_constraints.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-skill_spm_offense_cols.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-spill_piece.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-spm_league_dummies.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-spm_opta_predictor_cols.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-spm_opta_stats_keep_cols.html</loc></url>
@@ -554,6 +560,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/summarize_player_chains.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/to_opta_league.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/train_wp_model.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/train_wp_structural.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/update_elo.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/validate_dataframe.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/validate_epv_model.html</loc></url>

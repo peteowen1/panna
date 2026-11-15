@@ -428,8 +428,12 @@ payments sum to its goal difference
 
 Win probability model and WPA credit assignment
 
+- [`add_wp_match_elo()`](https://peteowen1.github.io/panna/reference/add_wp_match_elo.md)
+  : Join pre-match team strength onto WP features
 - [`add_wp_vars()`](https://peteowen1.github.io/panna/reference/add_wp_vars.md)
   : Add win probability and WPA to SPADL data
+- [`add_wp_xi_strength()`](https://peteowen1.github.io/panna/reference/add_wp_xi_strength.md)
+  : Join starting-XI strength onto WP features
 - [`aggregate_player_game_wpa()`](https://peteowen1.github.io/panna/reference/aggregate_player_game_wpa.md)
   : Aggregate player WPA per game
 - [`assign_wpa_credit()`](https://peteowen1.github.io/panna/reference/assign_wpa_credit.md)
@@ -444,6 +448,9 @@ Win probability model and WPA credit assignment
   : Save WP model
 - [`train_wp_model()`](https://peteowen1.github.io/panna/reference/train_wp_model.md)
   : Train a win probability model
+- [`train_wp_structural()`](https://peteowen1.github.io/panna/reference/train_wp_structural.md)
+  [`predict_wp_structural()`](https://peteowen1.github.io/panna/reference/train_wp_structural.md)
+  : Train the structural (home-frame) win probability model
 - [`wpa_build_ledger()`](https://peteowen1.github.io/panna/reference/wpa_build_ledger.md)
   : Build the WPA net ledger
 

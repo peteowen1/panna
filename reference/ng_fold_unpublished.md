@@ -11,7 +11,12 @@ with 1 to 12 minutes, all genuinely in the lineup.
 ## Usage
 
 ``` r
-ng_fold_unpublished(ng, published, verbose = TRUE)
+ng_fold_unpublished(
+  ng,
+  published,
+  verbose = TRUE,
+  value_cols = c("net_goals", "ng_offensive", "ng_defensive")
+)
 ```
 
 ## Arguments
@@ -31,6 +36,11 @@ ng_fold_unpublished(ng, published, verbose = TRUE)
 - verbose:
 
   Print what was folded. Default `TRUE`.
+
+- value_cols:
+
+  The value columns to fold, first one used in the report. Default the
+  three net goals columns; the WPA ledger (panna#273) passes its own.
 
 ## Value
 

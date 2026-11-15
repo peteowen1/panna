@@ -58,11 +58,14 @@ scoreChainRows lines 289-333 and afl/match.qmd:600).
 ## See also
 
 Other win probability:
+[`add_wp_match_elo()`](https://peteowen1.github.io/panna/reference/add_wp_match_elo.md),
 [`add_wp_vars()`](https://peteowen1.github.io/panna/reference/add_wp_vars.md),
+[`add_wp_xi_strength()`](https://peteowen1.github.io/panna/reference/add_wp_xi_strength.md),
 [`aggregate_player_game_wpa()`](https://peteowen1.github.io/panna/reference/aggregate_player_game_wpa.md),
 [`create_wp_features()`](https://peteowen1.github.io/panna/reference/create_wp_features.md),
 [`load_wp_model()`](https://peteowen1.github.io/panna/reference/load_wp_model.md),
 [`predict_wp()`](https://peteowen1.github.io/panna/reference/predict_wp.md),
 [`save_wp_model()`](https://peteowen1.github.io/panna/reference/save_wp_model.md),
 [`train_wp_model()`](https://peteowen1.github.io/panna/reference/train_wp_model.md),
+[`train_wp_structural()`](https://peteowen1.github.io/panna/reference/train_wp_structural.md),
 [`wpa_build_ledger()`](https://peteowen1.github.io/panna/reference/wpa_build_ledger.md)

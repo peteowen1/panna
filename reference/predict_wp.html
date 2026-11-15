@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.117</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.118</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -46,7 +46,7 @@
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">predict_wp</span><span class="op">(</span><span class="va">wp_model</span>, <span class="va">wp_features</span><span class="op">)</span></span></code></pre></div>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">predict_wp</span><span class="op">(</span><span class="va">wp_model</span>, <span class="va">wp_features</span>, team_agnostic <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -54,28 +54,39 @@
 
 
 <dl><dt id="arg-wp-model">wp_model<a class="anchor" aria-label="anchor" href="#arg-wp-model"></a></dt>
-<dd><p>Output of <code><a href="train_wp_model.html">train_wp_model</a></code>.</p></dd>
+<dd><p>Output of <code><a href="train_wp_model.html">train_wp_model</a></code> or
+<code><a href="train_wp_structural.html">train_wp_structural</a></code> (dispatched to
+<code><a href="train_wp_structural.html">predict_wp_structural</a></code>).</p></dd>
 
 
 <dt id="arg-wp-features">wp_features<a class="anchor" aria-label="anchor" href="#arg-wp-features"></a></dt>
-<dd><p>SPADL features from <code><a href="create_wp_features.html">create_wp_features</a></code>.</p></dd>
+<dd><p>SPADL features from <code><a href="create_wp_features.html">create_wp_features</a></code>
+(plus <code>elo_diff</code> from <code><a href="add_wp_match_elo.html">add_wp_match_elo</a></code> for a structural
+model).</p></dd>
+
+
+<dt id="arg-team-agnostic">team_agnostic<a class="anchor" aria-label="anchor" href="#arg-team-agnostic"></a></dt>
+<dd><p>Structural models only: score with the Elo gap set to 0.</p></dd>
 
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>Numeric vector of win probabilities (home team perspective),
-same length as <code>nrow(wp_features)</code>.</p>
+    <p>Numeric vector of win probabilities for the team performing each
+action (possession POV), same length as <code>nrow(wp_features)</code>.</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>
     <div class="dont-index"><p>Other win probability:
+<code><a href="add_wp_match_elo.html">add_wp_match_elo()</a></code>,
 <code><a href="add_wp_vars.html">add_wp_vars()</a></code>,
+<code><a href="add_wp_xi_strength.html">add_wp_xi_strength()</a></code>,
 <code><a href="aggregate_player_game_wpa.html">aggregate_player_game_wpa()</a></code>,
 <code><a href="assign_wpa_credit.html">assign_wpa_credit()</a></code>,
 <code><a href="create_wp_features.html">create_wp_features()</a></code>,
 <code><a href="load_wp_model.html">load_wp_model()</a></code>,
 <code><a href="save_wp_model.html">save_wp_model()</a></code>,
 <code><a href="train_wp_model.html">train_wp_model()</a></code>,
+<code><a href="train_wp_structural.html">train_wp_structural()</a></code>,
 <code><a href="wpa_build_ledger.html">wpa_build_ledger()</a></code></p></div>
     </div>
 

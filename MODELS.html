@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.117</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.118</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -197,14 +197,15 @@
 <th>Models</th>
 <th>How it should load them</th>
 </tr></thead><tbody><tr><td>
-<code>10b_export_game_logs.R</code> (EPV/WPA/PSV)</td>
-<td>EPV, WP, xPass</td>
+<code>10b_export_game_logs.R</code> (EPV/WPA/PSV, net goals)</td>
+<td>EPV, WP, xPass, xG, xGOT, structural WP</td>
 <td>
-<code>epv_model_override</code> + <code>wp_model_override</code> set by the caller (else default fallback → STALE)</td>
+<code>epv_model_override</code> + <code>wp_model_override</code> set by the caller (else default fallback → STALE); <code>xg_model_override</code> / <code>xgot_model_override</code> = xG v5.2 / xGOT v3.2 (the weekly run downloads <code>xg_model_v5</code> / <code>xgot_model_v3</code> from pannamodels <code>epv</code> since panna#465, 2026-11-13); <code>wp_structural_model_path</code> for the WPA ledger</td>
 </tr><tr><td>
 <code>10c_export_equity.R</code> (chains)</td>
-<td>EPV, xPass</td>
-<td><code>epv_model_override</code></td>
+<td>EPV, xPass, xG</td>
+<td>
+<code>epv_model_override</code>; <code>xg_model_override</code>, same shot xG as 10b (panna#465)</td>
 </tr><tr><td><code>05_train_wp_model.R</code></td>
 <td>EPV (for the WP <code>epv</code> feature)</td>
 <td>already passes explicit <code>path = "data-raw/cache/epv"</code> ✓</td>
@@ -226,9 +227,10 @@
 <span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a>game_log_seasons   <span class="ot">&lt;-</span> <span class="st">"2025-2026"</span>   <span class="co"># or a vector for backfill</span></span>
 <span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a>upload_game_logs   <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
 <span id="cb2-10"><a href="#cb2-10" tabindex="-1"></a>build_game_logs    <span class="ot">&lt;-</span> <span class="cn">TRUE</span></span>
-<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a>use_skill_ratings  <span class="ot">&lt;-</span> <span class="cn">FALSE</span></span>
+<span id="cb2-11"><a href="#cb2-11" tabindex="-1"></a>use_skill_ratings  <span class="ot">&lt;-</span> <span class="cn">TRUE</span>    <span class="co"># what the weekly run uses (predictions-pipeline.yml)</span></span>
 <span id="cb2-12"><a href="#cb2-12" tabindex="-1"></a><span class="fu">source</span>(<span class="st">"data-raw/match-predictions-opta/10b_export_game_logs.R"</span>)</span></code></pre></div>
 <p>Watch the log for the provenance line — it must show the <strong>clean</strong> model is in use (overrides bypass the loader, so you’ll see the override taken, not a stale <code>epv_model.rds</code> date).</p>
+<p>For a full-history rebuild, <code>rebuild_game_logs_all_seasons.R</code> applies this recipe (md5-checked) and fetches the structural WP model; set <code>dry_run &lt;- FALSE</code> to run it.</p>
 <p><strong>Follow this recipe rather than sourcing <code>10b_export_game_logs.R</code> directly.</strong> The step depends on config the runner sets — <code>use_skill_ratings</code> above is one — and sourcing it bare aborts with <code>object 'use_skill_ratings' not found</code> after several minutes of loading. That happened on 2026-09-03, and the same run also warned the EPV/WP models it had fallen back to were 73 and 48 days old, which is exactly the failure the overrides exist to prevent. Both were avoidable by reading this section first.</p>
 </div>
 <div class="section level2">
