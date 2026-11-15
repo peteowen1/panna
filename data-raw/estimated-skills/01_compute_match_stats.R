@@ -68,7 +68,8 @@ current_config <- list(leagues = leagues, seasons = seasons,
 rapm_cache_path <- file.path("data-raw", "cache-opta", "02_processed_data.rds")
 use_rapm_cache <- file.exists(rapm_cache_path)
 
-all_stats <- list()
+all_stats <- list()   # one .spill_piece() record per league-season; the tables are on disk
+spill_dir <- file.path(tempdir(), "step01_pieces")
 n_attempted <- 0L
 n_failed <- 0L
 
@@ -113,8 +114,9 @@ if (use_rapm_cache) {
       # Process in one batch
       match_level <- compute_match_level_opta_stats(opta_stats_cached, min_minutes = min_match_minutes)
       if (!is.null(match_level) && nrow(match_level) > 0) {
-        all_stats[["rapm_cache"]] <- match_level
+        all_stats[["rapm_cache"]] <- .spill_piece(match_level, spill_dir)
         message(sprintf("  Computed match-level stats: %d player-matches", nrow(match_level)))
+        rm(match_level)
       }
     }
 
@@ -191,7 +193,7 @@ if (!use_rapm_cache) {
         match_level <- compute_match_level_opta_stats(stats, min_minutes = min_match_minutes)
 
         if (!is.null(match_level) && nrow(match_level) > 0) {
-          all_stats[[label]] <- match_level
+          all_stats[[label]] <- .spill_piece(match_level, spill_dir)
           message(sprintf("  %s: %d player-matches", label, nrow(match_level)))
         }
 
@@ -222,15 +224,17 @@ if (n_failed > 0 && n_attempted > 0) {
   }
 }
 
-# Not rbindlist(): it holds every league-season AND the result at once. At 2.49M
-# rows x 421 columns (8.4 GB a copy) that peaked at ~16.9 GB and killed 16 GB
-# GitHub runners in this step (panna#475: 13 lost in the panna#465 rebuilds).
-# .rbindlist_freeing() gives the identical table, binding one column at a time and
-# freeing it from the inputs, so the peak is the result plus one column.
+# Not rbindlist() over tables held in memory: that held every league-season AND
+# the result. At 2.49M rows x 421 columns (8.4 GB a copy) it peaked at ~16.9 GB and
+# killed 16 GB GitHub runners here (panna#475: 13 lost in the panna#465 rebuilds);
+# a column-wise freeing bind still left RSS at 13.6-13.8 GB (run 43659137586).
+# Each league-season is now spilled to disk as it is built (.spill_piece above),
+# and .bind_spilled() pre-allocates the result and fills it one piece at a time:
+# same table as rbindlist(use.names = TRUE, fill = TRUE), peak = result + one piece.
 .mem_gb <- function() sum(gc(verbose = FALSE)[, 2]) / 1024
 message(sprintf("  R heap before combining: %.1f GB", .mem_gb()))
 .os_mem("before combining")
-match_stats <- .rbindlist_freeing(all_stats)
+match_stats <- .bind_spilled(all_stats)
 rm(all_stats); invisible(gc(verbose = FALSE))
 message(sprintf("  R heap after combining: %.1f GB (gc max used this session: %.1f GB)",
                 .mem_gb(), sum(gc(verbose = FALSE)[, 6]) / 1024))
