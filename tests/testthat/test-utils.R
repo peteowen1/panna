@@ -321,3 +321,31 @@ test_that(".rbindlist_freeing matches rbindlist(fill = TRUE) and frees its input
   expect_true(all(vapply(Filter(Negate(is.null), l), ncol, integer(1)) == 0L))
   expect_identical(.rbindlist_freeing(list()), data.table::data.table())
 })
+
+test_that(".bind_spilled matches rbindlist(fill = TRUE) and cleans up (panna#475)", {
+  d <- tempfile("spilltest"); on.exit(unlink(d, recursive = TRUE))
+  mk <- function() list(
+    data.table::data.table(a = 1:3, b = c("x", "y", "z"), d = c(1.5, NA, 2), f = NA),  # f all-NA logical
+    data.table::data.table(b = "w", a = 4L, e = TRUE, f = 7.25),                      # f becomes double
+    data.table::data.table(a = c(5.5, 6), d = c(NA_real_, 3)),                        # a int -> double
+    data.table::data.table(a = integer(0), b = character(0))                          # empty piece
+  )
+  sp <- lapply(mk(), .spill_piece, dir = d)
+  res <- .bind_spilled(sp)
+  expect_identical(res, data.table::rbindlist(mk(), use.names = TRUE, fill = TRUE))
+  expect_length(list.files(d), 0L)   # piece files deleted after reading
+  # Fallbacks keep rbindlist's result: a factor column, and text mixed with numbers
+  for (bad in list(list(data.table::data.table(a = factor(c("p", "q"))), data.table::data.table(a = factor("r"))),
+                   list(data.table::data.table(a = c("1", "2")), data.table::data.table(a = 3)))) {
+    expect_message(r2 <- .bind_spilled(lapply(bad, .spill_piece, dir = d)), "falling back")
+    expect_identical(r2, data.table::rbindlist(bad, use.names = TRUE, fill = TRUE))
+  }
+  expect_identical(.bind_spilled(list()), data.table::data.table())
+  # Text beside an all-NA logical piece stays on the fast path, as rbindlist coerces it
+  tl <- list(data.table::data.table(a = c("u", "v")), data.table::data.table(a = NA))
+  expect_no_message(r3 <- .bind_spilled(lapply(tl, .spill_piece, dir = d)))
+  expect_identical(r3, data.table::rbindlist(tl, use.names = TRUE, fill = TRUE))
+  # One piece comes back as itself
+  one <- list(data.table::data.table(a = 1:2, b = c("x", "y")))
+  expect_identical(.bind_spilled(lapply(one, .spill_piece, dir = d)), one[[1]])
+})
