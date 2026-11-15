@@ -12,6 +12,17 @@
 library(dplyr)
 devtools::load_all()
 
+# Return freed column memory to the OS (panna#475). Step 01 builds ~340 small
+# league-season tables (~7k rows, ~60 KB a column). glibc serves blocks that size
+# from its heap and keeps them in the process after R frees them, so the bind
+# measured RSS 9.1 -> 14.5 GB on a 16 GB runner while R's heap stayed at 8.1 GB
+# (run 43657428111), and some runners died. Above this threshold glibc uses mmap,
+# which goes back to the OS on free. Set here, before the steps' callr children
+# start, which inherit it; Linux only, and an explicit setting wins.
+if (.Platform$OS.type == "unix" && !nzchar(Sys.getenv("MALLOC_MMAP_THRESHOLD_"))) {
+  Sys.setenv(MALLOC_MMAP_THRESHOLD_ = "32768")
+}
+
 # 2. Configuration ----
 # Use if (!exists(...)) so test scripts can override before sourcing
 
