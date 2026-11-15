@@ -36,6 +36,15 @@ min_match_minutes <- if (exists("min_match_minutes")) min_match_minutes else 10
 apply_context_adjustments <- if (exists("apply_context_adjustments")) apply_context_adjustments else FALSE
 
 cache_path <- file.path(cache_dir, "01_match_stats.rds")
+# Process memory as the OS sees it (Linux /proc; NA elsewhere). R's gc() misses
+# arrow's parquet buffers and memory not returned to the OS, so the runner can be
+# killed while the R heap reads well under 16 GB (panna#475). VmHWM = peak so far.
+.os_mem <- function(tag) {
+  f <- "/proc/self/status"
+  if (!file.exists(f)) return(invisible())
+  x <- readLines(f); g <- function(k) as.numeric(gsub("[^0-9]", "", grep(paste0("^", k, ":"), x, value = TRUE))) / 1024^2
+  message(sprintf("  [os mem] %s: RSS %.1f GB, peak (VmHWM) %.1f GB", tag, g("VmRSS"), g("VmHWM")))
+}
 config_path <- file.path(cache_dir, "01_config.rds")
 
 # 3. Check Cache ----
@@ -59,7 +68,8 @@ current_config <- list(leagues = leagues, seasons = seasons,
 rapm_cache_path <- file.path("data-raw", "cache-opta", "02_processed_data.rds")
 use_rapm_cache <- file.exists(rapm_cache_path)
 
-all_stats <- list()
+all_stats <- list()   # one .spill_piece() record per league-season; the tables are on disk
+spill_dir <- file.path(tempdir(), "step01_pieces")
 n_attempted <- 0L
 n_failed <- 0L
 
@@ -104,8 +114,9 @@ if (use_rapm_cache) {
       # Process in one batch
       match_level <- compute_match_level_opta_stats(opta_stats_cached, min_minutes = min_match_minutes)
       if (!is.null(match_level) && nrow(match_level) > 0) {
-        all_stats[["rapm_cache"]] <- match_level
+        all_stats[["rapm_cache"]] <- .spill_piece(match_level, spill_dir)
         message(sprintf("  Computed match-level stats: %d player-matches", nrow(match_level)))
+        rm(match_level)
       }
     }
 
@@ -137,6 +148,8 @@ if (!use_rapm_cache) {
       label <- paste(league, season)
 
       n_attempted <- n_attempted + 1L
+      piece <- NULL
+      if (n_attempted %% 20L == 0L) .os_mem(sprintf("after %d league-seasons", n_attempted))
 
       tryCatch({
         stats <- load_opta_stats(league, season = season, source = "local")
@@ -149,18 +162,50 @@ if (!use_rapm_cache) {
         stats$league <- league
         stats$season <- season
 
+        # Older Opta player_stats mostly lack minsPlayed (EPL 2014-15: 83.9% of rows,
+        # minutes on only 80 of 380 matches), and compute_match_level_opta_stats() drops
+        # rows without minutes. The lineups carry minutes_played on every row, so fill
+        # the gaps from there (panna#469). Rows that have minsPlayed keep it.
+        if (!"minsPlayed" %in% names(stats)) stats$minsPlayed <- NA_real_
+        if (anyNA(stats$minsPlayed)) {
+          lu_err <- NULL
+          lu <- tryCatch(load_opta_lineups(league, season = season, source = "local"),
+                         error = function(e) { lu_err <<- conditionMessage(e); NULL })
+          if (!is.null(lu) && nrow(lu) > 0 && "minutes_played" %in% names(lu)) {
+            lu <- unique(data.table::as.data.table(lu)[!is.na(minutes_played) & !is.na(player_id) & !is.na(match_id),
+                           .(match_id, player_id, lu_minutes = as.numeric(minutes_played))],
+                         by = c("match_id", "player_id"))
+            stats <- data.table::as.data.table(stats)
+            n_na <- sum(is.na(stats$minsPlayed))
+            stats[lu, on = c("match_id", "player_id"),
+                  minsPlayed := data.table::fifelse(is.na(minsPlayed), i.lu_minutes, as.numeric(minsPlayed))]
+            n_filled <- n_na - sum(is.na(stats$minsPlayed))
+            if (n_filled > 0) message(sprintf("  %s: filled minsPlayed for %d of %d rows from lineups",
+                                              label, n_filled, n_na))
+            stats <- as.data.frame(stats)
+          } else {
+            message(sprintf("  %s: %d rows lack minsPlayed and no lineup minutes to fill them%s",
+                            label, sum(is.na(stats$minsPlayed)),
+                            if (is.null(lu_err)) "" else paste0(" (lineups failed to load: ", lu_err, ")")))
+          }
+        }
+
         # Compute match-level features
         match_level <- compute_match_level_opta_stats(stats, min_minutes = min_match_minutes)
 
-        if (!is.null(match_level) && nrow(match_level) > 0) {
-          all_stats[[label]] <- match_level
-          message(sprintf("  %s: %d player-matches", label, nrow(match_level)))
-        }
+        if (!is.null(match_level) && nrow(match_level) > 0) piece <- match_level
 
       }, error = function(e) {
         n_failed <<- n_failed + 1L
         message(sprintf("  ERROR in %s: %s", label, e$message))
       })
+      # Spill OUTSIDE the tryCatch: a failed write (disk full) must stop the step,
+      # not be counted as one more league-season with bad data and quietly dropped.
+      if (!is.null(piece)) {
+        all_stats[[label]] <- .spill_piece(piece, spill_dir)
+        message(sprintf("  %s: %d player-matches", label, nrow(piece)))
+      }
+      piece <- NULL
     }
   }
 }
@@ -184,7 +229,22 @@ if (n_failed > 0 && n_attempted > 0) {
   }
 }
 
-match_stats <- data.table::rbindlist(all_stats, fill = TRUE, use.names = TRUE)
+# Not rbindlist() over tables held in memory: that held every league-season AND
+# the result. At 2.49M rows x 421 columns (8.4 GB a copy) it peaked at ~16.9 GB and
+# killed 16 GB GitHub runners here (panna#475: 13 lost in the panna#465 rebuilds);
+# a column-wise freeing bind still left RSS at 13.6-13.8 GB (run 43659137586).
+# Each league-season is now spilled to disk as it is built (.spill_piece above),
+# and .bind_spilled() pre-allocates the result and fills it one piece at a time:
+# same table as rbindlist(use.names = TRUE, fill = TRUE), peak = result + one piece.
+.mem_gb <- function() sum(gc(verbose = FALSE)[, 2]) / 1024
+message(sprintf("  R heap before combining: %.1f GB", .mem_gb()))
+.os_mem("before combining")
+.spill_gb <- sum(file.size(vapply(all_stats, `[[`, "", "path"))) / 1024^3
+message(sprintf("  Spilled %d league-season file(s), %.2f GB on disk (%s)", length(all_stats), .spill_gb, spill_dir))
+match_stats <- .bind_spilled(all_stats)
+rm(all_stats); invisible(gc(verbose = FALSE))
+message(sprintf("  R heap after combining: %.1f GB (gc max used this session: %.1f GB)",
+                .mem_gb(), sum(gc(verbose = FALSE)[, 6]) / 1024))
 
 if (nrow(match_stats) < 100) {
   stop(sprintf("Only %d match stats loaded (expected 300k+). Too few to proceed.", nrow(match_stats)))
@@ -250,6 +310,8 @@ if (isTRUE(apply_context_adjustments)) {
 # save_cache_with_meta's sidecar powers the growth tripwire: this exact file
 # growing 1.2M -> 1.9M rows (panna#127 full-sync) OOMed two downstream
 # pipelines days later (panna#128, #133) with no warning at generation time.
+.os_mem("after combining, before save")
 save_cache_with_meta(match_stats, cache_path, pipeline = "estimated-skills")
+.os_mem("after save")
 saveRDS(current_config, config_path)
 message(sprintf("\nSaved to: %s", cache_path))

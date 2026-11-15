@@ -1201,3 +1201,65 @@ test_that("a side whose minutes read as one half is not sent off wholesale", {
   expect_equal(sum(out[team_id == "H"]$value_own), 1.00, tolerance = 1e-10)
   expect_no_error(ng_player_game(out, lineup, verbose = FALSE))
 })
+
+# ---- .ng_fixtures_extra_time() (panna#463) ---------------------------------
+
+test_that(".ng_fixtures_extra_time rescores only extra-time matches, from the events", {
+  # m1 went to extra time: 1-1 at 90 (the fixture score), H scores in period 4
+  # and A's own goal in period 3 also counts for H -> 3-1. A shootout goal
+  # (period 5) for A must not count. m2 is a normal match whose events miss a
+  # goal (a thin feed): it keeps its fixture score of 2-0.
+  fx <- data.frame(match_id = c("m1", "m2"), home_team_id = c("H", "H"),
+                   away_team_id = c("A", "B"), home_score = c(1L, 2L),
+                   away_score = c(1L, 0L))
+  ev <- data.frame(
+    match_id  = c("m1", "m1", "m1", "m1", "m1", "m2"),
+    period_id = c(1L, 2L, 3L, 4L, 5L, 1L),
+    type_id   = c(16L, 16L, 16L, 16L, 16L, 16L),
+    team_id   = c("H", "A", "A", "H", "A", "H"),
+    qualifier_json = c("{}", "{}", '{"28":""}', "{}", "{}", "{}"))
+  lu <- data.frame(match_id = c("m1", "m1", "m2", "m2"),
+                   team_id = c("H", "A", "H", "B"),
+                   team_position = c("home", "away", "home", "away"))
+
+  out <- .ng_fixtures_extra_time(fx, ev, lu)
+  data.table::setkey(out, match_id)
+  expect_equal(out["m1"]$home_score, 3)
+  expect_equal(out["m1"]$away_score, 1)
+  expect_equal(out["m2"]$home_score, 2)
+  expect_equal(out["m2"]$away_score, 0)
+  expect_equal(attr(out, "n_extra_time"), 1L)
+  expect_equal(attr(out, "n_changed"), 1L)
+  expect_equal(attr(out, "n_unmatched"), 0L)
+
+  # Lineups with the sides the other way round still land on the fixture's sides.
+  lu2 <- lu; lu2$team_position[1:2] <- c("away", "home")
+  out2 <- .ng_fixtures_extra_time(fx, ev, lu2)
+  expect_equal(out2[match_id == "m1"]$home_score, 3)
+  expect_equal(out2[match_id == "m1"]$away_score, 1)
+
+  # Teams that do not match the fixture are left alone and counted.
+  lu3 <- lu; lu3$team_id[1] <- "X"
+  out3 <- .ng_fixtures_extra_time(fx, ev, lu3)
+  expect_equal(out3[match_id == "m1"]$home_score, 1)
+  expect_equal(attr(out3, "n_unmatched"), 1L)
+
+  # Then the reconcile step targets the extra-time goal difference (+2 for H).
+  ng <- data.table::data.table(match_id = "m1", player_id = c("h1", "a1"),
+                               team_id = c("H", "A"), minutes_played = 120,
+                               net_goals = c(0, 0), ng_offensive = 0, ng_defensive = 0)
+  rec <- ng_reconcile_margin(ng, out, verbose = FALSE)
+  expect_equal(rec[team_id == "H"]$net_goals, 2)
+  expect_equal(rec[team_id == "A"]$net_goals, -2)
+})
+
+test_that(".ng_fixtures_extra_time is a no-op when no match went to extra time", {
+  fx <- data.frame(match_id = "m1", home_team_id = "H", away_team_id = "A",
+                   home_score = 1L, away_score = 0L)
+  ev <- data.frame(match_id = "m1", period_id = 1L, type_id = 16L, team_id = "H",
+                   qualifier_json = "{}")
+  lu <- data.frame(match_id = "m1", team_id = c("H", "A"), team_position = c("home", "away"))
+  out <- .ng_fixtures_extra_time(fx, ev, lu)
+  expect_equal(out$home_score, 1)
+  expect_equal(attr(out, "n_extra_time"), 0L)
+})

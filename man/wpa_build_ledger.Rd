@@ -44,7 +44,11 @@ between the engine's match total and (result - opening win chance).}
 }
 \value{
 One row per player-match: \code{wpa_neutral} (the ledger value),
-\code{wpa_offence}, \code{wpa_defence}, \code{wpa_start} (\code{wpa_offence + wpa_defence + wpa_start = wpa_neutral}), and one \verb{wpa_<role>} column per engine role.
+\code{wpa_offence}, \code{wpa_defence}, \code{wpa_start} (\code{wpa_offence + wpa_defence + wpa_start = wpa_neutral}), torp's three channels \code{wpa_own} (on-ball acts),
+\code{wpa_won} (balls won and shots stopped, where the feed names him) and
+\code{wpa_shared} (his minutes' share of the team pools plus \code{wpa_start}), with
+\code{wpa_own + wpa_won + wpa_shared = wpa_neutral}, and one \verb{wpa_<role>}
+column per engine role.
 Attribute \code{targets}: per team-match, its result, target, opening win chance
 and the gap after the build.
 }
@@ -73,13 +77,16 @@ minutes and reported as \code{wpa_start}.
 }
 \seealso{
 Other win probability: 
+\code{\link{add_wp_match_elo}()},
 \code{\link{add_wp_vars}()},
+\code{\link{add_wp_xi_strength}()},
 \code{\link{aggregate_player_game_wpa}()},
 \code{\link{assign_wpa_credit}()},
 \code{\link{create_wp_features}()},
 \code{\link{load_wp_model}()},
 \code{\link{predict_wp}()},
 \code{\link{save_wp_model}()},
-\code{\link{train_wp_model}()}
+\code{\link{train_wp_model}()},
+\code{\link{train_wp_structural}()}
 }
 \concept{win probability}

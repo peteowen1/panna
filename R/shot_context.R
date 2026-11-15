@@ -276,6 +276,19 @@ SHOT_FOOT_MIN <- 10L
   fx <- unique(data.table::as.data.table(arrow::read_parquet(
     fx_path, col_select = c("match_id", "match_date"))), by = "match_id")
   se[fx, on = "match_id", match_date := i.match_date]
+  # The fixtures file has no row for some backfilled league-seasons (2010-11 to
+  # 2012-13: Serie A, La Liga, Ligue 1, Bundesliga, Eredivisie, UCL, UEL and
+  # others; 5,576 matches, 148,705 shots on 2026-11-13). The lineups carry a date
+  # for every one of them, so fill from there: an undated shot is dropped from the
+  # history, and 10b's match-rate guard then refuses the whole league-season.
+  lu_path <- file.path(dir, "opta_lineups.parquet")
+  if (anyNA(se$match_date) && file.exists(lu_path)) {
+    lu <- unique(data.table::as.data.table(arrow::read_parquet(
+      lu_path, col_select = c("match_id", "match_date")))[!is.na(match_date)], by = "match_id")
+    n_before <- sum(is.na(se$match_date))
+    se[is.na(match_date), match_date := lu[.SD, on = "match_id", x.match_date]]
+    cli::cli_alert_info("Weak-foot history: {n_before - sum(is.na(se$match_date))} of {n_before} undated shots dated from the lineups")
+  }
   n_dated <- sum(!is.na(se$match_date))
   if (n_dated < 0.95 * nrow(se)) {
     cli::cli_abort("Weak-foot history: only {n_dated} of {nrow(se)} shots have a match date; the fixtures file looks short.")

@@ -1909,16 +1909,19 @@ ng_adjust_for_rating <- function(player_game, positions, by_season = TRUE,
 #' @param published A frame with the `match_id` + `player_id` pairs that will be
 #'   published.
 #' @param verbose Print what was folded. Default `TRUE`.
+#' @param value_cols The value columns to fold, first one used in the report.
+#'   Default the three net goals columns; the WPA ledger (panna#273) passes its
+#'   own.
 #'
 #' @return `ng` restricted to the published pairs, with each team's totals
 #'   preserved exactly.
 #'
 #' @family net_goals
 #' @export
-ng_fold_unpublished <- function(ng, published, verbose = TRUE) {
+ng_fold_unpublished <- function(ng, published, verbose = TRUE,
+                                value_cols = c("net_goals", "ng_offensive", "ng_defensive")) {
   d <- data.table::as.data.table(ng)
-  need <- c("match_id", "player_id", "team_id", "minutes_played",
-            "net_goals", "ng_offensive", "ng_defensive")
+  need <- c("match_id", "player_id", "team_id", "minutes_played", value_cols)
   missing <- setdiff(need, names(d))
   if (length(missing)) {
     cli::cli_abort("{.fn ng_fold_unpublished} needs column{?s} {.val {missing}}.")
@@ -1936,7 +1939,7 @@ ng_fold_unpublished <- function(ng, published, verbose = TRUE) {
     return(d[])
   }
 
-  vcols <- c("net_goals", "ng_offensive", "ng_defensive")
+  vcols <- value_cols
   # What each team is owed by players the frame will not carry.
   owed <- d[.published == FALSE, lapply(.SD, sum, na.rm = TRUE),
             by = .(match_id, team_id), .SDcols = vcols]
@@ -1959,7 +1962,7 @@ ng_fold_unpublished <- function(ng, published, verbose = TRUE) {
   for (v in vcols) keep[, (v) := get(v) + get(paste0("owed_", v)) * .w]
 
   n_folded <- sum(!d$.published)
-  v_folded <- sum(d[.published == FALSE]$net_goals, na.rm = TRUE)
+  v_folded <- sum(d[.published == FALSE][[vcols[1]]], na.rm = TRUE)
   keep[, c(".published", ".w", paste0("owed_", vcols)) := NULL]
 
   # A team that has NO published rows cannot receive its own value back. Report
@@ -1969,13 +1972,13 @@ ng_fold_unpublished <- function(ng, published, verbose = TRUE) {
   if (nrow(orphan_teams) > 0) {
     cli::cli_warn(paste0(
       "{nrow(orphan_teams)} team-match{?es} have unpublished value but no ",
-      "published rows to fold it into; {round(sum(orphan_teams$owed_net_goals), 3)} ",
-      "goals cannot be placed."))
+      "published rows to fold it into; {round(sum(orphan_teams[[paste0('owed_', vcols[1])]]), 3)} ",
+      "of {.field {vcols[1]}} cannot be placed."))
   }
 
   if (isTRUE(verbose)) {
     cli::cli_alert_success(paste0(
-      "Folded {n_folded} unpublished row{?s} worth {round(v_folded, 3)} goals ",
+      "Folded {n_folded} unpublished row{?s} worth {round(v_folded, 3)} ({vcols[1]}) ",
       "back to their teams; published team totals now match the ledger exactly."))
   }
   keep[]
@@ -2112,4 +2115,61 @@ ng_reconcile_margin <- function(ng, fixtures, verbose = TRUE) {
       "of absolute value."))
   }
   d[]
+}
+
+
+#' Score extra-time matches from the events, not the 90-minute fixture score
+#'
+#' `opta_fixtures.parquet` stores the 90-minute score: Dinamo Zagreb v Thun
+#' (2026-07-28) reads 2-2 there, 3-2 in the events after a period-4 goal. Net
+#' goals reconciles each team to its goal difference, so without this the
+#' value of an extra-time goal is reconciled away from the side that scored it
+#' (panna#463: 703 of the 704 matches with an extra-time goal differ).
+#'
+#' Only matches with an event in period 3 or 4 are rescored, from
+#' [.build_match_results_from_events()] (extra time in, shootout out). A normal
+#' match keeps its fixture score, so a thin feed missing a goal event cannot
+#' move its target. The events' home/away sides are matched to the fixture's by
+#' team id; a match whose two teams do not match is left as it is and counted.
+#'
+#' @param fixtures Fixtures with `match_id`, `home_team_id`, `away_team_id`,
+#'   `home_score`, `away_score`.
+#' @param events Opta events with `match_id`, `period_id`, `type_id`,
+#'   `team_id` and `qualifier_json` (own goals).
+#' @param lineups Opta lineups (home/away side per match).
+#'
+#' @return `fixtures` as a data.table with the scores replaced on extra-time
+#'   matches, and attributes `n_extra_time` (matches rescored),
+#'   `n_changed` (scores that moved) and `n_unmatched` (teams did not match).
+#' @keywords internal
+.ng_fixtures_extra_time <- function(fixtures, events, lineups) {
+  fx <- data.table::as.data.table(fixtures)
+  ev <- data.table::as.data.table(events)
+  fx[, `:=`(home_score = as.numeric(home_score), away_score = as.numeric(away_score))]
+  et_ids <- if ("period_id" %in% names(ev)) unique(ev[period_id %in% c(3L, 4L), match_id]) else NULL
+  et_ids <- intersect(et_ids, fx$match_id)
+  data.table::setattr(fx, "n_extra_time", 0L)
+  data.table::setattr(fx, "n_changed", 0L)
+  data.table::setattr(fx, "n_unmatched", 0L)
+  if (!length(et_ids)) return(fx[])
+
+  mr <- data.table::as.data.table(.build_match_results_from_events(
+    ev[match_id %in% et_ids], data.table::as.data.table(lineups)[match_id %in% et_ids]))
+  m <- merge(fx[match_id %in% et_ids, .(match_id, home_team_id, away_team_id, home_score, away_score)],
+             mr[, .(match_id, e_home = home_team_id, e_away = away_team_id,
+                    e_hg = as.numeric(home_goals), e_ag = as.numeric(away_goals))],
+             by = "match_id")
+  m[, `:=`(
+    new_home = data.table::fifelse(e_home == home_team_id & e_away == away_team_id, e_hg,
+               data.table::fifelse(e_home == away_team_id & e_away == home_team_id, e_ag, NA_real_)),
+    new_away = data.table::fifelse(e_home == home_team_id & e_away == away_team_id, e_ag,
+               data.table::fifelse(e_home == away_team_id & e_away == home_team_id, e_hg, NA_real_)))]
+  n_unmatched <- sum(is.na(m$new_home)) + length(setdiff(et_ids, m$match_id))
+  m <- m[!is.na(new_home)]
+  n_changed <- m[, sum(new_home != home_score | new_away != away_score, na.rm = TRUE)]
+  fx[m, `:=`(home_score = i.new_home, away_score = i.new_away), on = "match_id"]
+  data.table::setattr(fx, "n_extra_time", nrow(m))
+  data.table::setattr(fx, "n_changed", as.integer(n_changed))
+  data.table::setattr(fx, "n_unmatched", as.integer(n_unmatched))
+  fx[]
 }

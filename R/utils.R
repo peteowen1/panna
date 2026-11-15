@@ -718,3 +718,153 @@ build_where_clause <- function(filters, prefix = TRUE) {
   }
   res
 }
+
+#' Bind a list of tables like rbindlist(fill = TRUE), freeing the inputs as it goes
+#'
+#' `data.table::rbindlist()` holds every input AND the full result at once, so its
+#' peak is twice the result. Skills step 01 binds ~2.5M player-match rows x 421
+#' columns (8.4 GB a copy), which put the peak at ~16.9 GB and killed 16 GB GitHub
+#' runners (panna#475). This builds the result one column at a time and drops that
+#' column from every input once copied, so the peak is the result plus one column.
+#'
+#' Each column is bound by rbindlist itself (one single-column table per input,
+#' a typed-NA column where an input lacks it), so type coercion and NA filling
+#' follow rbindlist's rules. Columns come out in order of first appearance, as
+#' rbindlist(use.names = TRUE, fill = TRUE) gives them.
+#'
+#' DESTRUCTIVE: the inputs are emptied column by column. The caller's list is
+#' invalid afterwards; pass it once and drop it.
+#'
+#' @param tables A list of data.frames / data.tables (NULL elements skipped).
+#' Atomic columns only: the filler is a plain `NA`, so a list-column (rbindlist fills
+#' NULL) or integer64 column would not match rbindlist exactly. Opta match stats have
+#' neither.
+#'
+#' @return A data.table, identical to `rbindlist(tables, use.names = TRUE, fill = TRUE)`
+#'   for atomic columns.
+#' @keywords internal
+.rbindlist_freeing <- function(tables) {
+  tables <- Filter(Negate(is.null), tables)
+  if (!length(tables)) return(data.table::data.table())
+  # A data.frame input is converted (one copy of that input); only data.table inputs
+  # are freed in the CALLER's list, because only they are modified by reference.
+  for (i in seq_along(tables)) {
+    if (!data.table::is.data.table(tables[[i]])) tables[[i]] <- data.table::as.data.table(tables[[i]])
+  }
+  cols <- unique(unlist(lapply(tables, names), use.names = FALSE))
+  n <- vapply(tables, nrow, integer(1))
+  out <- vector("list", length(cols)); names(out) <- cols
+  k <- 0L
+  for (cc in cols) {
+    # Freed columns are only reclaimed at a collection, and R grows the heap rather
+    # than collect, so without this the peak stays ~2x the result (measured).
+    k <- k + 1L
+    if (k %% 20L == 0L) invisible(gc(verbose = FALSE))
+    parts <- lapply(seq_along(tables), function(i) {
+      v <- tables[[i]][[cc]]
+      data.table::data.table(x = if (is.null(v)) rep(NA, n[i]) else v)
+    })
+    out[[cc]] <- data.table::rbindlist(parts, use.names = TRUE, fill = TRUE)[["x"]]
+    rm(parts)
+    for (i in seq_along(tables)) {
+      if (cc %in% names(tables[[i]])) data.table::set(tables[[i]], j = cc, value = NULL)
+    }
+  }
+  data.table::setDT(out)
+  out
+}
+
+#' Write one table to a temp file for .bind_spilled(), keeping only its shape in memory
+#'
+#' Skills step 01 used to hold ~340 league-season tables in memory until the bind;
+#' at 2.49M rows x 421 columns the process peaked at 13.6-14.6 GB on a 16 GB runner
+#' (panna#475). Spilling each piece as it is built keeps the loop's memory flat.
+#'
+#' @param dt A data.frame / data.table.
+#' @param dir Directory for the file (created if missing).
+#' @return A list: `path`, `n` (rows), `cols` (names), `types` (typeof per column),
+#'   `classes` (first class per column).
+#' @keywords internal
+.spill_piece <- function(dt, dir) {
+  dir.create(dir, showWarnings = FALSE, recursive = TRUE)
+  path <- tempfile("piece_", tmpdir = dir, fileext = ".rds")
+  # A failed write (disk full) leaves a partial file: remove it, then re-raise.
+  tryCatch(saveRDS(dt, path, compress = TRUE),
+           error = function(e) { unlink(path); stop(e) })
+  list(path = path, n = nrow(dt), cols = names(dt),
+       types = vapply(dt, typeof, character(1)),
+       classes = vapply(dt, function(x) class(x)[1], character(1)))
+}
+
+#' Bind spilled pieces into one data.table, reading each piece once
+#'
+#' Pre-allocates every column at its final length and type, then reads the pieces
+#' one at a time and writes their rows in place with data.table::set(), so the peak
+#' is the result plus one piece. The result equals
+#' `rbindlist(pieces, use.names = TRUE, fill = TRUE)` when every column is a plain
+#' logical / integer / double / character vector and no column mixes character with
+#' another type: column order is first appearance, the type is the widest of
+#' logical < integer < double (character stays character, and a logical piece
+#' beside it becomes character), and rows a piece lacks
+#' are NA. Anything else (factors, Dates, list-columns, character mixed with
+#' numbers) falls back to reading every piece and .rbindlist_freeing(), and says so.
+#'
+#' @param spilled List of `.spill_piece()` results, in bind order (NULLs skipped).
+#' @param delete Remove each piece file after reading it.
+#' @return A data.table.
+#' @keywords internal
+.bind_spilled <- function(spilled, delete = TRUE) {
+  spilled <- Filter(Negate(is.null), spilled)
+  if (!length(spilled)) return(data.table::data.table())
+  # One piece needs no bind, and reading it beside a pre-allocated copy would double it.
+  if (length(spilled) == 1L) {
+    out <- data.table::as.data.table(readRDS(spilled[[1]]$path))
+    if (delete) unlink(spilled[[1]]$path)
+    return(out)
+  }
+  cols <- unique(unlist(lapply(spilled, `[[`, "cols"), use.names = FALSE))
+  basic <- c("logical", "integer", "numeric", "character")
+  ok <- TRUE; target <- character(length(cols)); names(target) <- cols
+  rank <- c(logical = 1L, integer = 2L, double = 3L)
+  for (cc in cols) {
+    ty <- unlist(lapply(spilled, function(s) if (cc %in% s$cols) s$types[[cc]]), use.names = FALSE)
+    cl <- unlist(lapply(spilled, function(s) if (cc %in% s$cols) s$classes[[cc]]), use.names = FALSE)
+    # Text may sit beside logical (an all-NA piece): rbindlist makes it character too.
+    if (!all(cl %in% basic) || (any(ty == "character") && !all(ty %in% c("character", "logical")))) { ok <- FALSE; break }
+    target[[cc]] <- if (any(ty == "character")) "character" else names(rank)[max(rank[ty])]
+  }
+  if (!ok) {
+    message("  .bind_spilled: a column is not a plain vector, or mixes text with numbers -- falling back to an in-memory bind")
+    pieces <- lapply(spilled, function(s) readRDS(s$path))
+    if (delete) unlink(vapply(spilled, `[[`, "", "path"))
+    return(.rbindlist_freeing(pieces))
+  }
+  N <- sum(vapply(spilled, `[[`, 0L, "n"))
+  na_of <- list(logical = NA, integer = NA_integer_, double = NA_real_, character = NA_character_)
+  # setDT, not as.data.table: the latter copies the whole pre-allocated table,
+  # which put the peak back at 2.4x the result (measured).
+  out <- lapply(target, function(t) rep(na_of[[t]], N))
+  names(out) <- cols
+  data.table::setDT(out)
+  start <- 0L; k <- 0L
+  for (s in spilled) {
+    # Each piece read leaves garbage R collects late, so without this the heap
+    # peak climbed piece by piece (measured: 934 -> 1,342 MB over 22 pieces while
+    # memory in use stayed at 933 MB).
+    k <- k + 1L
+    if (k %% 10L == 0L) invisible(gc(verbose = FALSE))
+    if (s$n > 0L) {
+      p <- readRDS(s$path)
+      idx <- start + seq_len(s$n)
+      for (cc in s$cols) {
+        v <- p[[cc]]
+        if (typeof(v) != target[[cc]]) storage.mode(v) <- target[[cc]]
+        data.table::set(out, i = idx, j = cc, value = v)
+      }
+      rm(p)
+    }
+    if (delete) unlink(s$path)
+    start <- start + s$n
+  }
+  out
+}

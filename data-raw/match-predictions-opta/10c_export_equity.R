@@ -111,6 +111,13 @@ message(sprintf("  Alias (action_equity.parquet) → %s", current_season_alias))
 # cache). Mirrors 10b_export_game_logs.R.
 epv_model   <- if (exists("epv_model_override")) epv_model_override else load_epv_model()
 xpass_model <- load_xpass_model()
+# Shot xG for the EPV credit: the same model 10b prices game logs with (panna#465), so a
+# shot's equity and its game-log EPV agree. Unset, the default published xG. The v5 context
+# model also needs each shooter's earlier foot shots and the match events (loaded per league).
+xg_model <- if (exists("xg_model_override")) xg_model_override else load_xg_model()
+shot_foot_history <- if (.needs_shot_context(xg_model)) .load_shot_foot_history()
+message(sprintf("  Shot model: xG %s%s", xg_model$panna_metadata$version %||% "published",
+                if (is.null(shot_foot_history)) "" else " (pre-shot context on)"))
 
 # Typed "skip this league" signal. Caught in the per-league tryCatch via
 # `panna_skip_league =` handler; replaces a magic-string match on e$message.
@@ -175,9 +182,11 @@ validate_equity_schema <- function(dt, league, season) {
       # EPV credit — features built internally by calculate_action_epv.
       # league_season, not season -- see the note at the matching 10b call.
       spadl_epv    <- calculate_action_epv(spadl_labeled, features = NULL,
-                                           epv_model, league = league,
+                                           epv_model, xg_model = xg_model,
+                                           league = league,
                                            season = league_season,
-                                           shot_lookup = .epv_shot_lookup(league, league_season))
+                                           shot_lookup = .epv_shot_lookup(league, league_season),
+                                           events = events, foot_history = shot_foot_history)
       spadl_credit <- assign_epv_credit(spadl_epv, xpass_model)
 
       # Slim equity lookup — drop rows without an original_event_id
