@@ -464,6 +464,21 @@ test_that("calendar_catchup_plan names the leagues with no label for the clock s
   plan <- calendar_catchup_plan("2026-2027", c("MLS", "ARG", "BRA"), resolver = res)
   expect_equal(plan$season, "2025-2026")
   expect_equal(plan$leagues, c("MLS", "ARG", "BRA"))
+  expect_length(plan$unresolved, 0)
+})
+
+test_that("calendar_catchup_plan reports a league with no label in either season", {
+  # resolve_league_season() returns NULL when the catalog read fails, which
+  # looks the same as "no label". An empty plan must not pass for "all caught up".
+  dead <- function(league, domestic_season, tournament_leagues = character(0)) NULL
+  plan <- calendar_catchup_plan("2026-2027", c("MLS", "ARG", "BRA"), resolver = dead)
+  expect_length(plan$leagues, 0)
+  expect_equal(plan$unresolved, c("MLS", "ARG", "BRA"))
+  # One league readable, one not.
+  res <- .fake_resolver(list(MLS = "2026", BRA = character(0)))
+  plan <- calendar_catchup_plan("2026-2027", c("MLS", "BRA"), resolver = res)
+  expect_equal(plan$leagues, "MLS")
+  expect_equal(plan$unresolved, "BRA")
 })
 
 test_that("calendar_catchup_plan drops a league once its new label exists", {
@@ -479,6 +494,7 @@ test_that("calendar_catchup_plan is empty before 1 August and for a league with 
   expect_length(calendar_catchup_plan("2025-2026", "MLS", resolver = res)$leagues, 0)
   # A league with no label in either season has nothing to catch up.
   expect_length(calendar_catchup_plan("2026-2027", "NEW", resolver = res)$leagues, 0)
+  expect_equal(calendar_catchup_plan("2026-2027", "NEW", resolver = res)$unresolved, "NEW")
   expect_identical(calendar_catchup_plan("2026-2027", character(0), resolver = res)$leagues,
                    character(0))
 })

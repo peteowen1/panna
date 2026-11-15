@@ -801,16 +801,21 @@ previous_domestic_season <- function(season) {
 #' @param season_label_leagues Passed to the resolver as `tournament_leagues`.
 #' @param resolver Season resolver; `resolve_league_season()` in production,
 #'   injected by the tests so they need no catalog.
-#' @return `list(season = <previous season>, leagues = <character>)`.
+#' @return `list(season, leagues, unresolved)`: the previous season, the leagues
+#'   to catch up, and the leagues with no label in EITHER season. The resolver
+#'   turns a failed catalog read into "no label", so `unresolved` is how a
+#'   caller tells "nothing is behind" from "could not look".
 calendar_catchup_plan <- function(season, calendar_leagues,
                                   season_label_leagues = calendar_leagues,
                                   resolver = resolve_league_season) {
   prev <- previous_domestic_season(season)
-  behind <- Filter(function(lg) {
-    is.null(resolver(lg, season, tournament_leagues = season_label_leagues)) &&
-      !is.null(resolver(lg, prev, tournament_leagues = season_label_leagues))
-  }, as.character(calendar_leagues))
-  list(season = prev, leagues = as.character(behind))
+  lgs <- as.character(calendar_leagues)
+  has <- function(lg, s) !is.null(resolver(lg, s, tournament_leagues = season_label_leagues))
+  now  <- vapply(lgs, has, logical(1), s = season)
+  then <- vapply(lgs, has, logical(1), s = prev)
+  list(season = prev,
+       leagues = lgs[!now & then],
+       unresolved = lgs[!now & !then])
 }
 
 resolve_blog_leagues <- function() {
