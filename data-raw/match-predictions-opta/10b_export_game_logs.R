@@ -234,9 +234,40 @@ message(sprintf("  Shot models: xG %s, xGOT %s%s",
 match_stats_path <- file.path("data-raw", "cache-skills", "01_match_stats.rds")
 has_match_stats  <- file.exists(match_stats_path)
 if (has_match_stats) {
-  all_match_stats <- readRDS(match_stats_path)
+  # Seasons whose rows the loop below reads (see the trim further down).
+  .keep_sey <- unique(as.integer(vapply(game_log_seasons, extract_season_end_year, numeric(1))))
+  # Side files from step 01 (R/estimated_skills.R) when they are current and cover
+  # the seasons built: the position resolvers below read every row of a few columns
+  # (the narrow file), PSV scoring reads every column of the seasons built (the recent
+  # file). One full load of the 427-column table cost ~12 GB once panna#469 recovered
+  # the pre-2015 rows (dry rebuild 43684152649), which with the rest of the predictions
+  # run took main's runner (43716225914). Otherwise the full table, as before.
+  .res_src <- NULL
+  .ms_narrow <- .predictions_match_stats_sidecar(match_stats_path, "narrow")
+  .ms_recent <- .predictions_match_stats_sidecar(match_stats_path, "recent")
+  if (!is.null(.ms_narrow) && !is.null(.ms_recent)) {
+    .res_src <- readRDS(.ms_narrow)
+    data.table::setDT(.res_src)
+    .min_sey <- attr(.res_src, "recent_min_season_end_year")
+    if (is.null(.min_sey) || anyNA(.keep_sey) || !all(c(.keep_sey, .keep_sey - 1L) >= .min_sey)) {
+      message(sprintf("  %s starts at season end year %s; the seasons built need %s: reading the full table",
+                      basename(.ms_recent), format(.min_sey), paste(sort(c(.keep_sey, .keep_sey - 1L)), collapse = ", ")))
+      .res_src <- NULL
+    } else if (!identical(.res_src$.ms_row, seq_len(nrow(.res_src)))) {
+      stop(basename(.ms_narrow), ": .ms_row is not 1..n, so its rows cannot be matched to ", basename(.ms_recent))
+    }
+  }
+  all_match_stats <- readRDS(if (is.null(.res_src)) match_stats_path else .ms_recent)
   data.table::setDT(all_match_stats)
-  message(sprintf("  Loaded match stats: %d player-games", nrow(all_match_stats)))
+  if (!is.null(.res_src)) {
+    if (!".ms_row" %in% names(all_match_stats) || max(all_match_stats$.ms_row) > nrow(.res_src)) {
+      stop(basename(.ms_recent), " does not match ", basename(.ms_narrow), " (row numbers out of range)")
+    }
+    message(sprintf("  Loaded match stats: %d player-games (%s), positions resolved on all %d (%s)",
+                    nrow(all_match_stats), basename(.ms_recent), nrow(.res_src), basename(.ms_narrow)))
+  } else {
+    message(sprintf("  Loaded match stats: %d player-games", nrow(all_match_stats)))
+  }
 
   # Resolve the GK router and the PSV calibration bucket ONCE, here, on the
   # FULL cross-league/cross-season population -- then carry both as columns so
@@ -261,31 +292,43 @@ if (has_match_stats) {
   # splits a season across leagues, instead of a different one per league).
   # Derived from the LABEL, never match_date (panna/CLAUDE.md), and mapped
   # over unique labels rather than row-by-row (vectorization gotcha).
-  if (!"season_end_year" %in% names(all_match_stats)) {
-    .sey_map <- vapply(unique(all_match_stats$season), extract_season_end_year,
-                       numeric(1))
-    all_match_stats[, season_end_year :=
-                      as.integer(.sey_map[as.character(season)])]
+  .add_sey <- function(dt) {
+    if (!"season_end_year" %in% names(dt)) {
+      .sey_map <- vapply(unique(dt$season), extract_season_end_year, numeric(1))
+      dt[, season_end_year := as.integer(.sey_map[as.character(season)])]
+    }
+    invisible(dt)
   }
+  .add_sey(all_match_stats)
+  # The resolvers run on every row: the full table, or the narrow side file.
+  .res_base <- if (is.null(.res_src)) all_match_stats else .add_sey(.res_src)
   # Hand the resolvers only the columns they read. resolve_position_group()
   # starts with as.data.table(dt), a full deep copy even of a data.table: on the
   # 421-column table that is another ~8 GB, and once panna#469 kept every pre-2015
   # match (2.1M -> 2.49M rows) it took every game-logs rebuild job over the
   # runner's 16 GB (run 43514707691). Same columns in, same answers out.
   .res_cols <- intersect(c("player_id", "position", "primary_position",
-                           "total_minutes", "season_end_year"), names(all_match_stats))
-  .res_dt <- all_match_stats[, .res_cols, with = FALSE]
+                           "total_minutes", "season_end_year"), names(.res_base))
+  .res_dt <- .res_base[, .res_cols, with = FALSE]
   .is_gk_res <- .detect_gk_rows(.res_dt)
-  all_match_stats[, .is_gk_full := .is_gk_res]
-  all_match_stats[, .pos_grp_full := .psv_pos_grp(.res_dt, .is_gk_res)]
-  rm(.res_dt, .is_gk_res)
+  .pos_grp_res <- .psv_pos_grp(.res_dt, .is_gk_res)
+  if (is.null(.res_src)) {
+    all_match_stats[, .is_gk_full := .is_gk_res]
+    all_match_stats[, .pos_grp_full := .pos_grp_res]
+  } else {
+    # .ms_row is each recent row's row number in the full table (= in the narrow file).
+    all_match_stats[, .is_gk_full := .is_gk_res[.ms_row]]
+    all_match_stats[, .pos_grp_full := .pos_grp_res[.ms_row]]
+    all_match_stats[, .ms_row := NULL]
+  }
   # Report the live figure only -- a baked-in "was X%" baseline would keep
   # printing a fixed historical number as though it were a current comparison.
   # The 2026-09-14 measurement (3.52% -> 0.77% of rows, 2.24% -> 0.44% of
   # minutes) is recorded in the commit and the comment above instead.
   message(sprintf(
     "  Resolved pos_grp once on the full population: %.2f%% of rows unresolved",
-    100 * mean(is.na(all_match_stats$.pos_grp_full))))
+    100 * mean(is.na(.pos_grp_res))))
+  rm(.res_dt, .is_gk_res, .pos_grp_res, .res_base, .res_src)
 
   # Memory: only the resolution above needs every season. After it the loop
   # reads rows of the seasons being built (the league-season filter and the
@@ -293,8 +336,9 @@ if (has_match_stats) {
   # before (a calendar-year league or a tournament label can sit a year early)
   # and any row with no end year. The full table is ~14.5 GB on a GHA runner,
   # which left no room for a league's events: 2012-21 seasons ran out of
-  # memory on their first league (2026-10-19). Output is unchanged.
-  .keep_sey <- unique(as.integer(vapply(game_log_seasons, extract_season_end_year, numeric(1))))
+  # memory on their first league (2026-10-19). Output is unchanged. (.keep_sey is
+  # set at the top of this block.) From the recent side file the trim is a no-op
+  # or close to it: that file already holds only the latest seasons.
   .n_all <- nrow(all_match_stats)
   all_match_stats <- all_match_stats[is.na(season_end_year) |
                                        season_end_year %in% c(.keep_sey, .keep_sey - 1L)]
