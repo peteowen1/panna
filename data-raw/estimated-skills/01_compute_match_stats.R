@@ -313,5 +313,12 @@ if (isTRUE(apply_context_adjustments)) {
 .os_mem("after combining, before save")
 save_cache_with_meta(match_stats, cache_path, pipeline = "estimated-skills")
 .os_mem("after save")
+# The predictions run reads two smaller copies (R/estimated_skills.R): one full load
+# of this table no longer fits next to the rest of that run on a 16 GB runner.
+# Written AFTER the full table, so their mtimes mark them as current.
+if (exists("write_predictions_sidecars") && isTRUE(write_predictions_sidecars)) {
+  .write_predictions_match_stats_sidecars(match_stats, cache_path)
+  .os_mem("after side files")
+}
 saveRDS(current_config, config_path)
 message(sprintf("\nSaved to: %s", cache_path))
