@@ -84,6 +84,10 @@ if (!exists("blog_leagues", envir = globalenv(), inherits = FALSE)) {
 }
 
 # Seasons to export. Vector (new) or scalar `game_log_season` (back-compat).
+# TRUE only when the season below comes from the clock, i.e. the daily run. That
+# run also catches up the calendar-year leagues the clock season leaves behind
+# (section 4b). A driver that names its seasons gets exactly those seasons.
+.season_from_clock <- FALSE
 if (!exists("game_log_seasons", envir = globalenv(), inherits = FALSE)) {
   if (exists("game_log_season", envir = globalenv(), inherits = FALSE)) {
     game_log_seasons <- game_log_season
@@ -96,9 +100,20 @@ if (!exists("game_log_seasons", envir = globalenv(), inherits = FALSE)) {
     # was built that morning. `current_season_alias` below is the max of this
     # vector, so this one line decides which season becomes game_logs.parquet.
     game_log_seasons <- current_domestic_season()
+    .season_from_clock <- TRUE
   }
 }
 game_log_seasons <- as.character(game_log_seasons)
+# Set `calendar_catchup <- FALSE` before sourcing to switch section 4b off.
+.calendar_catchup <- .season_from_clock &&
+  !(exists("calendar_catchup", envir = globalenv(), inherits = FALSE) &&
+      identical(get("calendar_catchup", envir = globalenv()), FALSE))
+# Set by section 4b while it rebuilds the previous season's calendar leagues:
+# that season is still live for them, so .process_season() treats it as current.
+.catchup_season <- NULL
+# Leagues the last .process_season() call built (it can skip a league without
+# an error); section 4b compares this with what it asked for.
+.last_built_leagues <- character(0)
 
 # The "current" season (most recent in the vector) is mirrored to
 # game_logs.parquet so the blog workflow's name-pinned download still works.
@@ -1033,7 +1048,7 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
       # the cache already holds.
       cache_covered_ids <- if (!is.null(psv_pop)) unique(psv_pop$match_id) else character(0)
       if (length(setdiff(league_match_ids, cache_covered_ids)) > 0L ||
-          identical(season, current_season_alias)) {
+          season %in% c(current_season_alias, .catchup_season)) {
         tryCatch({
           box_stats <- load_opta_stats(league, season = league_season)
           if (!is.null(box_stats) && nrow(box_stats) > 0) {
@@ -1438,6 +1453,7 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
   }
 
   game_logs <- data.table::rbindlist(all_game_logs, fill = TRUE)
+  .last_built_leagues <<- names(all_game_logs)
 
   n_leagues_ok <- length(all_game_logs)
   if (n_leagues_ok < length(blog_leagues) / 2) {
@@ -1819,6 +1835,19 @@ ng_bd_missing <- character(0)   # "season (leagues)" whose breakdown was not bui
     n_kept <- nrow(kept)
     n_dropped <- nrow(existing) - n_kept
     game_logs <- data.table::rbindlist(list(kept, game_logs), fill = TRUE, use.names = TRUE)
+    # The percentile above ranked only the leagues rebuilt in this run. It is a
+    # season-wide rank, so redo it on the merged season; otherwise the rebuilt
+    # leagues' players are ranked among themselves and everyone else against
+    # the full season. (piero is already rounded to 4 dp here, so a tie can
+    # differ from a full build in the last decimal.)
+    if (all(c("piero", "piero_percentile") %in% names(game_logs))) {
+      .pt <- game_logs[, .(total_piero = if (all(is.na(piero))) NA_real_ else
+                             sum(piero, na.rm = TRUE)), by = player_id]
+      .pt[, .pp := round(100 * rank(total_piero, ties.method = "min", na.last = "keep") /
+                           sum(!is.na(total_piero)), 1)]
+      game_logs[.pt, piero_percentile := i..pp, on = "player_id"]
+      rm(.pt)
+    }
     data.table::setorderv(game_logs, c("league", "match_date", "match_id", "piero"),
                           order = c(1L, 1L, 1L, -1L), na.last = TRUE)
     rm(existing, kept); gc()
@@ -1878,6 +1907,115 @@ if (isTRUE(build_game_logs)) {
       }
     )
     if (!is.null(p)) season_paths[[s]] <- p
+  }
+
+  # 4b. Calendar-year catch-up ----
+  # MLS, Argentina and Brazil 2026 live in game_logs_2025-2026.parquet, and from
+  # 1 August the clock season is "2026-2027", which has no label for them yet --
+  # so the loop above skips them until their season ends (see
+  # calendar_catchup_plan() in pipeline_utils.R for the 2026 incident). Rebuild
+  # just those leagues and MERGE them into the previous season's published file.
+  #
+  # The merge base must be the published file. Writing without it would publish
+  # a "season" holding three leagues and delete the other nineteen from the
+  # release, so: no base, no catch-up, and the run goes red.
+  #
+  # Every way this section can fall short writes the .partial_publish_failures
+  # marker (publish what worked, then go red: Pete, 2026-10-12). Nothing in it
+  # may stop the script: the clock season built above is not registered for
+  # publish until section 6.
+  .catchup_fail <- function(season, why) {
+    message(sprintf("\n  !! CALENDAR CATCH-UP %s NOT DONE: %s\n", season, why))
+    cat(sprintf("10b calendar catch-up %s: %s\n", season, gsub("[\r\n]+", " ", why)),
+        file = file.path(cache_dir, ".partial_publish_failures"), append = TRUE)
+  }
+  .leagues_in <- function(path) {
+    sort(unique(arrow::read_parquet(path, col_select = "league")$league))
+  }
+  # A publishing run always takes the release copy: a local file may be older
+  # than what is published, and merging into it would roll the other leagues
+  # back. The local copy is removed first, so a file on disk afterwards can only
+  # be the one just downloaded, and it must open and name at least one league.
+  # A local-only run keeps a file that is already there.
+  .fetch_published <- function(file_name, force) {
+    path <- file.path(cache_dir, file_name)
+    if (file.exists(path) && !isTRUE(force)) return(TRUE)
+    tryCatch({
+      if (file.exists(path)) file.remove(path)
+      piggyback::pb_download(file = file_name, repo = repo, tag = tag,
+                             dest = cache_dir, overwrite = TRUE)
+      file.exists(path) && file.size(path) > 0 && length(.leagues_in(path)) > 0L
+    }, error = function(e) {
+      message(sprintf("    could not fetch %s from %s: %s", file_name, tag, conditionMessage(e)))
+      FALSE
+    })
+  }
+
+  if (isTRUE(.calendar_catchup) && exists("target_match_ids")) {
+    message("\n  Calendar catch-up: skipped (target_match_ids is set)")
+  } else if (isTRUE(.calendar_catchup)) {
+    .saved_leagues <- blog_leagues
+    .saved_merge <- merge_subset_leagues
+    tryCatch({
+      .plan <- calendar_catchup_plan(current_season_alias,
+                                     intersect(calendar_leagues, blog_leagues),
+                                     season_label_leagues)
+      .cu <- .plan$season
+      # A calendar league with no label for this season OR the one before means
+      # the season catalog could not be read (resolve_league_season() turns a
+      # failed lookup into "no label"). Saying "nothing is behind" then would be
+      # the original incident again, on a green run.
+      if (length(.plan$unresolved)) {
+        .catchup_fail(.cu, sprintf("no season label found for %s in %s or %s (catalog unreadable?)",
+                                   paste(.plan$unresolved, collapse = ", "),
+                                   current_season_alias, .cu))
+      }
+      if (length(.plan$leagues) == 0L) {
+        message("\n  Calendar catch-up: no calendar-year league is behind the clock season")
+      } else {
+        message(sprintf("\n=== Calendar catch-up: %s into game_logs_%s.parquet ===",
+                        paste(.plan$leagues, collapse = ", "), .cu))
+        .base <- sprintf(c("game_logs_%s.parquet", "ng_breakdown_%s.parquet"), .cu)
+        .got <- vapply(.base, .fetch_published, logical(1), force = isTRUE(upload_game_logs))
+        if (!all(.got)) {
+          .catchup_fail(.cu, sprintf("no merge base (%s)", paste(.base[!.got], collapse = ", ")))
+        } else {
+          .before <- .leagues_in(file.path(cache_dir, .base[1]))
+          # .process_season() reads these three from this frame.
+          blog_leagues <- .plan$leagues
+          merge_subset_leagues <- TRUE
+          .catchup_season <- .cu
+          .last_built_leagues <- character(0)
+          p <- .process_season(.cu)
+          if (is.null(p)) {
+            .catchup_fail(.cu, "produced no game logs")
+          } else {
+            .lost <- setdiff(.before, .leagues_in(p))
+            if (length(.lost)) {
+              # Never publish a file that dropped a league it had before the merge.
+              .catchup_fail(.cu, sprintf("merge lost %s; file not published",
+                                         paste(.lost, collapse = ", ")))
+              ng_bd_paths <- ng_bd_paths[!grepl(sprintf("_%s\\.parquet$", .cu), ng_bd_paths)]
+            } else {
+              season_paths[[.cu]] <- p
+              # A planned league that did not build keeps its old rows in the
+              # merged file. The rest is worth publishing; say which is stale.
+              .not_built <- setdiff(.plan$leagues, .last_built_leagues)
+              if (length(.not_built)) {
+                .catchup_fail(.cu, sprintf("%s not rebuilt; the published file keeps their old rows",
+                                           paste(.not_built, collapse = ", ")))
+              }
+            }
+          }
+        }
+      }
+    }, error = function(e) {
+      .catchup_fail(previous_domestic_season(current_season_alias), conditionMessage(e))
+    }, finally = {
+      blog_leagues <- .saved_leagues
+      merge_subset_leagues <- .saved_merge
+      .catchup_season <- NULL
+    })
   }
 } else {
   # Upload-only mode: reconstruct season_paths from existing files so the
