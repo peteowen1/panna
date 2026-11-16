@@ -1,3 +1,8 @@
+# panna 0.3.121
+
+- `career-panna.yml` now runs every Monday at 20:00 UTC and publishes `career_panna.parquet` (#494).
+  It had no schedule, so the site's Panna sat at the 2026-10-18 build for four weeks.
+
 # panna 0.3.120
 
 - The weekly EPR job rebuilds every snapshot from the current game logs on each run, and adds a

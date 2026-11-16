@@ -6,7 +6,13 @@ name: Career panna (step 09)
 # the published file fell a month behind the code (panna#257). Off main/dev the
 # publish gate (PANNA_PUBLISH_DISABLED) forces upload off: a branch run is a dry build
 # whose output is the run's artifact and summary only (artifact: career-panna).
+# Weekly schedule (Pete, 2026-11-17): with no schedule the site's Panna sat at the
+# 2026-10-18 build for four weeks. A scheduled run uses main's copy and publishes.
 on:
+  schedule:
+    # 20:00 UTC Monday = 7am Sydney Tuesday (AEDT), after Monday's opta-pipeline has
+    # refreshed 03_splints.rds and before Wednesday's predictions run.
+    - cron: "0 20 * * 1"
   workflow_dispatch:
     inputs:
       prior_asset:
@@ -24,7 +30,8 @@ env:
   PANNA_PUBLISH_DISABLED: ${{ (github.ref != 'refs/heads/main' && github.ref != 'refs/heads/dev') && 'true' || 'false' }}
   # The live prior (the panna#257 fix, promoted 2026-10-18); a dispatch can name another asset.
   PRIOR_ASSET: ${{ inputs.prior_asset || '03_skill_spm.rds' }}
-  UPLOAD: ${{ inputs.upload && 'true' || 'false' }}
+  # A scheduled run has no inputs, so it opts in to publishing here.
+  UPLOAD: ${{ (github.event_name == 'schedule' || inputs.upload) && 'true' || 'false' }}
   GH_TOKEN: ${{ github.token }}
 
 permissions:
