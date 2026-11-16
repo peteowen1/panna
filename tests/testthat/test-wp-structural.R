@@ -104,11 +104,16 @@ test_that("add_wp_xi_strength uses the snapshot before match day, x11 mean, NA u
   out9 <- suppressMessages(add_wp_xi_strength(wf, lu, rt, min_rated = 11L))
   expect_true(all(is.na(out9[match_id == "m1", xi_diff])))   # away has only 10 rated
   # A repeated (player_id, ref_date) row must not double-count a starter (panna#484).
-  rt_dup <- data.table::rbindlist(list(rt, rt[player_id %in% c("h1", "a1")]))
+  # The repeats carry a DIFFERENT value, so a double-counted starter would move the mean;
+  # identical repeats leave the mean unchanged and the test would pass without the fix.
+  # unique() keeps the first row, i.e. the original value.
+  dups <- rt[player_id %in% c("h1", "a1") & ref_date == as.Date("2026-02-01")][, panna := 100]
+  rt_dup <- data.table::rbindlist(list(rt, dups))
   out_dup <- suppressMessages(add_wp_xi_strength(wf, lu, rt_dup))
   expect_equal(out_dup[match_id == "m1", unique(xi_diff)], 1.65, tolerance = 1e-12)
   xt <- attr(out_dup, "xi_table")
-  expect_true(all(xt$n_rated <= xt$n_starters))
+  expect_equal(xt[match_id == "m1" & team_id == "H", c(n_starters, n_rated)], c(11L, 11L))
+  expect_equal(xt[match_id == "m1" & team_id == "A", c(n_starters, n_rated)], c(11L, 10L))
 })
 
 test_that("missing Elo or epv is refused, not filled", {
