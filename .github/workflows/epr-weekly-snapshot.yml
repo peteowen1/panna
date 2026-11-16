@@ -9,11 +9,11 @@ name: Weekly EPR Snapshot
 # daily would be wasted compute. This closes the gap where opta_epr_weekly had
 # NO automated rebuild and went ~3.5 weeks stale (May 29 -> Jun 23 2026).
 #
-# build_epr_weekly.R is INCREMENTAL (2026-06-23): it reuses snapshots older than
-# a 28-day buffer from the existing release parquet and recomputes only the
-# recent window — ~3 min vs ~25 min full rebuild, output verified bit-identical.
-# A full rebuild happens only on the first run (no existing parquet to download)
-# or when EPR_FORCE_FULL_REBUILD=1 is set (e.g. after a method/offset change).
+# build_epr_weekly.R rebuilds EVERY snapshot on every run (since 2026-11-15; 25-46 min).
+# It was incremental from 2026-06-23 (reuse snapshots older than 28 days, ~3 min), but a
+# reused snapshot is only right while the game logs it was fitted on are unchanged, and
+# four game-log rebuilds between June and November each left a join in the published
+# file. EPR_INCREMENTAL=1 keeps the old behaviour for a quick local run.
 
 on:
   schedule:
@@ -23,7 +23,7 @@ on:
   workflow_dispatch:
     inputs:
       force_full_rebuild:
-        description: 'Recompute every snapshot (slow ~25 min) instead of incremental'
+        description: 'No effect since 2026-11-15: every run recomputes every snapshot'
         type: boolean
         default: false
       game_logs_run_id:
@@ -51,7 +51,8 @@ env:
 jobs:
   epr-snapshot:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # 90: every run is a full rebuild since 2026-11-15 (25-46 min measured in October).
+    timeout-minutes: 90
 
     permissions:
       contents: write
@@ -267,7 +268,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Date:** $(date +'%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
           echo "**Trigger:** ${{ github.event_name }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Mode:** ${{ inputs.force_full_rebuild == true && 'full rebuild' || 'incremental' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Mode:** full rebuild (every run, since 2026-11-15)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           OUT="../pannadata/data/opta/opta_epr_weekly.parquet"
           if [ -f "$OUT" ]; then
