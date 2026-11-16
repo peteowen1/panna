@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.120</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.121</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,11 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.121" id="panna-03121">panna 0.3.121<a class="anchor" aria-label="anchor" href="#panna-03121"></a></h2>
+<ul><li>
+<code>career-panna.yml</code> now runs every Monday at 20:00 UTC and publishes <code>career_panna.parquet</code> (<a href="https://github.com/peteowen1/panna/issues/494" class="external-link">#494</a>). It had no schedule, so the site’s Panna sat at the 2026-10-18 build for four weeks.</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.120" id="panna-03120">panna 0.3.120<a class="anchor" aria-label="anchor" href="#panna-03120"></a></h2>
 <ul><li>The weekly EPR job rebuilds every snapshot from the current game logs on each run, and adds a snapshot for the day after the newest match (<a href="https://github.com/peteowen1/panna/issues/488" class="external-link">#488</a>). The published file was a join of fits made on different game-log vintages. The first run after this changes every historical EPR value slightly.</li>
