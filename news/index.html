@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.118</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.119</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,10 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.119" id="panna-03119">panna 0.3.119<a class="anchor" aria-label="anchor" href="#panna-03119"></a></h2>
+<ul><li>The predictions pipeline no longer runs out of memory on the GHA runner (<a href="https://github.com/peteowen1/panna/issues/490" class="external-link">#490</a>). Lineup minutes (panna#469) grew <code>01_match_stats.rds</code> to 2.49M rows x 427 cols, and steps 02, 02b and 10b each read all of it. Step 01 now also writes <code>01_match_stats_narrow.rds</code> (every row, the 173 columns those steps use) and <code>01_match_stats_recent.rds</code> (all columns, last 3 seasons) when <code>write_predictions_sidecars</code> is TRUE. The steps read those, and fall back to the full table when either file is missing or older than it. 10b peak: 12.2 GB -&gt; 9.6 GB.</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.118" id="panna-03118">panna 0.3.118<a class="anchor" aria-label="anchor" href="#panna-03118"></a></h2>
 <ul><li>Game logs price shots with xG v5.2 / xGOT v3.2 (panna#465, <a href="https://github.com/peteowen1/panna/issues/467" class="external-link">#467</a>/#468). All 23 published seasons were rebuilt and published to blog-latest on 2026-11-15; <code>game-logs-rebuild.yml</code> builds any season list in parts, and <code>pack_publish_game_logs.R</code> publishes from a rebuild directory (<code>GL_PACK_DIR</code>, <code>GL_SEASONS</code>), filling only by-design gaps as all-NA columns (no PSV before 2013-14, no raw-stat SPM before 2012-13, no net goals in 2007-08) (<a href="https://github.com/peteowen1/panna/issues/477" class="external-link">#477</a>).</li>
