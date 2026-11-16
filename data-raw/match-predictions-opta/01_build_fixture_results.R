@@ -9,7 +9,7 @@
 #   §5     played-load via RAPM cache + direct-load (events fallback)
 #   §5b    fixture-source score override for played rows
 #   §5c    reconcile match_status: past-date + scores + (Fixture | NA) → Played
-#   §7     fixture-load via opta_fixtures (status IN Fixture/Postponed/Awarded)
+#   §7     fixture-load via opta_fixtures (status IN Fixture/Postponed/Suspended/Awarded)
 #          PLUS promote: past + scores + Fixture → Played (catches Opta lag)
 #   §7b    drop stuck rows: past + non-Played + no scores
 #          (panna#75 — these are matches Opta never resolved either way)
@@ -630,8 +630,13 @@ for (league in leagues) {
     # disappeared from every blog export for the FT→scrape window). Played
     # rows with scores promote below; event-backed §5 copies still win the
     # §8b dedup via the xG-aware priority.
+    # "Suspended" (issue #489): Opta's status for a match pulled from its slot
+    # but already re-dated (La Liga Rayo Vallecano v Athletic Club, 2026-12-09).
+    # Left out, it never got a prediction row and the blog filled it from team
+    # strength. Past-dated + unscored ones are dropped by §7b like any other
+    # stuck status.
     fixtures <- load_opta_fixtures(league, season = current_season,
-                                   status = c("Fixture", "Postponed", "Awarded", "Playing", "Played"),
+                                   status = c("Fixture", "Postponed", "Suspended", "Awarded", "Playing", "Played"),
                                    source = "local")
     if (!is.null(fixtures) && nrow(fixtures) > 0) {
       fixtures$league <- league
@@ -919,7 +924,7 @@ dt <- data.table::as.data.table(fixture_results)
 dt[, .panna_dup_priority := data.table::fcase(
   match_status == "Played" & !is.na(home_xg), 1L,
   match_status == "Played",                   2L,
-  match_status %in% c("Awarded","Postponed"), 3L,
+  match_status %in% c("Awarded","Postponed","Suspended"), 3L,
   default                                   = 4L)]
 data.table::setorder(dt, match_id, .panna_dup_priority, match_date)
 n_before_dedup <- nrow(dt)
