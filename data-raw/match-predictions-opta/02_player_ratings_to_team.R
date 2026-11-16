@@ -662,6 +662,7 @@ if (nrow(upcoming) > 0) {
       message("  Computing date-specific skill estimates for fixtures...")
 
       match_stats <- readRDS(match_stats_path)
+      if (exists(".log_rss", mode = "function")) .log_rss(sprintf("step 2 DIAG after readRDS (%d x %d)", nrow(match_stats), ncol(match_stats)))
       # Narrow columns BEFORE the row-filter (421 -> ~167 cols): the filter
       # below copies whatever width it's handed, and everything downstream
       # (estimate_player_skills_at_date and its internals) reads only the

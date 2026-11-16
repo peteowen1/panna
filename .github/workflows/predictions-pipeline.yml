@@ -297,6 +297,8 @@ jobs:
         # block is ~9,300 encoded (2026-11-13). Add new R code to a sourced file (as
         # ci_fetch_models.R), not here (panna#465 dry run 43378072288).
         run: |
+          # DIAG (not for merge): machine memory every 10 s, so a runner death shows the last reading.
+          ( while sleep 10; do free -m | awk -v t="$(date -u +%T)" '/^Mem/{printf "[machine mem] %s used %d MB, available %d MB\n", t, $3, $7}'; done ) &
           Rscript -e "
             # Point panna at downloaded Opta data
             pannadata_path <- Sys.getenv('PANNADATA_DIR', '../pannadata/data')
