@@ -99,9 +99,13 @@ held-out MSE) -
 — SPM with custom target column (for multi-target RAPM)
 
 **Constants** (`constants.R`): `PANNA_EPR_WEIGHT = 0.5`,
-`PANNA_PSR_WEIGHT = 0.5` **EPR defaults** (`player_ratings_epv.R`):
-`EPR_DECAY_OFFENSIVE = 400`, `EPR_PRIOR_GAMES = 10.2` **WPA defaults**
-(`wp_credit.R`): `WPA_ACTOR_SHARE = 0.5`, `WP_DRAW_VALUE = 0.5`
+`PANNA_PSR_WEIGHT = 0.5` **EPR defaults** (`constants.R`, legacy
+[`calculate_epr()`](https://peteowen1.github.io/panna/reference/calculate_epr.md)
+only): `EPR_DECAY_OFFENSIVE = 400`, `EPR_PRIOR_GAMES = 10.2`.
+**Production EPR**
+(`data-raw/match-predictions-opta/build_epr_weekly.R`): `DECAY <- 900L`,
+`PRIOR_STRENGTH <- 5` **WPA defaults** (`wp_credit.R`):
+`WPA_ACTOR_SHARE = 0.5`, `WP_DRAW_VALUE = 0.5`
 
 ## Key Conventions
 
@@ -249,12 +253,17 @@ held-out MSE) -
 | Workflow | Trigger | Purpose |
 |----|----|----|
 | `R-CMD-check.yaml` | Push to `dev`, PRs to `main` | Package checks |
-| `opta-pipeline.yml` | Daily `opta-scrape-complete` dispatch / manual dispatch | Opta RAPM/SPM on GHA, auto-uploads caches; a dispatch is a full rebuild that publishes ratings (~2h05m). Fits the 16GB runner since 2026-10-10 (panna#87, \#286): step 7 fits each season in its own callr child, and steps 5/7 read `02_opta_stats_narrow.rds` (only the columns they use, written by step 2; keep lists in `R/spm_opta.R`). Peaks on run 38021761037: steps 1-2 ~13.8GB, step 5 13.0GB, step 7 8.8GB of 16GB. Test without publishing: `-f upload_caches=false -f upload_ratings=false` (each run keeps `07_seasonal_ratings.rds` as a 7-day artifact) |
+| `opta-pipeline.yml` | Daily `opta-scrape-complete` dispatch / manual dispatch | Opta RAPM/SPM on GHA, auto-uploads caches; a dispatch is a full rebuild that publishes ratings (2h05m when re-enabled 2026-10-10; median 141 min over the 33 successful runs 13 Oct - 14 Nov 2026, 154 min on 2026-11-14). Fits the 16GB runner since 2026-10-10 (panna#87, \#286): step 7 fits each season in its own callr child, and steps 5/7 read `02_opta_stats_narrow.rds` (only the columns they use, written by step 2; keep lists in `R/spm_opta.R`). Peaks on run 38021761037: steps 1-2 ~13.8GB, step 5 13.0GB, step 7 8.8GB of 16GB. Test without publishing: `-f upload_caches=false -f upload_ratings=false` (each run keeps `07_seasonal_ratings.rds` as a 7-day artifact) |
 | `pkgdown.yaml` | Push | Documentation site |
 | `predictions-pipeline.yml` | Wed 8 AM UTC / manual / `opta-scrape-complete` dispatch | Weekly match predictions. Runs a skills step-01 pre-pass, then all numbered steps 01-13 including the lettered sub-steps (01b, 04b, 07b, 10b-10d, 11 WC2026 sim, 12 and 12b-12f); step 13 publishes the release data. The workflow’s `run_steps` block is the source of truth. Triggers `predictions-complete` repository_dispatch on `pannadata` to refresh blog data. Note: WC2026 sim defaults to FALSE in `run_predictions_opta.R` but the workflow enables it in its `run_steps` override. |
 | `psr-weekly-snapshot.yml` | Weekly snapshot / manual | PSR weekly snapshot generation |
 | `epr-weekly-snapshot.yml` | Weekly snapshot / manual | EPR weekly snapshot generation, builds `opta_epr_weekly.parquet` (incremental since 2026-06-23), mirrors `psr-weekly-snapshot.yml` |
 | `epv-pipeline.yml` | Daily `opta-scrape-complete` dispatch + Sunday 18:00 cron (both xmetrics_only, published models) / manual dispatch for retrains | EPV model training pipeline. Daily dispatch added 2026-07-18 (panna#150) so `opta_xmetrics_bymatch.parquet` follows every scrape — game-logs xGOT/GSAA no longer go NULL between Sundays. Own concurrency group (NOT panna-release-writer — pending-slot cancellation risk vs predictions’ same-event run) |
+| `skills-seasonal.yml` | Monday 04:00 UTC (gate only) / manual dispatch (`publish=true` on main uploads) | Skills chain on runners, one job per stage: skills 01 -\> 04c decayed RAPM target -\> 02 -\> 03 -\> 06, then a coverage gate. Publishes `06_seasonal_ratings.rds`, `03_skill_spm.rds`, `psr_league_offsets.parquet` to predictions-cache |
+| `career-panna.yml` | Manual dispatch only (`upload=true` publishes on main/dev); pushes to `career-panna-*` branches are dry builds. **No schedule** | Rebuilds `career_panna.parquet` (skills step 09, the rating called Panna) and publishes it to ratings-data. About 7 minutes |
+| `career-panna-asof.yml` | 2nd of the month 20:00 UTC (publishes, runs main’s copy) / manual dispatch | Rebuilds `career_panna_asof.parquet` (step 09b, one leak-free career Panna fit per month) for the predictions model and 10b’s XI strength |
+| `game-logs-rebuild.yml` | Manual dispatch (`seasons` input) / pushes to `exp/game-logs-rebuild*` branches | Rebuilds `game_logs_<season>.parquet` for chosen seasons, one job per season, as run artifacts. Never uploads to a release |
+| `league-walkforward.yml` | Manual dispatch (`source_run_id`, `league`, `seasons`) | Walk-forward pre-match predictions for past league seasons, refit monthly; uploads to predictions-latest only with publish on, from main or dev |
 
 ## Documentation convention
 

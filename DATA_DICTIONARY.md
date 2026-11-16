@@ -17,11 +17,14 @@ This document describes all data structures used in the panna pipelines.
     08_panna_ratings.R        ->  cache-opta/08_panna_ratings.rds
     09_export_ratings.R       ->  seasonal_xrapm.parquet, seasonal_spm.parquet
 
-### FBref RAPM/SPM Pipeline (ARCHIVED) — `archive/data-raw/player-ratings-fbref/`
+### FBref RAPM/SPM Pipeline (REMOVED)
 
-> **Archived 2026-04** (commit 43ea7fd): the FBref pipeline is retired —
-> Opta is the only active data source. Steps listed for historical
-> reference; the scripts live under `archive/` and are not maintained.
+> **Retired 2026-04** (commit 43ea7fd), **removed from the tree
+> 2026-11-15**: Opta is the only active data source. The scripts lived
+> under `archive/data-raw/player-ratings-fbref/`; git history is the
+> archive
+> (`git show 31e8c345:archive/data-raw/player-ratings-fbref/<script>`).
+> Steps listed for historical reference only.
 
     01_load_pannadata.R       ->  cache/01_raw_data.rds
     02_data_processing.R      ->  cache/02_processed_data.rds

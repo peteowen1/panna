@@ -1,5 +1,23 @@
 # Changelog
 
+## panna 0.3.120
+
+- The weekly EPR job rebuilds every snapshot from the current game logs
+  on each run, and adds a snapshot for the day after the newest match
+  ([\#488](https://github.com/peteowen1/panna/issues/488)). The
+  published file was a join of fits made on different game-log vintages.
+  The first run after this changes every historical EPR value slightly.
+- The weekly PSR job (08b) narrows `match_stats` before its incremental
+  check instead of after
+  ([\#492](https://github.com/peteowen1/panna/issues/492)). Dry-run peak
+  13.0 GB -\> 8.5 GB of the 16 GB runner.
+- 10b catches up MLS, Argentina and Brazil game logs that the
+  clock-season logic skipped
+  ([\#486](https://github.com/peteowen1/panna/issues/486)).
+- Removed `archive/` (the retired FBref/Understat pipeline) and fixed
+  CLAUDE.md drift
+  ([\#485](https://github.com/peteowen1/panna/issues/485)).
+
 ## panna 0.3.119
 
 - The predictions pipeline no longer runs out of memory on the GHA

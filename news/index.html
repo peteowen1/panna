@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.119</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.120</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,13 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.120" id="panna-03120">panna 0.3.120<a class="anchor" aria-label="anchor" href="#panna-03120"></a></h2>
+<ul><li>The weekly EPR job rebuilds every snapshot from the current game logs on each run, and adds a snapshot for the day after the newest match (<a href="https://github.com/peteowen1/panna/issues/488" class="external-link">#488</a>). The published file was a join of fits made on different game-log vintages. The first run after this changes every historical EPR value slightly.</li>
+<li>The weekly PSR job (08b) narrows <code>match_stats</code> before its incremental check instead of after (<a href="https://github.com/peteowen1/panna/issues/492" class="external-link">#492</a>). Dry-run peak 13.0 GB -&gt; 8.5 GB of the 16 GB runner.</li>
+<li>10b catches up MLS, Argentina and Brazil game logs that the clock-season logic skipped (<a href="https://github.com/peteowen1/panna/issues/486" class="external-link">#486</a>).</li>
+<li>Removed <code>archive/</code> (the retired FBref/Understat pipeline) and fixed CLAUDE.md drift (<a href="https://github.com/peteowen1/panna/issues/485" class="external-link">#485</a>).</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.119" id="panna-03119">panna 0.3.119<a class="anchor" aria-label="anchor" href="#panna-03119"></a></h2>
 <ul><li>The predictions pipeline no longer runs out of memory on the GHA runner (<a href="https://github.com/peteowen1/panna/issues/490" class="external-link">#490</a>). Lineup minutes (panna#469) grew <code>01_match_stats.rds</code> to 2.49M rows x 427 cols, and steps 02, 02b and 10b each read all of it. Step 01 now also writes <code>01_match_stats_narrow.rds</code> (every row, the 173 columns those steps use) and <code>01_match_stats_recent.rds</code> (all columns, last 3 seasons) when <code>write_predictions_sidecars</code> is TRUE. The steps read those, and fall back to the full table when either file is missing or older than it. 10b peak: 12.2 GB -&gt; 9.6 GB.</li>

@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.119</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.120</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -59,10 +59,9 @@
 09_export_ratings.R       -&gt;  seasonal_xrapm.parquet, seasonal_spm.parquet</code></pre>
 </div>
 <div class="section level3">
-<h3 id="fbref-rapmspm-pipeline-archived--archivedata-rawplayer-ratings-fbref">FBref RAPM/SPM Pipeline (ARCHIVED) — <code>archive/data-raw/player-ratings-fbref/</code>
-<a class="anchor" aria-label="anchor" href="#fbref-rapmspm-pipeline-archived--archivedata-rawplayer-ratings-fbref"></a></h3>
+<h3 id="fbref-rapmspm-pipeline-removed">FBref RAPM/SPM Pipeline (REMOVED)<a class="anchor" aria-label="anchor" href="#fbref-rapmspm-pipeline-removed"></a></h3>
 <blockquote>
-<p><strong>Archived 2026-04</strong> (commit 43ea7fd): the FBref pipeline is retired — Opta is the only active data source. Steps listed for historical reference; the scripts live under <code>archive/</code> and are not maintained.</p>
+<p><strong>Retired 2026-04</strong> (commit 43ea7fd), <strong>removed from the tree 2026-11-15</strong>: Opta is the only active data source. The scripts lived under <code>archive/data-raw/player-ratings-fbref/</code>; git history is the archive (<code>git show 31e8c345:archive/data-raw/player-ratings-fbref/&lt;script&gt;</code>). Steps listed for historical reference only.</p>
 </blockquote>
 <pre><code>01_load_pannadata.R       -&gt;  cache/01_raw_data.rds
 02_data_processing.R      -&gt;  cache/02_processed_data.rds
