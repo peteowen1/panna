@@ -53,7 +53,11 @@ message("\n=== Computing Team-Level Skill Features ===\n")
 # 5. Load Data ----
 
 fixture_results <- readRDS(file.path(cache_dir, "01_fixture_results.rds"))
-match_stats <- readRDS(match_stats_path)
+# The narrow side file when step 01 wrote a current one (see step 02).
+.ms_narrow <- .predictions_match_stats_sidecar(match_stats_path, "narrow")
+match_stats <- readRDS(if (is.null(.ms_narrow)) match_stats_path else .ms_narrow)
+message(sprintf("  Loaded %s: %d rows x %d cols",
+                basename(.ms_narrow %||% match_stats_path), nrow(match_stats), ncol(match_stats)))
 decay_params <- if (file.exists(decay_params_path)) readRDS(decay_params_path) else NULL
 
 played <- fixture_results[fixture_results$match_status == "Played", ]

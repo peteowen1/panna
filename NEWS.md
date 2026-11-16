@@ -1,3 +1,12 @@
+# panna 0.3.119
+
+- The predictions pipeline no longer runs out of memory on the GHA runner (#490). Lineup minutes
+  (panna#469) grew `01_match_stats.rds` to 2.49M rows x 427 cols, and steps 02, 02b and 10b each
+  read all of it. Step 01 now also writes `01_match_stats_narrow.rds` (every row, the 173 columns
+  those steps use) and `01_match_stats_recent.rds` (all columns, last 3 seasons) when
+  `write_predictions_sidecars` is TRUE. The steps read those, and fall back to the full table when
+  either file is missing or older than it. 10b peak: 12.2 GB -> 9.6 GB.
+
 # panna 0.3.118
 
 - Game logs price shots with xG v5.2 / xGOT v3.2 (panna#465, #467/#468). All 23 published seasons

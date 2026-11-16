@@ -462,6 +462,106 @@ compute_position_multipliers <- function(match_stats, stat_cols = NULL) {
 
 
 # ============================================================================
+# Smaller copies of 01_match_stats.rds for the predictions run
+# ============================================================================
+#
+# Predictions steps 02, 02b and 10b each loaded the whole of 01_match_stats.rds
+# (427 columns). After panna#469 recovered the pre-2015 minutes (2,146,853 ->
+# 2,487,103 rows) one full load cost ~12 GB of the GitHub runner's 16 GB (game-logs
+# dry rebuild 43684152649 peaked at 12.2 GB in 10b alone), and three predictions runs
+# on main lost their runner in steps 02 and 10b (43716225914 attempts 1-2, 43780952585).
+# Step 01 now also writes, when asked (`write_predictions_sidecars`):
+#   01_match_stats_narrow.rds  every row, only the columns 02/02b/10b's resolvers read
+#   01_match_stats_recent.rds  every column, only the latest seasons (10b's PSV scoring)
+# Each carries `.ms_row`, its row number in the full table.
+
+#' Columns of 01_match_stats that predictions steps 02, 02b and 10b's resolvers read
+#'
+#' The union of what step 02 and step 02b keep after
+#' \code{.narrow_match_stats_for_skills()}, the columns step 02 reads before it
+#' narrows (\code{position_side} for role8) and the columns 10b's position
+#' resolvers read. Narrowing this table again gives the same columns as
+#' narrowing the full one, because skill-column detection is by name.
+#' @keywords internal
+.predictions_match_stats_cols <- function(match_stats) {
+  step02_extra <- c("player_id", "player_name", "match_date", "position",
+                    "total_minutes", "league", "season", "match_id", "team_id")
+  keep <- c(names(.narrow_match_stats_for_skills(match_stats, extra_cols = step02_extra)),
+            names(.narrow_match_stats_for_skills(match_stats)),
+            "position_side", "primary_position", "season_end_year")
+  intersect(unique(keep), names(match_stats))
+}
+
+#' File paths of the two 01_match_stats side files
+#' @keywords internal
+.predictions_match_stats_sidecar_paths <- function(match_stats_path) {
+  stem <- sub("\\.rds$", "", match_stats_path)
+  list(narrow = paste0(stem, "_narrow.rds"), recent = paste0(stem, "_recent.rds"))
+}
+
+#' Path of a 01_match_stats side file, or NULL when it is missing or older than the table
+#'
+#' A side file written before the full table was last rebuilt describes old data,
+#' so it is ignored and the caller reads the full table.
+#' @keywords internal
+.predictions_match_stats_sidecar <- function(match_stats_path, which = c("narrow", "recent")) {
+  which <- match.arg(which)
+  p <- .predictions_match_stats_sidecar_paths(match_stats_path)[[which]]
+  if (!file.exists(p) || !file.exists(match_stats_path)) return(NULL)
+  if (file.mtime(p) < file.mtime(match_stats_path)) {
+    message(sprintf("  %s is older than %s: ignoring it", basename(p), basename(match_stats_path)))
+    return(NULL)
+  }
+  p
+}
+
+#' Write the two 01_match_stats side files for the predictions run
+#'
+#' @param match_stats The full step-01 table, as saved to \code{match_stats_path}.
+#' @param match_stats_path Path of the full table.
+#' @param recent_years The recent file keeps rows whose season end year is at least
+#'   the latest minus this, plus rows with no end year. 2 covers the current season
+#'   and the year before it, which is what 10b keeps for a current-season run.
+#' @return The minimum season end year in the recent file, invisibly.
+#' @keywords internal
+.write_predictions_match_stats_sidecars <- function(match_stats, match_stats_path,
+                                                    recent_years = 2L) {
+  paths <- .predictions_match_stats_sidecar_paths(match_stats_path)
+  if (!data.table::is.data.table(match_stats)) match_stats <- data.table::as.data.table(match_stats)
+  sey <- if ("season_end_year" %in% names(match_stats)) {
+    as.integer(match_stats$season_end_year)
+  } else {
+    # From the season LABEL, never match_date (panna CLAUDE.md), over unique labels.
+    lab <- as.character(match_stats$season)
+    map <- vapply(unique(lab), extract_season_end_year, numeric(1))
+    as.integer(map[lab])
+  }
+  if (all(is.na(sey))) stop("01 side files: no season end year could be read from `season`")
+  min_sey <- max(sey, na.rm = TRUE) - as.integer(recent_years)
+
+  cols <- .predictions_match_stats_cols(match_stats)
+  # [[-extraction shares the column vectors with match_stats (no copy).
+  narrow <- data.table::setDT(stats::setNames(lapply(cols, function(cc) match_stats[[cc]]), cols))
+  data.table::set(narrow, j = ".ms_row", value = seq_len(nrow(narrow)))
+  data.table::setattr(narrow, "recent_min_season_end_year", min_sey)
+  saveRDS(narrow, paths$narrow)
+  rm(narrow)
+
+  idx <- which(is.na(sey) | sey >= min_sey)
+  recent <- match_stats[idx]
+  data.table::set(recent, j = ".ms_row", value = idx)
+  data.table::setattr(recent, "recent_min_season_end_year", min_sey)
+  saveRDS(recent, paths$recent)
+  message(sprintf(paste0("  Side files for predictions: %s (%d rows x %d cols), ",
+                         "%s (%d of %d rows, season end year >= %d or none)"),
+                  basename(paths$narrow), nrow(match_stats), length(cols) + 1L,
+                  basename(paths$recent), length(idx), nrow(match_stats), min_sey))
+  rm(recent); invisible(gc(verbose = FALSE))
+  invisible(min_sey)
+}
+
+
+# ============================================================================
 # Core skill estimation
 # ============================================================================
 
