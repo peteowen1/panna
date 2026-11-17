@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.121</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.122</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,13 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.122" id="panna-03122">panna 0.3.122<a class="anchor" aria-label="anchor" href="#panna-03122"></a></h2>
+<ul><li>
+<code><a href="../reference/add_wp_xi_strength.html">add_wp_xi_strength()</a></code> de-duplicates ratings on (player_id, snapshot) before its rolling join, so a repeated ratings row can no longer count a starter twice (<a href="https://github.com/peteowen1/panna/issues/484" class="external-link">#484</a>, <a href="https://github.com/peteowen1/panna/issues/487" class="external-link">#487</a>).</li>
+<li>
+<code>ci_fetch_models.R</code> md5-pins <code>wp_structural_model.rds</code> (2a190fac) like the xG/xGOT models. A different model stops the run; a failed or missing download turns the WPA ledger off (<a href="https://github.com/peteowen1/panna/issues/484" class="external-link">#484</a>, <a href="https://github.com/peteowen1/panna/issues/487" class="external-link">#487</a>).</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.121" id="panna-03121">panna 0.3.121<a class="anchor" aria-label="anchor" href="#panna-03121"></a></h2>
 <ul><li>

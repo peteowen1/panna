@@ -1,5 +1,18 @@
 # Changelog
 
+## panna 0.3.122
+
+- [`add_wp_xi_strength()`](https://peteowen1.github.io/panna/reference/add_wp_xi_strength.md)
+  de-duplicates ratings on (player_id, snapshot) before its rolling
+  join, so a repeated ratings row can no longer count a starter twice
+  ([\#484](https://github.com/peteowen1/panna/issues/484),
+  [\#487](https://github.com/peteowen1/panna/issues/487)).
+- `ci_fetch_models.R` md5-pins `wp_structural_model.rds` (2a190fac) like
+  the xG/xGOT models. A different model stops the run; a failed or
+  missing download turns the WPA ledger off
+  ([\#484](https://github.com/peteowen1/panna/issues/484),
+  [\#487](https://github.com/peteowen1/panna/issues/487)).
+
 ## panna 0.3.121
 
 - `career-panna.yml` now runs every Monday at 20:00 UTC and publishes
