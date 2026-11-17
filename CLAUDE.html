@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.123</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.124</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -191,7 +191,7 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 <td>Daily <code>opta-scrape-complete</code> dispatch + Sunday 18:00 cron (both xmetrics_only, published models) / manual dispatch for retrains</td>
 <td>EPV model training pipeline. Daily dispatch added 2026-07-18 (panna#150) so <code>opta_xmetrics_bymatch.parquet</code> follows every scrape — game-logs xGOT/GSAA no longer go NULL between Sundays. Own concurrency group (NOT panna-release-writer — pending-slot cancellation risk vs predictions’ same-event run)</td>
 </tr><tr><td><code>skills-seasonal.yml</code></td>
-<td>Monday 04:00 UTC (gate only) / manual dispatch (<code>publish=true</code> on main uploads)</td>
+<td>Monday 04:00 UTC (gate + publish on main since 2026-11-17) / manual dispatch (<code>publish=true</code> on main uploads)</td>
 <td>Skills chain on runners, one job per stage: skills 01 -&gt; 04c decayed RAPM target -&gt; 02 -&gt; 03 -&gt; 06, then a coverage gate. Publishes <code>06_seasonal_ratings.rds</code>, <code>03_skill_spm.rds</code>, <code>psr_league_offsets.parquet</code> to predictions-cache</td>
 </tr><tr><td><code>career-panna.yml</code></td>
 <td>Monday 20:00 UTC (publishes, runs main’s copy; since 2026-11-17, before that it had no schedule and the site’s Panna went 4 weeks stale) / manual dispatch (<code>upload=true</code> publishes on main/dev); pushes to <code>career-panna-*</code> branches are dry builds</td>
