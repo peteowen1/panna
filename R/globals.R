@@ -834,3 +834,8 @@ utils::globalVariables(c("pid", "minutes", "player_id"))
 
 # .add_territory_features() (R/psr.R): temp columns renamed into place on the opponent-shots lookup.
 utils::globalVariables(c(".o_team", ".opp_shots"))
+
+# returner_status() (R/returner_adjust.R, panna#497).
+utils::globalVariables(c("md", "mins", "nm", "cum", "x.cum", "prev_md", "prev_team", "gap", "cm", "ret_md",
+                         "days_out", "last_md", "last_team", "out_days", "out_cm", "still_out", "back",
+                         "returning", "minutes_since_return", "team_id", "minutes_played", "match_date"))
