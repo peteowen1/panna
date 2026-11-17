@@ -58,7 +58,9 @@ A data.table with columns: identity columns, \code{psr_raw},
 \description{
 Computes the margin-based PSR (best single predictor of match outcomes),
 then decomposes it into offensive (OSR) and defensive (DSR) components using
-separately trained coefficient models. The decomposition uses an additive
-shift so that \code{osr + dsr = psr} exactly.
+separately trained coefficient models (outfield). For keepers the two
+models are the margin fit with its betas split by stat meaning
+(\code{.gk_split_coefficients()}, panna#429), so the shift below is ~0. The
+decomposition uses an additive shift so that \code{osr + dsr = psr} exactly.
 }
 \keyword{internal}

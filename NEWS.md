@@ -1,3 +1,14 @@
+# panna 0.3.123
+
+- Keeper OSR/DSR (and OSV/DSV) are now the keeper PSR fit split by what each stat is: distribution
+  (passes, accurate passes, long balls, throws, touches; club-adjusted) is attack, every other term is
+  defence (#429). The separate `gk_osr`/`gk_dsr` fits had conceding raise DSR and errors raise OSR
+  (Neuer 0.322 attack / -0.068 defence; now 0.004 / 0.249). Total PSR/PSV are unchanged;
+  `gk_osr_coefficients.csv`/`gk_dsr_coefficients.csv` are no longer read.
+- New `returner_status()` and `returner_adjusted_panna()`: the returning-player rule and the flat
+  discount (keep 85% of the lead over replacement) chosen on a hold-out in #497. Not used by any
+  pipeline; the team page uses pannadata's copy.
+
 # panna 0.3.122
 
 - `add_wp_xi_strength()` de-duplicates ratings on (player_id, snapshot) before its rolling join, so a
