@@ -1,3 +1,10 @@
+# panna 0.3.125
+
+- `returner_status()` is replaced by `returner_rust()`, a returning-player rule with no cliffs (#497):
+  rust rises on an S-curve of club matches missed (centre 4; an unused-sub game counts 0.75) and drains
+  over 1,800 minutes back. `returner_adjusted_panna()` now takes rust, with `max_discount = 0.25`. Chosen
+  on hold-outs that include fringe players; ties the earlier flat rule. Not used by any pipeline.
+
 # panna 0.3.124
 
 - `skills-seasonal.yml`'s Monday schedule now publishes `06_seasonal_ratings.rds` and its siblings on
