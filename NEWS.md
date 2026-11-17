@@ -1,3 +1,9 @@
+# panna 0.3.124
+
+- `skills-seasonal.yml`'s Monday schedule now publishes `06_seasonal_ratings.rds` and its siblings on
+  main. It was gate-only until Pete walked the first publish through on named players (2026-11-14);
+  the coverage gate and the republished-mid-run refusal still guard every upload.
+
 # panna 0.3.123
 
 - Keeper OSR/DSR (and OSV/DSV) are now the keeper PSR fit split by what each stat is: distribution
