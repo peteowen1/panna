@@ -2419,13 +2419,25 @@ compute_player_psv <- function(player_match_stats, min_adjust = TRUE,
 
   .score <- function(sub, tgt, model) {
     margin <- load_psr_coefficients("margin", target = tgt, model = model)
-    osr <- .load_psr_coef_optional("offense", target = tgt, model = model)
-    dsr <- .load_psr_coef_optional("defense", target = tgt, model = model)
     rel <- NULL
     if (!is.null(reliability) && NROW(reliability) > 0) {
       reliability_dt <- data.table::as.data.table(reliability)
       rsub <- reliability_dt[reliability_dt$model == model, ]
       if (nrow(rsub) > 0) rel <- rsub
+    }
+    if (model == "gk") {
+      # keepers: OSR/DSR from the margin fit, split by what each stat is (panna#429)
+      sp <- .gk_split_coefficients(margin, present = names(sub))
+      if (is.null(sp$osr) || is.null(sp$dsr)) {
+        res <- calculate_psv(sub, margin, min_adjust = min_adjust, center = center,
+          scale_to_minutes = scale_to_minutes, exclude_efficiency = exclude_efficiency,
+          reliability = rel, center_weights = center_weights)
+        return(.gk_fill_components(res, osr_empty = is.null(sp$osr), total = "psv", o = "osv", d = "dsv"))
+      }
+      osr <- sp$osr; dsr <- sp$dsr
+    } else {
+      osr <- .load_psr_coef_optional("offense", target = tgt, model = model)
+      dsr <- .load_psr_coef_optional("defense", target = tgt, model = model)
     }
     if (!is.null(osr) && !is.null(dsr)) {
       calculate_psv_components(sub, margin, osr, dsr, min_adjust = min_adjust,
@@ -2739,6 +2751,51 @@ load_psr_coefficients <- function(type = c("margin", "offense", "defense"),
 }
 
 
+#' Keeper distribution stats: the terms of the keeper PSR fit that count as attack
+#'
+#' panna#429 (Pete, 2026-11-17): a keeper's PSR is split into OSR and DSR by what
+#' each stat is, not by separate OSR/DSR fits. The separate fits had conceding
+#' raise DSR (+0.041 per sd on goals_conceded_p90) and errors raise OSR, so Neuer
+#' read 0.322 attack / -0.068 defence. Split by meaning on 347 keepers (2025-26):
+#' DSR vs goals conceded per 90 went from -0.34 to -0.76
+#' (`pannaverse/docs/reviews/panna-validity-2026-11/gk_split_walkthrough.R`).
+#' @keywords internal
+#' @noRd
+GK_DISTRIBUTION_STATS <- c("passes_p90_kadj", "passes_accurate_p90_kadj", "long_balls_p90_kadj",
+                           "keeper_throws_p90_kadj", "touches_p90_kadj",
+                           # raw names too, in case a caller scores the unadjusted columns
+                           "passes_p90", "passes_accurate_p90", "long_balls_p90", "keeper_throws_p90", "touches_p90")
+
+#' Split the keeper PSR coefficients into an attack set and a defence set
+#'
+#' Returns the margin coefficient table twice: `osr` keeps only the
+#' distribution betas (\code{GK_DISTRIBUTION_STATS}), `dsr` keeps every other
+#' beta. PSR and PSV are linear in the betas (and centering is linear), so the
+#' two scores add to the margin score exactly.
+#' @param margin_coef Keeper margin coefficient data.frame (`stat_name`, `beta`, optionally `sd`).
+#' @param present Column names in the data being scored. A distribution stat that
+#'   is absent there scores 0 in the margin fit too, so it is left out of both sets.
+#' @return list(osr, dsr). Either is NULL when it has no non-zero beta on a
+#'   present column: the caller then gives that side 0 and the other side all of PSR.
+#' @keywords internal
+#' @noRd
+.gk_split_coefficients <- function(margin_coef, present = NULL) {
+  stopifnot(all(c("stat_name", "beta") %in% names(margin_coef)))
+  is_dist <- margin_coef$stat_name %in% GK_DISTRIBUTION_STATS
+  ok <- if (is.null(present)) rep(TRUE, nrow(margin_coef)) else margin_coef$stat_name %in% present
+  osr <- margin_coef; osr$beta[!is_dist] <- 0
+  dsr <- margin_coef; dsr$beta[is_dist] <- 0
+  live <- function(cf) any(cf$beta != 0 & ok)
+  list(osr = if (live(osr)) osr else NULL, dsr = if (live(dsr)) dsr else NULL)
+}
+
+# Keeper components when one side of the split is empty: that side is 0, the other is all of the total.
+.gk_fill_components <- function(res, osr_empty, total = "psr", o = "osr", d = "dsr") {
+  data.table::setDT(res)
+  if (osr_empty) { res[, (o) := 0]; res[, (d) := get(total)] } else { res[, (o) := get(total)]; res[, (d) := 0] }
+  res
+}
+
 #' Load optional OSR/DSR coefficients, returning NULL only when the file is absent
 #'
 #' The offense/defense split is optional: when its coefficient file has not
@@ -2877,10 +2934,6 @@ compute_player_psr <- function(skills, center = TRUE,
     # Check if trained GK coefficients exist
     gk_psr_path <- system.file("extdata", "gk_psr_coefficients.csv",
                                 package = "panna")
-    gk_osr_path <- system.file("extdata", "gk_osr_coefficients.csv",
-                                package = "panna")
-    gk_dsr_path <- system.file("extdata", "gk_dsr_coefficients.csv",
-                                package = "panna")
 
     if (gk_psr_path != "") {
       gk_margin_coef <- utils::read.csv(gk_psr_path, stringsAsFactors = FALSE)
@@ -2894,14 +2947,14 @@ compute_player_psr <- function(skills, center = TRUE,
         ))
       }
 
-      if (gk_osr_path != "" && gk_dsr_path != "") {
-        gk_osr_coef <- utils::read.csv(gk_osr_path, stringsAsFactors = FALSE)
-        gk_dsr_coef <- utils::read.csv(gk_dsr_path, stringsAsFactors = FALSE)
-        results$gk <- calculate_psr_components(
-          gk_skills, gk_margin_coef, gk_osr_coef, gk_dsr_coef, center = center
-        )
+      # OSR/DSR from the margin fit, split by what each stat is (panna#429). The
+      # gk_osr/gk_dsr coefficient files are no longer read: their separate fits
+      # had conceding raise DSR and errors raise OSR.
+      gk_sp <- .gk_split_coefficients(gk_margin_coef, present = names(gk_skills))
+      results$gk <- if (is.null(gk_sp$osr) || is.null(gk_sp$dsr)) {
+        .gk_fill_components(calculate_psr(gk_skills, gk_margin_coef, center = center), osr_empty = is.null(gk_sp$osr))
       } else {
-        results$gk <- calculate_psr(gk_skills, gk_margin_coef, center = center)
+        calculate_psr_components(gk_skills, gk_margin_coef, gk_sp$osr, gk_sp$dsr, center = center)
       }
 
       # Legacy GK-only scale. Superseded by the position calibration applied to
