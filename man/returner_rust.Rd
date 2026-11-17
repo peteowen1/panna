@@ -9,7 +9,8 @@ returner_rust(
   as_of,
   centre = 4,
   k = 6,
-  drain_minutes = 900,
+  drain_minutes = 1800,
+  bench_weight = 0.75,
   minutes_cap = 120
 )
 }
@@ -24,6 +25,8 @@ returner_rust(
 
 \item{drain_minutes}{Minutes back after which the rust from one absence is gone.}
 
+\item{bench_weight}{How much an unused-substitute game counts, against 1 for not in the squad.}
+
 \item{minutes_cap}{Minutes above this in one match are treated as this.}
 }
 \value{
@@ -35,7 +38,8 @@ data.table, one row per player seen before \code{as_of}: \code{player_id},
 Rust rises with the club matches a player missed and drains as he plays:
 \itemize{
 \item at each appearance, the club matches his previous club played between
-his last appearance and this one, \code{m}, give
+his last appearance and this one, with each match he sat on the bench
+unused counting \code{bench_weight} and each he was not in the squad counting 1, \code{m}, give
 \code{s(m) = (m / centre)^k / (1 + (m / centre)^k)}, an S-curve (0 for no
 missed matches, 0.5 at \code{centre}, close to 1 well past it). Counting
 club matches, not days, so the summer break adds nothing;

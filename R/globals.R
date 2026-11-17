@@ -840,4 +840,4 @@ utils::globalVariables(c("md", "mins", "nm", "cum", "x.cum", "prev_md", "prev_te
                          "days_out", "last_md", "last_team", "out_days", "out_cm", "still_out", "back",
                          "returning", "minutes_since_return", "team_id", "minutes_played", "match_date",
                          "first_pt", "r_after", "jump", "episode", "ep_cm", "ep_days", "ep_mins", "cm_now",
-                         "s_now", "rust", "club_matches_missed"))
+                         "s_now", "rust", "club_matches_missed", "nb", "cb", "nb_now"))

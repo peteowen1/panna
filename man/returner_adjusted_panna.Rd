@@ -4,7 +4,7 @@
 \alias{returner_adjusted_panna}
 \title{Returning-player adjustment to Panna}
 \usage{
-returner_adjusted_panna(panna, replacement, rust, max_discount = 0.3)
+returner_adjusted_panna(panna, replacement, rust, max_discount = 0.25)
 }
 \arguments{
 \item{panna}{Numeric vector of Panna ratings.}
@@ -25,12 +25,16 @@ Players coming back from an absence deliver less than their Panna says for
 their first games back (panna#497). The rule has no cliffs (Pete,
 2026-11-17): each player carries a "rust" value between 0 and 1 (see
 \code{\link[=returner_rust]{returner_rust()}}), and his Panna keeps \code{1 - max_discount * rust} of its
-lead over replacement level. With the defaults that is 0.85 after missing 4
-club matches and 0.70 after 8 or more, fading back to 1 over his first 900
-minutes back. Chosen on a hold-out: returns before 2024-07-01 to fit, later
-ones to score; test loss 0.00090 against 0.00087 for the earlier flat rule
-(difference -0.00007 to +0.00015), no adjustment 0.0022
-(\code{pannaverse/docs/reviews/panna-validity-2026-11/shrink_smooth_holdout.R}, run 5).
+lead over replacement level. With the defaults that is 0.875 after missing 4
+club matches and 0.75 after 8 or more, fading back to 1 over his first 1,800
+minutes back. Chosen on a hold-out (returns and fringe players before
+2024-07-01 to fit, later ones to score; eight groups, regulars held still):
+test loss 0.00083 against 0.00075 for the earlier flat rule (difference
+-0.00024 to +0.00041) and 0.00160 for none
+(\code{pannaverse/docs/reviews/panna-validity-2026-11/shrink_fringe_holdout.R},
+\code{shrink_bench_holdout.R}, \code{shrink_bench_w.R}). An unused-substitute game counts
+0.75 of a missed match (Pete, 2026-11-18; the data could not separate bench
+from not-in-squad, train loss within 1\% for any weight 0-1).
 }
 \details{
 The shortfall reads as a return dip (fitness) rather than an out-of-date

@@ -4,12 +4,16 @@
 #' their first games back (panna#497). The rule has no cliffs (Pete,
 #' 2026-11-17): each player carries a "rust" value between 0 and 1 (see
 #' [returner_rust()]), and his Panna keeps `1 - max_discount * rust` of its
-#' lead over replacement level. With the defaults that is 0.85 after missing 4
-#' club matches and 0.70 after 8 or more, fading back to 1 over his first 900
-#' minutes back. Chosen on a hold-out: returns before 2024-07-01 to fit, later
-#' ones to score; test loss 0.00090 against 0.00087 for the earlier flat rule
-#' (difference -0.00007 to +0.00015), no adjustment 0.0022
-#' (`pannaverse/docs/reviews/panna-validity-2026-11/shrink_smooth_holdout.R`, run 5).
+#' lead over replacement level. With the defaults that is 0.875 after missing 4
+#' club matches and 0.75 after 8 or more, fading back to 1 over his first 1,800
+#' minutes back. Chosen on a hold-out (returns and fringe players before
+#' 2024-07-01 to fit, later ones to score; eight groups, regulars held still):
+#' test loss 0.00083 against 0.00075 for the earlier flat rule (difference
+#' -0.00024 to +0.00041) and 0.00160 for none
+#' (`pannaverse/docs/reviews/panna-validity-2026-11/shrink_fringe_holdout.R`,
+#' `shrink_bench_holdout.R`, `shrink_bench_w.R`). An unused-substitute game counts
+#' 0.75 of a missed match (Pete, 2026-11-18; the data could not separate bench
+#' from not-in-squad, train loss within 1% for any weight 0-1).
 #'
 #' The shortfall reads as a return dip (fitness) rather than an out-of-date
 #' rating, so this is for a current-form number (the team page). It is never
@@ -27,7 +31,7 @@
 #' @export
 #' @examples
 #' returner_adjusted_panna(c(0.12, 0.12), -0.11, c(1, 0))
-returner_adjusted_panna <- function(panna, replacement, rust, max_discount = 0.30) {
+returner_adjusted_panna <- function(panna, replacement, rust, max_discount = 0.25) {
   stopifnot(is.numeric(panna), is.numeric(replacement), is.numeric(rust),
             length(rust) == length(panna),
             length(replacement) %in% c(1L, length(panna)),
@@ -41,7 +45,8 @@ returner_adjusted_panna <- function(panna, replacement, rust, max_discount = 0.3
 #' Rust rises with the club matches a player missed and drains as he plays:
 #' \itemize{
 #'   \item at each appearance, the club matches his previous club played between
-#'     his last appearance and this one, `m`, give
+#'     his last appearance and this one, with each match he sat on the bench
+#'     unused counting `bench_weight` and each he was not in the squad counting 1, `m`, give
 #'     `s(m) = (m / centre)^k / (1 + (m / centre)^k)`, an S-curve (0 for no
 #'     missed matches, 0.5 at `centre`, close to 1 well past it). Counting
 #'     club matches, not days, so the summer break adds nothing;
@@ -61,13 +66,15 @@ returner_adjusted_panna <- function(panna, replacement, rust, max_discount = 0.3
 #' @param as_of Date the rust is wanted for.
 #' @param centre,k S-curve centre (club matches missed) and steepness.
 #' @param drain_minutes Minutes back after which the rust from one absence is gone.
+#' @param bench_weight How much an unused-substitute game counts, against 1 for not in the squad.
 #' @param minutes_cap Minutes above this in one match are treated as this.
 #' @return data.table, one row per player seen before `as_of`: `player_id`,
 #'   `rust`, and for the absence behind it `club_matches_missed`, `days_out` and
 #'   `minutes_since_return` (0 while still out; all three NA when rust is 0).
 #' @concept panna ratings
 #' @export
-returner_rust <- function(lineups, as_of, centre = 4, k = 6, drain_minutes = 900, minutes_cap = 120) {
+returner_rust <- function(lineups, as_of, centre = 4, k = 6, drain_minutes = 1800, bench_weight = 0.75,
+                          minutes_cap = 120) {
   need <- c("player_id", "team_id", "match_id", "match_date", "minutes_played")
   miss <- setdiff(need, names(lineups))
   if (length(miss)) cli::cli_abort("{.arg lineups} is missing {.val {miss}}.")
@@ -86,12 +93,21 @@ returner_rust <- function(lineups, as_of, centre = 4, k = 6, drain_minutes = 900
     data.table::fifelse(is.na(r), 0, r)
   }
   sfun <- function(m) { z <- (pmax(m, 0) / centre)^k; z / (1 + z) }
+  # unused-substitute games (0-minute lineup rows), cumulative per (player, club), for the bench weight
+  Bn <- L[mins <= 0, .(nb = .N), by = .(player_id, team_id, md)]
+  data.table::setorder(Bn, player_id, team_id, md); Bn[, cb := cumsum(nb), by = .(player_id, team_id)]
+  bench <- function(pl, tid, t) {
+    r <- Bn[data.table::data.table(player_id = pl, team_id = tid, md = t), on = .(player_id, team_id, md), roll = TRUE, x.cb]
+    data.table::fifelse(is.na(r), 0, r)
+  }
+  eff <- function(cm, nb) pmax(cm - (1 - bench_weight) * pmin(pmax(nb, 0), pmax(cm, 0)), 0)
   A <- L[mins > 0, .(mins = sum(mins), team_id = team_id[which.max(mins)]), by = .(player_id, md)]
   data.table::setorder(A, player_id, md)
   A[, prev_md := data.table::shift(md), by = player_id]
   A[, prev_team := data.table::shift(team_id), by = player_id]
   A[, cm := data.table::fifelse(is.na(prev_md), 0, cal(prev_team, md - 1) - cal(prev_team, prev_md))]
-  sv <- sfun(A$cm); pid <- match(A$player_id, unique(A$player_id)); mn <- A$mins; n <- nrow(A)
+  A[, nb := data.table::fifelse(is.na(prev_md), 0, bench(player_id, prev_team, md - 1) - bench(player_id, prev_team, prev_md))]
+  sv <- sfun(eff(A$cm, A$nb)); pid <- match(A$player_id, unique(A$player_id)); mn <- A$mins; n <- nrow(A)
   ra_v <- numeric(n); jump <- logical(n); last <- 0L; ra <- 0
   for (i in seq_len(n)) {
     if (pid[i] != last) { ra <- 0; last <- pid[i]; rb <- 0 } else { jump[i] <- sv[i] > ra; rb <- max(sv[i], ra) }
@@ -103,7 +119,8 @@ returner_rust <- function(lineups, as_of, centre = 4, k = 6, drain_minutes = 900
           by = .(player_id, episode)][, .SD[.N], by = player_id]
   out <- A[, .SD[.N], by = player_id][, .(player_id, last_md = md, last_team = team_id, r_after)]
   out[, cm_now := cal(last_team, as_of - 1) - cal(last_team, last_md)]
-  out[, s_now := sfun(cm_now)]
+  out[, nb_now := bench(player_id, last_team, as_of - 1) - bench(player_id, last_team, last_md)]
+  out[, s_now := sfun(eff(cm_now, nb_now))]
   out[, rust := pmax(s_now, r_after)]
   out <- merge(out, ep[, .(player_id, ep_cm, ep_days, ep_mins)], by = "player_id", all.x = TRUE)
   out[, still_out := s_now >= r_after & s_now > 0.01]
