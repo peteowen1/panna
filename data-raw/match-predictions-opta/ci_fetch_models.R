@@ -33,7 +33,7 @@ cat("wp_structural_model.rds download exit", .wps_dl, "| md5", .wps_md5, "\n")
 # Pinned like xG/xGOT below (panna#484): a republish to the epv release would otherwise
 # silently change the weekly WPA ledger. A missing download still just turns the ledger off;
 # a download that arrives with a different md5 stops the run. After a deliberate retrain +
-# republish, update this value (published asset md5 2a190fac, checked 2026-11-15).
+# republish, update this value (published asset md5 2a190fac, checked 2026-11-15; MODELS.md "Structural WP" row).
 .wps_md5_pin <- "2a190fac"
 if (!identical(.wps_md5, "none") && !identical(substr(.wps_md5, 1, 8), .wps_md5_pin)) {
   stop("wp_structural_model.rds md5 ", substr(.wps_md5, 1, 8), " but ci_fetch_models.R pins ", .wps_md5_pin,
