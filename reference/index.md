@@ -173,6 +173,10 @@ Combined RAPM + SPM ratings
   : Aggregate player game ratings to season level
 - [`extract_xrapm_ratings()`](https://peteowen1.github.io/panna/reference/extract_xrapm_ratings.md)
   : Extract xRAPM ratings (with prior)
+- [`returner_adjusted_panna()`](https://peteowen1.github.io/panna/reference/returner_adjusted_panna.md)
+  : Returning-player adjustment to Panna
+- [`returner_status()`](https://peteowen1.github.io/panna/reference/returner_status.md)
+  : Is a player returning from a spell with no minutes?
 
 ## Possession Chain Analytics
 
