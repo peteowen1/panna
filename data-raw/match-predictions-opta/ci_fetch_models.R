@@ -28,6 +28,8 @@
 
 wp_structural_model_path <- file.path(tempdir(), "wp_structural_model.rds")
 .wps_dl <- .gh_epv_download("wp_structural_model.rds", wp_structural_model_path)
+# A failed download can leave a partial file: treat it as missing (ledger off), not as a republish.
+if (!identical(as.integer(.wps_dl), 0L)) unlink(wp_structural_model_path)
 .wps_md5 <- if (file.exists(wp_structural_model_path)) unname(tools::md5sum(wp_structural_model_path)) else "none"
 cat("wp_structural_model.rds download exit", .wps_dl, "| md5", .wps_md5, "\n")
 # Pinned like xG/xGOT below (panna#484): a republish to the epv release would otherwise
