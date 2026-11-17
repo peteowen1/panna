@@ -108,6 +108,8 @@ add_wp_xi_strength <- function(wp_features, lineups, ratings, roll_days = 62L,
   miss <- setdiff(need_lu, names(lu))
   if (length(miss)) cli::cli_abort("{.arg lineups} is missing {.val {miss}}.")
   rt <- rt[!is.na(get(vcol)), .(player_id, snap = as.Date(get(dcol)), r = as.numeric(get(vcol)))]
+  # A repeated (player_id, snap) row would join a starter twice and inflate n_rated.
+  rt <- unique(rt, by = c("player_id", "snap"))
   data.table::setkey(rt, player_id, snap)
   st <- unique(lu[is_starter %in% TRUE & match_id %in% unique(dt$match_id),
                   .(match_id, team_id, player_id, snap = as.Date(substr(as.character(match_date), 1, 10)) - 1L)])
