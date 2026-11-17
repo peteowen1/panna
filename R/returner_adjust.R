@@ -42,11 +42,18 @@ returner_adjusted_panna <- function(panna, replacement, returning, keep = 0.85) 
 #'   \item he is still out: no minutes for at least `gap_days` before `as_of`,
 #'     while his last club played at least `club_matches` matches since; or
 #'   \item he is back: his last such gap ended before `as_of`, and he has played
-#'     fewer than `window_minutes` minutes since it ended.
+#'     fewer than `window_minutes` minutes since it ended. The gap counts only if
+#'     the club he came back to had played at least `club_matches` matches in it
+#'     and he had played for that club before the gap (so a transfer debut is
+#'     not a return).
 #' }
-#' This is the same return rule as the panna#497 validity tests. Minutes
-#' count every competition in `lineups`. A player who retired or left the
-#' covered competitions stays "still out" indefinitely (23.6% of the 100,378
+#' This is the same return rule as the panna#497 validity tests
+#' (`respell()` / `build_hist()` in pannaverse
+#' `docs/reviews/panna-validity-2026-11/panna_validity_common.R`), which is what
+#' the 0.85 in [returner_adjusted_panna()] was tuned on. Minutes count every
+#' competition in `lineups`, one row per (match, player), capped at
+#' `minutes_cap` (the lineups hold a few corrupt values in the tens of thousands). A player who retired or left the
+#' covered competitions stays "still out" indefinitely (19.7% of the 100,378
 #' players seen since 2024, as at 2026-11-09), so filter to the players you
 #' are showing or predicting for before reading the share.
 #'
@@ -55,13 +62,16 @@ returner_adjusted_panna <- function(panna, replacement, returning, keep = 0.85) 
 #'   `as_of` are ignored, so the result is as-at.
 #' @param as_of Date the status is wanted for.
 #' @param gap_days,club_matches,window_minutes The return rule.
+#' @param minutes_cap Minutes above this in one match are treated as this.
 #' @return data.table with one row per player seen before `as_of`: `player_id`,
-#'   `returning` (logical), `days_out` (length of the current or last
-#'   qualifying gap, NA if none) and `minutes_since_return`.
+#'   `returning` (logical), `days_out` (length of the current gap if he is still
+#'   out, else of his last qualifying gap; NA if none) and `minutes_since_return`
+#'   (0 while still out, even if he had an earlier return; NA if he never had a
+#'   qualifying gap).
 #' @concept panna ratings
 #' @export
 returner_status <- function(lineups, as_of, gap_days = 60L, club_matches = 8L,
-                            window_minutes = 900) {
+                            window_minutes = 900, minutes_cap = 120) {
   need <- c("player_id", "team_id", "match_id", "match_date", "minutes_played")
   miss <- setdiff(need, names(lineups))
   if (length(miss)) cli::cli_abort("{.arg lineups} is missing {.val {miss}}.")
@@ -71,7 +81,8 @@ returner_status <- function(lineups, as_of, gap_days = 60L, club_matches = 8L,
   L <- L[!is.na(md) & md < as_of]
   if (!nrow(L)) return(data.table::data.table(player_id = character(), returning = logical(),
                                               days_out = numeric(), minutes_since_return = numeric()))
-  L[, mins := pmax(data.table::fcoalesce(as.numeric(minutes_played), 0), 0)]
+  L <- unique(L, by = c("match_id", "player_id"))
+  L[, mins := pmin(pmax(data.table::fcoalesce(as.numeric(minutes_played), 0), 0), minutes_cap)]
   # club calendar: distinct matches per club, cumulative by date
   Tc <- unique(L[, .(team_id, match_id, md)])[, .(nm = .N), by = .(team_id, md)]
   data.table::setorder(Tc, team_id, md); Tc[, cum := cumsum(nm), by = team_id]
@@ -79,14 +90,16 @@ returner_status <- function(lineups, as_of, gap_days = 60L, club_matches = 8L,
     r <- Tc[data.table::data.table(team_id = tid, md = t), on = .(team_id, md), roll = TRUE, x.cum]
     data.table::fifelse(is.na(r), 0, r)
   }
-  A <- L[mins > 0, .(mins = sum(mins), team_id = team_id[1]), by = .(player_id, md)]
+  A <- L[mins > 0, .(mins = sum(mins), team_id = team_id[which.max(mins)]), by = .(player_id, md)]
   data.table::setorder(A, player_id, md)
+  fpt <- A[, .(first_pt = min(md)), by = .(player_id, team_id)]   # first appearance for each club
   A[, prev_md := data.table::shift(md), by = player_id]
-  A[, prev_team := data.table::shift(team_id), by = player_id]
   A[, gap := as.numeric(md - prev_md)]
   cand <- A[!is.na(gap) & gap >= gap_days]
-  cand[, cm := cal(prev_team, md - 1) - cal(prev_team, prev_md)]
-  ret <- cand[cm >= club_matches, .(player_id, ret_md = md, days_out = gap)]
+  cand <- merge(cand, fpt, by = c("player_id", "team_id"))
+  # matches of the club he CAME BACK TO during the gap, and he must have played for it before (as respell())
+  cand[, cm := cal(team_id, md - 1) - cal(team_id, prev_md)]
+  ret <- cand[cm >= club_matches & first_pt <= prev_md, .(player_id, ret_md = md, days_out = gap)]
   last_ret <- ret[, .SD[which.max(ret_md)], by = player_id]
   # minutes since the last return (that return's match included)
   A <- merge(A, last_ret, by = "player_id", all.x = TRUE)
@@ -101,6 +114,5 @@ returner_status <- function(lineups, as_of, gap_days = 60L, club_matches = 8L,
   out[, back := !is.na(days_out) & data.table::fcoalesce(minutes_since_return, 0) < window_minutes]
   out[, returning := still_out | back]
   out[still_out == TRUE, `:=`(days_out = out_days, minutes_since_return = 0)]
-  out[returning == FALSE & still_out == FALSE & is.na(minutes_since_return), minutes_since_return := NA_real_]
   out[, .(player_id, returning, days_out, minutes_since_return)]
 }

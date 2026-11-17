@@ -54,3 +54,28 @@ test_that("returner_status is as-at: rows on or after as_of are ignored", {
   expect_true(s[player_id == "p", returning])
   expect_equal(s[player_id == "p", minutes_since_return], 0)
 })
+
+test_that("a corrupt minutes value or a duplicated row does not end the window early (review of #497)", {
+  back <- club[club >= as.Date("2026-06-04")]
+  lu <- mk_lineups(c(club[1:9], back))
+  lu$minutes_played[lu$player_id == "p" & lu$match_date == back[1]] <- 99999     # corrupt value: capped at 120
+  s <- returner_status(lu, back[5] + 1)
+  expect_true(s[player_id == "p", returning])
+  expect_equal(s[player_id == "p", minutes_since_return], 120 + 4 * 90)
+  lu2 <- mk_lineups(c(club[1:9], back))
+  lu2 <- rbind(lu2, lu2[lu2$player_id == "p" & lu2$match_date == back[2], ])     # same (match, player) twice
+  expect_equal(returner_status(lu2, back[5] + 1)[player_id == "p", minutes_since_return], 450)
+})
+
+test_that("a transfer debut after 60+ days is not a return; coming back to his own club is (as the validity tests)", {
+  lu <- mk_lineups(club[1:9])                                  # p plays for C until 2026-02-26
+  newc <- data.frame(player_id = "q", team_id = "N", match_id = paste0("n", seq_along(club)),
+                     match_date = club, minutes_played = 90)   # club N also plays weekly
+  deb <- data.frame(player_id = "p", team_id = "N", match_id = paste0("n", 23), match_date = club[23], minutes_played = 90)
+  s <- returner_status(rbind(lu, newc, deb), club[23] + 1)     # debut for N on club[23]
+  expect_false(s[player_id == "p", returning])
+  expect_true(is.na(s[player_id == "p", days_out]))
+  back <- data.frame(player_id = "p", team_id = "C", match_id = paste0("m", 23), match_date = club[23], minutes_played = 90)
+  s2 <- returner_status(rbind(lu, back), club[23] + 1)         # back at C instead
+  expect_true(s2[player_id == "p", returning])
+})

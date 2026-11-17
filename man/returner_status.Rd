@@ -9,7 +9,8 @@ returner_status(
   as_of,
   gap_days = 60L,
   club_matches = 8L,
-  window_minutes = 900
+  window_minutes = 900,
+  minutes_cap = 120
 )
 }
 \arguments{
@@ -20,11 +21,15 @@ returner_status(
 \item{as_of}{Date the status is wanted for.}
 
 \item{gap_days, club_matches, window_minutes}{The return rule.}
+
+\item{minutes_cap}{Minutes above this in one match are treated as this.}
 }
 \value{
 data.table with one row per player seen before \code{as_of}: \code{player_id},
-\code{returning} (logical), \code{days_out} (length of the current or last
-qualifying gap, NA if none) and \code{minutes_since_return}.
+\code{returning} (logical), \code{days_out} (length of the current gap if he is still
+out, else of his last qualifying gap; NA if none) and \code{minutes_since_return}
+(0 while still out, even if he had an earlier return; NA if he never had a
+qualifying gap).
 }
 \description{
 A player is returning on \code{as_of} when either:
@@ -32,11 +37,18 @@ A player is returning on \code{as_of} when either:
 \item he is still out: no minutes for at least \code{gap_days} before \code{as_of},
 while his last club played at least \code{club_matches} matches since; or
 \item he is back: his last such gap ended before \code{as_of}, and he has played
-fewer than \code{window_minutes} minutes since it ended.
+fewer than \code{window_minutes} minutes since it ended. The gap counts only if
+the club he came back to had played at least \code{club_matches} matches in it
+and he had played for that club before the gap (so a transfer debut is
+not a return).
 }
-This is the same return rule as the panna#497 validity tests. Minutes
-count every competition in \code{lineups}. A player who retired or left the
-covered competitions stays "still out" indefinitely (23.6\% of the 100,378
+This is the same return rule as the panna#497 validity tests
+(\code{respell()} / \code{build_hist()} in pannaverse
+\code{docs/reviews/panna-validity-2026-11/panna_validity_common.R}), which is what
+the 0.85 in \code{\link[=returner_adjusted_panna]{returner_adjusted_panna()}} was tuned on. Minutes count every
+competition in \code{lineups}, one row per (match, player), capped at
+\code{minutes_cap} (the lineups hold a few corrupt values in the tens of thousands). A player who retired or left the
+covered competitions stays "still out" indefinitely (19.7\% of the 100,378
 players seen since 2024, as at 2026-11-09), so filter to the players you
 are showing or predicting for before reading the share.
 }
