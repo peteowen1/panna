@@ -260,6 +260,10 @@ jobs:
           devtools::load_all()
           pannadata_dir(pannadata_path)
           opta_data_dir(opta_path)
+          # Also write 01_match_stats_narrow.rds / _recent.rds: steps 02, 02b and 10b read
+          # those, because one full load of 01_match_stats.rds no longer fits next to the
+          # rest of this run on the 16 GB runner (panna#469 row growth; run 43716225914).
+          write_predictions_sidecars <- TRUE
           run_steps <- list(
             step_01_compute_match_stats    = TRUE,
             step_01c_keeper_style          = TRUE,
@@ -278,6 +282,10 @@ jobs:
           EOF
           Rscript /tmp/run_step01.R
           test -f data-raw/cache-skills/01_match_stats.rds || { echo "FATAL: step 01 wrote no 01_match_stats.rds"; exit 1; }
+          for f in 01_match_stats_narrow.rds 01_match_stats_recent.rds; do
+            test -f "data-raw/cache-skills/$f" || { echo "FATAL: step 01 wrote no $f (steps 02/02b/10b would load the full table and run out of memory)"; exit 1; }
+          done
+          ls -la data-raw/cache-skills/01_match_stats*.rds
 
       - name: Run predictions pipeline
         env:

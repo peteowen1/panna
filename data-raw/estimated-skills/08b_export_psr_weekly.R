@@ -269,6 +269,59 @@ psr_model_fingerprint <- digest::digest(list(
 ), algo = "sha256")
 message(sprintf("  PSR model fingerprint: %s", substr(psr_model_fingerprint, 1, 12)))
 
+# Narrow BEFORE the incremental check (2026-11-16): the 11 Nov run peaked at
+# 13.0 GB holding the full-width table (8.4 GB R heap at 2.15M rows) while the
+# check below read the existing parquet; at 2.49M rows (panna#469 lineup
+# minutes) that reaches ~14.3 GB on the 16 GB runner. Nothing between here
+# and the snapshot loop reads the dropped columns.
+
+# Auto-detect stat columns the same way estimate_player_skills() does
+# Detect skill columns the SAME way the package estimator does. MUST catch
+# `_per90` (the xG / finishing over-performance xMetrics + the 5 duel WOE), not
+# just `_p90`, and union the registered PSR/GK skill lists. The old `_p90$`-only
+# grep silently dropped every `_per90` feature from the weekly PSR — they were in
+# the coefficient set but never estimated here. See psr.R
+# .estimate_prematch_skills_batch (same `_p90$|_per90$` + skill-col union).
+p90_cols   <- grep("_p90$|_per90$", names(match_stats), value = TRUE)
+eff_cols   <- intersect(names(.classify_skill_stats()), names(match_stats))
+reg_cols   <- tryCatch(union(.get_psr_skill_cols(), .get_gk_skill_cols()),
+                       error = function(e) character(0))
+stat_cols_all <- intersect(unique(c(p90_cols, eff_cols, reg_cols)), names(match_stats))
+cat(sprintf("  Stat columns detected: %d\n", length(stat_cols_all)))
+
+# panna#128: narrow match_stats ONCE to only the columns anything downstream
+# actually reads. 01_match_stats.rds carries 400+ box-score/metadata columns;
+# estimate_player_skills() only ever touches player_id/player_name/match_date/
+# position/total_minutes/stat_cols, but ALSO looks up denominator columns for
+# efficiency-ratio stats (e.g. shots for shot_accuracy) via .compute_denominator()
+# — those are real box-score columns, not derived, so they must be kept too.
+# Every downstream operation (setorder, the offsets pl_src extraction, the
+# per-date loop's own `dt[md < target_date]` filter inside
+# estimate_player_skills) was paying to touch/copy/reorder all 400+ columns
+# when it only ever needed ~165 — the compounding cost behind the OOM.
+# Verified locally: narrowed vs full-width match_stats produce IDENTICAL
+# skill estimates (data-raw/debug/_run_verify_narrow_equivalence.R). Built via
+# `[[` (not bracket-select) — same safe pattern as the pl_src fix below.
+.log_rss("08b: before narrowing match_stats")
+.psr_lg_col_early <- if ("competition" %in% names(match_stats)) "competition" else
+                     if ("league" %in% names(match_stats)) "league" else NULL
+needed_cols_loop <- .compute_snapshot_loop_columns(
+  available_cols = names(match_stats),
+  stat_cols = stat_cols_all,
+  extra_cols = c("player_id", "player_name", "match_date", "position",
+                "total_minutes", .psr_lg_col_early)
+)
+match_stats <- data.table::setDT(stats::setNames(
+  lapply(needed_cols_loop, function(cc) match_stats[[cc]]),
+  needed_cols_loop
+))
+cat(sprintf("  Narrowed match_stats to %d columns for the snapshot loop\n", ncol(match_stats)))
+# The full-width table (~420 cols) is unreferenced now but not yet collected;
+# free it before the next allocations. 2026-10-14 the runner died right here
+# twice once the table grew past ~2.1M rows (runs 38506136847, 38507208923).
+gc(verbose = FALSE, full = TRUE)
+.log_rss("08b: after narrowing match_stats")
+
 # Read as an Arrow Table, NOT a data frame (2026-10-14 OOM, run 38584211411):
 # the 8.2M-row file is ~0.6 GB in R, and as.data.table() plus the subset
 # copies below took ~2.5 GB on top of match_stats' 9.2 GB, killing the
@@ -492,52 +545,6 @@ if (!is.null(keep_existing) && nrow(keep_existing) > 0) {
 
 cat("\n=== Pre-Computing Shared Priors ===\n")
 
-# Auto-detect stat columns the same way estimate_player_skills() does
-# Detect skill columns the SAME way the package estimator does. MUST catch
-# `_per90` (the xG / finishing over-performance xMetrics + the 5 duel WOE), not
-# just `_p90`, and union the registered PSR/GK skill lists. The old `_p90$`-only
-# grep silently dropped every `_per90` feature from the weekly PSR — they were in
-# the coefficient set but never estimated here. See psr.R
-# .estimate_prematch_skills_batch (same `_p90$|_per90$` + skill-col union).
-p90_cols   <- grep("_p90$|_per90$", names(match_stats), value = TRUE)
-eff_cols   <- intersect(names(.classify_skill_stats()), names(match_stats))
-reg_cols   <- tryCatch(union(.get_psr_skill_cols(), .get_gk_skill_cols()),
-                       error = function(e) character(0))
-stat_cols_all <- intersect(unique(c(p90_cols, eff_cols, reg_cols)), names(match_stats))
-cat(sprintf("  Stat columns detected: %d\n", length(stat_cols_all)))
-
-# panna#128: narrow match_stats ONCE to only the columns anything downstream
-# actually reads. 01_match_stats.rds carries 400+ box-score/metadata columns;
-# estimate_player_skills() only ever touches player_id/player_name/match_date/
-# position/total_minutes/stat_cols, but ALSO looks up denominator columns for
-# efficiency-ratio stats (e.g. shots for shot_accuracy) via .compute_denominator()
-# — those are real box-score columns, not derived, so they must be kept too.
-# Every downstream operation (setorder, the offsets pl_src extraction, the
-# per-date loop's own `dt[md < target_date]` filter inside
-# estimate_player_skills) was paying to touch/copy/reorder all 400+ columns
-# when it only ever needed ~165 — the compounding cost behind the OOM.
-# Verified locally: narrowed vs full-width match_stats produce IDENTICAL
-# skill estimates (data-raw/debug/_run_verify_narrow_equivalence.R). Built via
-# `[[` (not bracket-select) — same safe pattern as the pl_src fix below.
-.log_rss("08b: before narrowing match_stats")
-.psr_lg_col_early <- if ("competition" %in% names(match_stats)) "competition" else
-                     if ("league" %in% names(match_stats)) "league" else NULL
-needed_cols_loop <- .compute_snapshot_loop_columns(
-  available_cols = names(match_stats),
-  stat_cols = stat_cols_all,
-  extra_cols = c("player_id", "player_name", "match_date", "position",
-                "total_minutes", .psr_lg_col_early)
-)
-match_stats <- data.table::setDT(stats::setNames(
-  lapply(needed_cols_loop, function(cc) match_stats[[cc]]),
-  needed_cols_loop
-))
-cat(sprintf("  Narrowed match_stats to %d columns for the snapshot loop\n", ncol(match_stats)))
-# The full-width table (~420 cols) is unreferenced now but not yet collected;
-# free it before the next allocations. 2026-10-14 the runner died right here
-# twice once the table grew past ~2.1M rows (runs 38506136847, 38507208923).
-gc(verbose = FALSE, full = TRUE)
-.log_rss("08b: after narrowing match_stats")
 
 # Pre-sort by date so each date filter is a fast prefix scan
 data.table::setorder(match_stats, match_date)

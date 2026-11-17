@@ -6,9 +6,10 @@
 ## cwd-relative, not script-relative. Moved here from debug/keep/ 2026-06-23 so
 ## it's version-controlled and can run in CI (epr-weekly-snapshot.yml); the old
 ## location was gitignored, which is why EPR had no automated rebuild.
-## INCREMENTAL: reuses snapshots older than a 28-day buffer from the existing
-## opta_epr_weekly.parquet and recomputes only the recent window (~3 min vs
-## ~25 min full). Set EPR_FORCE_FULL_REBUILD=1 to recompute every snapshot.
+## FULL REBUILD by default (since 2026-11-15, ~25-46 min on a runner): every
+## snapshot is refitted from today's game logs, so the file is one vintage.
+## EPR_INCREMENTAL=1 reuses snapshots older than a 28-day buffer (~3 min) for a
+## quick local run; see section 4b for why that is no longer the default.
 ##
 ## Method: calculate_epr_regression() — for each snapshot date, fit a weighted
 ## ridge regression
@@ -339,6 +340,15 @@ data.table::setkey(glb, match_date)
 end_date   <- max(gl$match_date)
 start_date <- min(gl$match_date) + 90L   # skip first ~3 months (thin history)
 snapshots  <- seq(start_date, end_date, by = "week")
+## The weekly grid is anchored on the first match date, so it lands on one weekday
+## (Fridays) and every fit uses match_date < ref_date. A Wednesday run therefore
+## stopped at the previous Friday: the file published 2026-11-11 had its newest
+## snapshot at 2026-11-06 and held no match from that weekend, and by the next
+## run the "current" EPR was two weekends behind. Add one snapshot the day after
+## the newest match, as the weekly PSR file does. It is off the grid, so an
+## incremental run never reuses it (section 4b) and only the newest one exists.
+weekly_grid <- snapshots
+if (end_date + 1L > max(snapshots)) snapshots <- c(snapshots, end_date + 1L)
 t_log(sprintf("Building %d weekly snapshots: %s -> %s",
               length(snapshots), start_date, end_date))
 
@@ -354,10 +364,25 @@ out_path <- "../pannadata/data/opta/opta_epr_weekly.parquet"
 ## Set EPR_FORCE_FULL_REBUILD=1 to force all 1346 snapshots (e.g. after a
 ## method/offset change that shifts historical values).
 RECOMPUTE_BUFFER_DAYS <- 28L
-force_full_epr <- nzchar(Sys.getenv("EPR_FORCE_FULL_REBUILD"))
+## DEFAULT IS NOW A FULL REBUILD (2026-11-15). Reuse is only sound while the game
+## logs an old snapshot was fitted on have not changed, and they change in two
+## ways nothing here can see cheaply: (1) rebuilds and re-pricings -- four between
+## June and November 2026, each of which left a join in the published file
+## (week-on-week correlation of EPR across all players, normally 0.999+, was
+## 0.920 at 2026-06-26 and 0.966 at 2026-09-18, and every player moved by +0.0046
+## in one week at 2026-09-25); (2) every weekly export re-centres the in-progress
+## season's epv_*_adj columns over the whole league-season, so even "unchanged"
+## matches carry slightly different values each run. A fingerprint of the old
+## game logs was tried and dropped in review: (2) makes it differ most weeks.
+## A full rebuild is 25-46 minutes on a runner and cannot mix vintages.
+## Set EPR_INCREMENTAL=1 for a quick local run that reuses old snapshots; do not
+## publish one. EPR_FORCE_FULL_REBUILD is still honoured and wins.
+## (pannaverse docs/reviews/FABLE-FULL-REVIEW-2026-11-15.md, W3.)
+force_full_epr <- nzchar(Sys.getenv("EPR_FORCE_FULL_REBUILD")) ||
+  !nzchar(Sys.getenv("EPR_INCREMENTAL"))
 keep_existing <- NULL
 if (force_full_epr) {
-  t_log("EPR_FORCE_FULL_REBUILD set — recomputing every snapshot")
+  t_log("Full rebuild (the default; EPR_INCREMENTAL=1 reuses old snapshots) — recomputing every snapshot")
 } else if (file.exists(out_path)) {
   existing_epr <- tryCatch(as.data.table(read_parquet(out_path)),
                            error = function(e) { t_log(sprintf(
@@ -386,7 +411,8 @@ if (force_full_epr) {
       nrow(existing_epr) > 0) {
     existing_epr[, snapshot_date := as.Date(snapshot_date)]
     cutoff <- end_date - RECOMPUTE_BUFFER_DAYS
-    keep_existing <- existing_epr[snapshot_date < cutoff]
+    ## Grid dates only: a previous run's run-date snapshot is not reused.
+    keep_existing <- existing_epr[snapshot_date < cutoff & snapshot_date %in% weekly_grid]
     snapshots <- snapshots[snapshots >= cutoff]
     t_log(sprintf("Incremental: reuse %s rows (<%s), recompute %d snapshots (>=%s)",
                   format(nrow(keep_existing), big.mark = ","), cutoff,

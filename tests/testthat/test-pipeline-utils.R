@@ -433,6 +433,80 @@ test_that("current_domestic_season agrees with the Python twin's convention", {
   expect_equal(current_domestic_season(as.Date("2030-02-14")), "2029-2030")
 })
 
+# ===========================================================================
+# calendar_catchup_plan -- calendar-year leagues the clock season skips
+# ===========================================================================
+# MLS / Argentina / Brazil 2026 are filed under "2025-2026". From 1 August the
+# clock season is "2026-2027" and its calendar label ("2027") does not exist, so
+# the daily game-log run skipped the three leagues until their season ended: in
+# 2026 their logs stood still from 29 September to 14 November on green runs.
+# The resolver is injected so these tests need no Opta catalog.
+
+.fake_resolver <- function(labels) {
+  function(league, domestic_season, tournament_leagues = character(0)) {
+    if (!league %in% tournament_leagues) return(domestic_season)
+    end_year <- sub(".*-", "", domestic_season)
+    hit <- labels[[league]][labels[[league]] == end_year]
+    if (length(hit)) hit[1] else NULL
+  }
+}
+
+test_that("previous_domestic_season steps back one year and rejects other labels", {
+  expect_equal(previous_domestic_season("2026-2027"), "2025-2026")
+  expect_equal(previous_domestic_season("2000-2001"), "1999-2000")
+  expect_error(previous_domestic_season("2026"), "YYYY-YYYY")
+  expect_error(previous_domestic_season("2026 Canada-Mexico-USA"), "YYYY-YYYY")
+})
+
+test_that("calendar_catchup_plan names the leagues with no label for the clock season", {
+  res <- .fake_resolver(list(MLS = c("2025", "2026"), ARG = c("2025", "2026"),
+                             BRA = c("2025", "2026")))
+  plan <- calendar_catchup_plan("2026-2027", c("MLS", "ARG", "BRA"), resolver = res)
+  expect_equal(plan$season, "2025-2026")
+  expect_equal(plan$leagues, c("MLS", "ARG", "BRA"))
+  expect_length(plan$unresolved, 0)
+})
+
+test_that("calendar_catchup_plan reports a league with no label in either season", {
+  # resolve_league_season() returns NULL when the catalog read fails, which
+  # looks the same as "no label". An empty plan must not pass for "all caught up".
+  dead <- function(league, domestic_season, tournament_leagues = character(0)) NULL
+  plan <- calendar_catchup_plan("2026-2027", c("MLS", "ARG", "BRA"), resolver = dead)
+  expect_length(plan$leagues, 0)
+  expect_equal(plan$unresolved, c("MLS", "ARG", "BRA"))
+  # One league readable, one not.
+  res <- .fake_resolver(list(MLS = "2026", BRA = character(0)))
+  plan <- calendar_catchup_plan("2026-2027", c("MLS", "BRA"), resolver = res)
+  expect_equal(plan$leagues, "MLS")
+  expect_equal(plan$unresolved, "BRA")
+})
+
+test_that("calendar_catchup_plan drops a league once its new label exists", {
+  # February 2027: MLS 2027 has started, Brazil 2027 has not.
+  res <- .fake_resolver(list(MLS = c("2026", "2027"), BRA = "2026"))
+  plan <- calendar_catchup_plan("2026-2027", c("MLS", "BRA"), resolver = res)
+  expect_equal(plan$leagues, "BRA")
+})
+
+test_that("calendar_catchup_plan is empty before 1 August and for a league with no history", {
+  # Before August the clock season is "2025-2026", which resolves to "2026".
+  res <- .fake_resolver(list(MLS = c("2025", "2026"), NEW = character(0)))
+  expect_length(calendar_catchup_plan("2025-2026", "MLS", resolver = res)$leagues, 0)
+  # A league with no label in either season has nothing to catch up.
+  expect_length(calendar_catchup_plan("2026-2027", "NEW", resolver = res)$leagues, 0)
+  expect_equal(calendar_catchup_plan("2026-2027", "NEW", resolver = res)$unresolved, "NEW")
+  expect_identical(calendar_catchup_plan("2026-2027", character(0), resolver = res)$leagues,
+                   character(0))
+})
+
+test_that("calendar_catchup_plan leaves split-season leagues alone", {
+  # A league outside season_label_leagues resolves to the domestic label itself.
+  res <- .fake_resolver(list(MLS = "2026"))
+  plan <- calendar_catchup_plan("2026-2027", c("MLS", "ENG"),
+                                season_label_leagues = "MLS", resolver = res)
+  expect_equal(plan$leagues, "MLS")
+})
+
 test_that("current_domestic_season defaults to the clock", {
   expect_equal(current_domestic_season(), current_domestic_season(Sys.Date()))
   expect_match(current_domestic_season(), "^[0-9]{4}-[0-9]{4}$")

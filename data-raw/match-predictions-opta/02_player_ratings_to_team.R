@@ -661,7 +661,12 @@ if (nrow(upcoming) > 0) {
     tryCatch({
       message("  Computing date-specific skill estimates for fixtures...")
 
-      match_stats <- readRDS(match_stats_path)
+      # The narrow side file (every row, the columns read here) when step 01 wrote a
+      # current one: the full table no longer fits a 16 GB runner here (panna#469 row growth).
+      .ms_narrow <- .predictions_match_stats_sidecar(match_stats_path, "narrow")
+      match_stats <- readRDS(if (is.null(.ms_narrow)) match_stats_path else .ms_narrow)
+      message(sprintf("  Loaded %s: %d rows x %d cols",
+                      basename(.ms_narrow %||% match_stats_path), nrow(match_stats), ncol(match_stats)))
       # Narrow columns BEFORE the row-filter (421 -> ~167 cols): the filter
       # below copies whatever width it's handed, and everything downstream
       # (estimate_player_skills_at_date and its internals) reads only the

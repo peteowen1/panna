@@ -1,3 +1,27 @@
+# panna 0.3.121
+
+- `career-panna.yml` now runs every Monday at 20:00 UTC and publishes `career_panna.parquet` (#494).
+  It had no schedule, so the site's Panna sat at the 2026-10-18 build for four weeks.
+
+# panna 0.3.120
+
+- The weekly EPR job rebuilds every snapshot from the current game logs on each run, and adds a
+  snapshot for the day after the newest match (#488). The published file was a join of fits made on
+  different game-log vintages. The first run after this changes every historical EPR value slightly.
+- The weekly PSR job (08b) narrows `match_stats` before its incremental check instead of after
+  (#492). Dry-run peak 13.0 GB -> 8.5 GB of the 16 GB runner.
+- 10b catches up MLS, Argentina and Brazil game logs that the clock-season logic skipped (#486).
+- Removed `archive/` (the retired FBref/Understat pipeline) and fixed CLAUDE.md drift (#485).
+
+# panna 0.3.119
+
+- The predictions pipeline no longer runs out of memory on the GHA runner (#490). Lineup minutes
+  (panna#469) grew `01_match_stats.rds` to 2.49M rows x 427 cols, and steps 02, 02b and 10b each
+  read all of it. Step 01 now also writes `01_match_stats_narrow.rds` (every row, the 173 columns
+  those steps use) and `01_match_stats_recent.rds` (all columns, last 3 seasons) when
+  `write_predictions_sidecars` is TRUE. The steps read those, and fall back to the full table when
+  either file is missing or older than it. 10b peak: 12.2 GB -> 9.6 GB.
+
 # panna 0.3.118
 
 - Game logs price shots with xG v5.2 / xGOT v3.2 (panna#465, #467/#468). All 23 published seasons
