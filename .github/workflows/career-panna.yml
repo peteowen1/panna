@@ -22,6 +22,10 @@ on:
         description: Publish career_panna.parquet to ratings-data (main/dev only)
         type: boolean
         default: false
+      force_publish:
+        description: Publish even if the rank check fails (a deliberate model or prior change)
+        type: boolean
+        default: false
   push:
     branches: ["career-panna-*"]
     paths: [".github/workflows/career-panna.yml", "data-raw/estimated-skills/09_career_panna.R"]
@@ -86,15 +90,14 @@ jobs:
           ls -la data-raw/cache-opta data-raw/cache-skills ../pannadata/data/opta /tmp/pub
           echo "prior: $PRIOR_ASSET ($(sha256sum data-raw/cache-skills/03_skill_spm.rds | cut -c1-16))"
 
+      # Build only. Publishing is its own step after the rank check, so an unattended
+      # scheduled run cannot replace the live file with a build that reorders it.
       - name: Step 09
-        env:
-          # The PAT only when this run may publish (vb_publish writes to pannadata);
-          # a branch run never holds it.
-          GITHUB_PAT: ${{ (env.PANNA_PUBLISH_DISABLED != 'true' && env.UPLOAD == 'true') && secrets.WORKFLOW_PAT || '' }}
         run: |
-          Rscript -e "upload_career_panna <- identical(Sys.getenv('UPLOAD'), 'true'); source('data-raw/estimated-skills/09_career_panna.R')"
+          Rscript -e "upload_career_panna <- FALSE; source('data-raw/estimated-skills/09_career_panna.R')"
 
       - name: Compare with the published file
+        id: compare
         run: |
           cat > /tmp/compare.R <<'EOF'
           suppressMessages(library(data.table))
@@ -108,8 +111,10 @@ jobs:
           m <- merge(new, pub[, .(player_id, pub_panna = panna, pub_rank)], by = "player_id", all.x = TRUE)
           m <- merge(m, pr, by = "player_id", all.x = TRUE)
           m[, prior := po + pd][, from_recent := panna - prior]
-          cat(sprintf("rows: new %d, published %d; rank Spearman vs published %.3f\n", nrow(new), nrow(pub),
-                      cor(m$rank, m$pub_rank, method = "spearman", use = "complete.obs")))
+          rho <- cor(m$rank, m$pub_rank, method = "spearman", use = "complete.obs")
+          cat(sprintf("rows: new %d, published %d; rank Spearman vs published %.3f\n", nrow(new), nrow(pub), rho))
+          cat(sprintf("spearman=%.4f\nrows_new=%d\nrows_pub=%d\n", rho, nrow(new), nrow(pub)),
+              file = Sys.getenv("GITHUB_OUTPUT"), append = TRUE)
           cat("\nTop 20, new build (panna = prior + from_recent; published rank for comparison):\n")
           print(m[order(rank)][1:20, .(player_name, rank, panna = round(panna, 3), prior = round(prior, 3),
                                        from_recent = round(from_recent, 3), pub_rank, mins = round(total_minutes))])
@@ -129,3 +134,33 @@ jobs:
           name: career-panna
           path: _out/career_panna.parquet
           retention-days: 14
+
+      # A plain weekly rebuild scored 1.000 against the published file on 2026-10-18;
+      # the deliberate prior change that day (panna#257) scored 0.899. MIN_SPEARMAN sits
+      # between them: a week of new matches passes, a silent reordering stops here and
+      # leaves the live file alone. A deliberate change is published with force_publish.
+      # Row loss is vb_publish's job (min_row_frac = 0.9).
+      - name: Rank check and publish
+        if: env.UPLOAD == 'true' && env.PANNA_PUBLISH_DISABLED != 'true'
+        env:
+          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+          MIN_SPEARMAN: "0.95"
+          SPEARMAN: ${{ steps.compare.outputs.spearman }}
+          ROWS_NEW: ${{ steps.compare.outputs.rows_new }}
+          FORCE: ${{ inputs.force_publish && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SPEARMAN" ] || [ "$SPEARMAN" = "NA" ]; then
+            echo "::error title=No rank check::the compare step produced no Spearman value; not publishing."
+            exit 1
+          fi
+          if awk -v s="$SPEARMAN" -v m="$MIN_SPEARMAN" 'BEGIN { exit !(s < m) }'; then
+            if [ "$FORCE" != "true" ]; then
+              echo "::error title=Rank check failed::rank Spearman vs published $SPEARMAN < $MIN_SPEARMAN; the live file is unchanged. If the change is deliberate, re-run by dispatch with upload and force_publish."
+              echo "> **Not published:** rank Spearman vs published $SPEARMAN < $MIN_SPEARMAN." >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+            echo "::warning title=Forced publish::rank Spearman $SPEARMAN < $MIN_SPEARMAN, published because force_publish was set."
+          fi
+          Rscript -e "devtools::load_all(quiet = TRUE); m <- vb_publish('../pannadata/data/opta/career_panna.parquet', repo = 'peteowen1/pannadata', tag = 'ratings-data', rows = c(career_panna.parquet = as.integer(Sys.getenv('ROWS_NEW'))), min_row_frac = 0.9); cat(sprintf('Uploaded career_panna.parquet to ratings-data, generation %s.\n', m\$generation))"
+          echo "> **Published** (rank Spearman vs published $SPEARMAN)." >> "$GITHUB_STEP_SUMMARY"
