@@ -43,6 +43,12 @@
 #' @param adj Optional output of [ng_build_adjacency()].
 #' @param start The even start every team is measured from. Default 0.5.
 #' @param dacts_share Passed to [ng_spread_pools()]. Default 0 (flat pools).
+#' @param own_goal_credit Share of the scoring side's gain from an own goal
+#'   paid to its last player on the ball before it, as his own (`wpa_own`, role
+#'   `own_goal_setup`); the rest stays in the team pool, spread by minutes. The
+#'   player who put it in his own net keeps his blame. Default 0.25 (Pete,
+#'   2026-11-19: a bit more credit for the player before, not all of it). 0
+#'   gives the old split.
 #' @param tol Largest allowed gap between a team's total and its target, and
 #'   between the engine's match total and (result - opening win chance).
 #' @param verbose Print a summary. Default `TRUE`.
@@ -59,8 +65,12 @@
 #' @family win probability
 #' @export
 wpa_build_ledger <- function(actions, wp_actions, fixtures, lineups, adj = NULL,
-                             start = 0.5, dacts_share = 0, tol = 1e-6,
-                             verbose = TRUE) {
+                             start = 0.5, dacts_share = 0, own_goal_credit = 0.25,
+                             tol = 1e-6, verbose = TRUE) {
+  if (!is.numeric(own_goal_credit) || length(own_goal_credit) != 1L || is.na(own_goal_credit) ||
+      own_goal_credit < 0 || own_goal_credit > 1) {
+    cli::cli_abort("{.arg own_goal_credit} must be one number between 0 and 1.")
+  }
   a <- data.table::as.data.table(actions)
   w <- data.table::as.data.table(wp_actions)
   fx <- data.table::as.data.table(fixtures)
@@ -115,6 +125,7 @@ wpa_build_ledger <- function(actions, wp_actions, fixtures, lineups, adj = NULL,
   pay <- ng_build_ledger(a, adj = adj, fixtures = fx[, .(match_id, home_team_id, away_team_id)],
                          lineups = lineups, convention = "team", shot_chain = FALSE,
                          shot_aftermath = FALSE, verbose = FALSE)
+  pay <- .wpa_own_goal_setup(pay, a, share = own_goal_credit, verbose = verbose)
   pay <- ng_spread_pools(pay, a, lineups, dacts_share = dacts_share, verbose = FALSE)
   pg <- data.table::as.data.table(ng_player_game(pay, lineups, verbose = FALSE))
 
@@ -153,7 +164,7 @@ wpa_build_ledger <- function(actions, wp_actions, fixtures, lineups, adj = NULL,
   own_r <- setdiff(roles, c(shared_r, won_r))
   # Named so a new engine role is a decision, not a silent default into `own`.
   own_known <- c("actor", "receiver", "shooter", "stopper_rebound",
-                 "shot_strike", "shot_finish", "shot_aftermath")
+                 "shot_strike", "shot_finish", "shot_aftermath", "own_goal_setup")
   if (length(unk <- setdiff(own_r, own_known))) {
     cli::cli_abort("WPA ledger: role{?s} {.val {unk}} not assigned to own, won or shared; add {?it/them} in {.fn wpa_build_ledger}.")
   }
@@ -181,4 +192,36 @@ wpa_build_ledger <- function(actions, wp_actions, fixtures, lineups, adj = NULL,
   }
   data.table::setattr(pg, "targets", tg[])
   pg[]
+}
+
+# Own goals (panna#273, Pete 2026-11-19). The engine books the scoring side's gain
+# from an own goal to that side's pool, so every player on it gets the same small
+# share. Move `share` of it to the scoring side's last player on the ball before
+# the own goal, as his own credit (role "own_goal_setup", offence); the rest stays
+# in the pool. The own-goal scorer's blame is untouched, so each team's total is
+# unchanged. An own goal with no earlier action by the other side keeps the pool.
+.wpa_own_goal_setup <- function(pay, actions, share, verbose = TRUE) {
+  p <- data.table::as.data.table(pay)
+  if (share <= 0 || !"is_own_goal" %in% names(actions)) return(p)
+  a <- data.table::as.data.table(actions)
+  og <- a[a$is_own_goal %in% TRUE]
+  if (!nrow(og)) return(p)
+  n_moved <- 0L; moved <- 0; add <- vector("list", nrow(og))
+  for (i in seq_len(nrow(og))) {
+    m <- og$match_id[i]; aid <- og$action_id[i]; tm <- og$team_id[i]
+    prior <- a[a$match_id == m & a$action_id < aid & a$team_id != tm & !is.na(a$player_id)]
+    pool <- which(p$match_id == m & p$action_id == aid & p$role == "pool_def" & p$team_id != tm)
+    if (!nrow(prior) || !length(pool)) next
+    who <- prior[which.max(prior$action_id)]
+    new <- data.table::copy(p[pool])
+    new[, `:=`(player_id = who$player_id, role = "own_goal_setup", entry = "offence",
+               value_own = value_own * share, value_home = value_home * share)]
+    p[pool, `:=`(value_own = value_own * (1 - share), value_home = value_home * (1 - share))]
+    add[[i]] <- new
+    n_moved <- n_moved + 1L; moved <- moved + sum(new$value_own)
+  }
+  if (isTRUE(verbose) && n_moved > 0L) {
+    cli::cli_alert_info("WPA ledger: {n_moved} own goal{?s}: {round(100 * share)}% of the scoring side's gain ({signif(moved, 3)} in all) to its last player on the ball before it.")
+  }
+  data.table::rbindlist(c(list(p), add), use.names = TRUE, fill = TRUE)
 }

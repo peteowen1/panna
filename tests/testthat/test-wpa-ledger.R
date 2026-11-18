@@ -122,3 +122,25 @@ test_that("add_wp_vars(centre = FALSE) keeps the raw change; the default still c
   cen <- add_wp_vars(data.table::copy(d), wp_model = NULL)
   expect_equal(sum(cen$wpa), 0, tolerance = 1e-12)
 })
+
+test_that("an own goal pays a share of the scoring side's gain to its last player before it", {
+  # Action 4 becomes an own goal by a2 (team A): A's win chance falls 0.30 in A's
+  # frame, the same +0.30 for H. The engine books all of H's +0.30 to H's pool
+  # (nobody on H is named for it); with own_goal_credit = 0.25, 0.25 x 0.30 = 0.075
+  # goes to h2 (H's last action before it, action 3) and the pool keeps 0.225,
+  # spread over H's 11 players. a2's blame and both team totals do not move.
+  act <- wpa_fx_actions(); act$team_id[4] <- "A"; act$player_id[4] <- "a2"
+  act$is_own_goal <- c(FALSE, FALSE, FALSE, TRUE)
+  wp <- wpa_fx_wp(); wp$team_id[4] <- "A"; wp$wp[4] <- 0.30; wp$wpa[4] <- -0.30
+  p0 <- wpa_build_ledger(act, wp, wpa_fx_fixtures(), wpa_fx_lineup(), own_goal_credit = 0, verbose = FALSE)
+  p1 <- wpa_build_ledger(act, wp, wpa_fx_fixtures(), wpa_fx_lineup(), verbose = FALSE)
+  v <- function(p, id, col = "wpa_neutral") p[player_id == id][[col]]
+  expect_equal(v(p1, "h2", "wpa_own_goal_setup"), 0.075, tolerance = 1e-12)
+  expect_equal(v(p1, "h2") - v(p0, "h2"), 0.075 - 0.075 / 11, tolerance = 1e-12)
+  expect_equal(v(p1, "h5") - v(p0, "h5"), -0.075 / 11, tolerance = 1e-12)
+  expect_equal(v(p1, "a2"), v(p0, "a2"), tolerance = 1e-12)
+  expect_equal(p1[, sum(wpa_neutral), by = team_id]$V1, p0[, sum(wpa_neutral), by = team_id]$V1, tolerance = 1e-12)
+  expect_equal(p1$wpa_own + p1$wpa_won + p1$wpa_shared, p1$wpa_neutral, tolerance = 1e-12)
+  expect_error(wpa_build_ledger(act, wp, wpa_fx_fixtures(), wpa_fx_lineup(), own_goal_credit = 2,
+                                verbose = FALSE), "between 0 and 1")
+})
