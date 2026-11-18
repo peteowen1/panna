@@ -162,5 +162,5 @@ jobs:
             fi
             echo "::warning title=Forced publish::rank Spearman $SPEARMAN < $MIN_SPEARMAN, published because force_publish was set."
           fi
-          Rscript -e "devtools::load_all(quiet = TRUE); m <- vb_publish('../pannadata/data/opta/career_panna.parquet', repo = 'peteowen1/pannadata', tag = 'ratings-data', rows = c(career_panna.parquet = as.integer(Sys.getenv('ROWS_NEW'))), min_row_frac = 0.9); cat(sprintf('Uploaded career_panna.parquet to ratings-data, generation %s.\n', m\$generation))"
+          Rscript -e "devtools::load_all(quiet = TRUE); m <- vb_publish('../pannadata/data/opta/career_panna.parquet', repo = 'peteowen1/pannadata', tag = 'ratings-data', rows = c(career_panna.parquet = as.integer(Sys.getenv('ROWS_NEW'))), min_row_frac = 0.9); cat(sprintf('Uploaded career_panna.parquet to ratings-data, generation %s.\n', m[['generation']]))"
           echo "> **Published** (rank Spearman vs published $SPEARMAN)." >> "$GITHUB_STEP_SUMMARY"
