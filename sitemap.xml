@@ -303,6 +303,9 @@
 <url><loc>https://peteowen1.github.io/panna/reference/dot-panel_defense_sign_constraints.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-panel_offense_sign_constraints.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-player_role.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-predictions_match_stats_cols.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-predictions_match_stats_sidecar.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-predictions_match_stats_sidecar_paths.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-psr_checkpoint_reject_reason.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-psr_checkpoint_usable.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-psv_minutes_col.html</loc></url>
@@ -346,6 +349,7 @@
 <url><loc>https://peteowen1.github.io/panna/reference/dot-vb_retry.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-wc2026_fixtures_remaining.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/dot-wc2026_group_label.html</loc></url>
+<url><loc>https://peteowen1.github.io/panna/reference/dot-write_predictions_match_stats_sidecars.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/download_opta_catalog.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/download_opta_release_file.html</loc></url>
 <url><loc>https://peteowen1.github.io/panna/reference/draw_pitch.html</loc></url>

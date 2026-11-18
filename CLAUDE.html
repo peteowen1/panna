@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.125</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.126</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -195,7 +195,7 @@ Stat ratings → PSR/OSR/DSR (smoothed skills via glmnet) ───────�
 <td>Skills chain on runners, one job per stage: skills 01 -&gt; 04c decayed RAPM target -&gt; 02 -&gt; 03 -&gt; 06, then a coverage gate. Publishes <code>06_seasonal_ratings.rds</code>, <code>03_skill_spm.rds</code>, <code>psr_league_offsets.parquet</code> to predictions-cache</td>
 </tr><tr><td><code>career-panna.yml</code></td>
 <td>Monday 20:00 UTC (publishes, runs main’s copy; since 2026-11-17, before that it had no schedule and the site’s Panna went 4 weeks stale) / manual dispatch (<code>upload=true</code> publishes on main/dev); pushes to <code>career-panna-*</code> branches are dry builds</td>
-<td>Rebuilds <code>career_panna.parquet</code> (skills step 09, the rating called Panna) and publishes it to ratings-data. About 7 minutes</td>
+<td>Rebuilds <code>career_panna.parquet</code> (skills step 09, the rating called Panna) and publishes it to ratings-data, but only when its rank Spearman against the published file is at least 0.95 (<code>force_publish</code> dispatch input for a deliberate change). About 7 minutes</td>
 </tr><tr><td><code>career-panna-asof.yml</code></td>
 <td>2nd of the month 20:00 UTC (publishes, runs main’s copy) / manual dispatch</td>
 <td>Rebuilds <code>career_panna_asof.parquet</code> (step 09b, one leak-free career Panna fit per month) for the predictions model and 10b’s XI strength</td>
