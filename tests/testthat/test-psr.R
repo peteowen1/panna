@@ -2401,13 +2401,12 @@ test_that(".estimate_prematch_skills_batch(as_of = TRUE) stops without cached pr
   ms <- make_asof_test_data()
   dp <- make_asof_params(ms)
   ref <- as.Date("2024-02-10")
-  for (drop in c("position_multipliers", "prior_centers")) {
-    dp_missing <- dp; dp_missing[[drop]] <- NULL
-    expect_error(
-      panna:::.estimate_prematch_skills_batch(ms, ref_dates = ref, decay_params = dp_missing,
-                                              as_of = TRUE, verbose = FALSE),
-      "needs")
-  }
+  dp_missing <- dp; dp_missing$position_multipliers <- NULL
+  expect_error(
+    panna:::.estimate_prematch_skills_batch(ms, ref_dates = ref, decay_params = dp_missing,
+                                            as_of = TRUE, verbose = FALSE),
+    "needs")
+  # No cached centres is allowed: each date then centres on its own past (next test).
   # The default (full-history) mode keeps computing them itself, as step 07 relies on.
   dp_missing <- dp; dp_missing$position_multipliers <- NULL; dp_missing$prior_centers <- NULL
   expect_no_error(suppressWarnings(panna:::.estimate_prematch_skills_batch(
@@ -2448,6 +2447,48 @@ test_that(".estimate_prematch_skills_batch(as_of = TRUE) matches estimate_player
   early <- suppressMessages(estimate_player_skills(
     ms, decay_params = dp, target_date = ref[1], min_weighted_90s = 3))
   expect_lt(nrow(early), length(unique(ms$player_id)))
+})
+
+test_that("as_of with no cached centres centres each date on its own past, like estimate_player_skills", {
+  # Predictions step 02b passes position multipliers but no prior centres, so the
+  # single-date estimator centres on the pre-date rows (panna#442).
+  ms <- make_asof_test_data()
+  dp <- make_asof_params(ms); dp$prior_centers <- NULL
+  ref <- as.Date(c("2024-02-10", "2024-04-06", "2024-06-29"))
+  sc <- panna:::.detect_skill_stat_cols(data.table::as.data.table(ms))
+  b <- panna:::.estimate_prematch_skills_batch(
+    ms, ref_dates = ref, decay_params = dp, min_weighted_90s = 5, as_of = TRUE, verbose = FALSE)
+  for (d in as.character(ref)) {
+    single <- suppressMessages(estimate_player_skills(ms, decay_params = dp, target_date = as.Date(d)))
+    got <- b[[d]][match(single$player_id, player_id)]
+    expect_setequal(b[[d]]$player_id, single$player_id)
+    expect_identical(got$primary_position, single$primary_position)
+    for (s in sc) expect_equal(got[[s]], single[[s]], tolerance = 1e-10, label = paste(d, s))
+  }
+  # And it is not the full-history centre: centring on all dates moves the early snapshot.
+  dp_full <- make_asof_params(ms)
+  full <- panna:::.estimate_prematch_skills_batch(
+    ms, ref_dates = ref[1], decay_params = dp_full, min_weighted_90s = 5, as_of = TRUE, verbose = FALSE)[[1]]
+  expect_false(isTRUE(all.equal(full$goals_p90, b[[1]]$goals_p90)))
+})
+
+test_that("as_of checkpoint resume with no cached centres reproduces an uninterrupted run", {
+  ms <- make_asof_test_data(n_weeks = 60)
+  dp <- make_asof_params(ms); dp$prior_centers <- NULL
+  ref <- seq(as.Date("2024-02-05"), by = "7 days", length.out = 52)
+  full <- panna:::.estimate_prematch_skills_batch(
+    ms, ref_dates = ref, decay_params = dp, as_of = TRUE, verbose = FALSE)
+  sdir <- tempfile("asofc_stream_"); on.exit(unlink(sdir, recursive = TRUE), add = TRUE)
+  testthat::local_mocked_bindings(
+    progress_msg = function(msg, ...) if (grepl("Date 50/", msg)) stop("simulated kill"))
+  expect_error(panna:::.estimate_prematch_skills_batch(ms, ref_dates = ref, decay_params = dp,
+                 as_of = TRUE, stream_dir = sdir, verbose = TRUE), "simulated kill")
+  testthat::local_mocked_bindings(progress_msg = function(msg, ...) invisible(NULL))
+  resumed <- panna:::.estimate_prematch_skills_batch(
+    ms, ref_dates = ref, decay_params = dp, as_of = TRUE, stream_dir = sdir, verbose = TRUE)
+  for (d in names(full)) {
+    expect_equal(panna:::.read_skill_chunk(resumed[[d]]), full[[d]], tolerance = 1e-12, label = d)
+  }
 })
 
 test_that("as_of = FALSE (the default) still uses full-history position and population", {

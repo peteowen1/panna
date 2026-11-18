@@ -141,15 +141,41 @@ target_values <- sort(unique(played_target))
 all_skill_features <- list()
 n_failed <- 0L
 
+# One pass over match_stats for every skill date (panna#442). The batch
+# estimator's as_of mode returns what estimate_player_skills() returns at each
+# date -- same players, positions and prior centres from the pre-date matches
+# only -- within 3e-13 on each 1 July 2014-2026, identical players and positions
+# (checked 2026-11-18 on the real caches with this step's settings). The per-date loop it replaces recomputed
+# every past season from scratch on every run (~4.5 of this step's ~7 min).
+# The batch needs the cached position multipliers (02b_decay_params.rds); a run
+# without them keeps the old per-date path, which derives them per date.
+use_batch <- !is.null(decay_params$position_multipliers)
+skills_by_date <- NULL
+if (use_batch) skills_by_date <- tryCatch(.estimate_prematch_skills_batch(
+  match_stats, ref_dates = target_values, decay_params = decay_params,
+  min_weighted_90s = 5, as_of = TRUE, verbose = FALSE), error = function(e) {
+    # e.g. a decay_params cache with a partial prior_centers set, which the
+    # batch refuses (lookahead) and the per-date path fills from its slice.
+    .degrade_loudly(paste0("Skills batch failed (", conditionMessage(e), "); using the per-date path."))
+    NULL
+  })
+use_batch <- !is.null(skills_by_date)
+message(sprintf("  Skill dates: %d, %s", length(target_values),
+                if (use_batch) "one batch pass" else "per-date (no cached position multipliers)"))
+batch_failed <- attr(skills_by_date, "failed_dates")
+if (length(batch_failed) > 0) {
+  n_failed <- length(batch_failed)
+  message(sprintf("    skills batch: %d date(s) failed: %s", n_failed,
+                  paste(batch_failed, collapse = ", ")))
+}
+
 for (td_i in seq_along(target_values)) {
   target_date <- target_values[td_i]
 
   tryCatch({
-    skills <- estimate_player_skills(
-      match_stats = match_stats,
-      decay_params = decay_params,
-      target_date = target_date
-    )
+    skills <- if (use_batch) skills_by_date[[format(target_date)]] else
+      estimate_player_skills(match_stats = match_stats, decay_params = decay_params,
+                             target_date = target_date)
 
     if (is.null(skills) || nrow(skills) == 0) next
 
@@ -179,6 +205,8 @@ for (td_i in seq_along(target_values)) {
   })
   gc(verbose = FALSE)
 }
+
+rm(skills_by_date); gc(verbose = FALSE)
 
 if (n_failed > 0) {
   warning(sprintf("%d/%d skill dates failed skill estimation.",
