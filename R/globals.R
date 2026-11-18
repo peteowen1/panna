@@ -841,3 +841,6 @@ utils::globalVariables(c("md", "mins", "nm", "cum", "x.cum", "prev_md", "prev_te
                          "returning", "minutes_since_return", "team_id", "minutes_played", "match_date",
                          "first_pt", "r_after", "jump", "episode", "ep_cm", "ep_days", "ep_mins", "cm_now",
                          "s_now", "rust", "club_matches_missed", "nb", "cb", "nb_now"))
+
+# recompute_piero_percentile() (panna#507)
+utils::globalVariables(c("piero", "piero_percentile", "total_piero", "pp", "i.pp"))

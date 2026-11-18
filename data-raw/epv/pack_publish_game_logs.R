@@ -136,16 +136,26 @@ stage <- file.path(tempdir(), "gl-pack"); dir.create(stage, showWarnings = FALSE
 paths <- file.path(stage, basename(src))
 for (i in seq_along(src)) {
   add <- setdiff(fill_cols[[i]], names(arrow::open_dataset(src[i])))
-  if (length(add)) {
+  # 10b ranks piero_percentile over the leagues one run builds, and the rebuild
+  # builds each season in parts by league, so a part's value is a rank within
+  # that part (panna#507). This is the first place the season is whole: redo it.
+  gl <- data.table::as.data.table(arrow::read_parquet(src[i]))
+  before <- data.table::copy(gl$piero_percentile)  # := below updates the column in place
+  recompute_piero_percentile(gl)
+  n_pp <- if (is.null(before)) 0L else sum(!(is.na(before) & is.na(gl$piero_percentile)) &
+                                           (is.na(before) | is.na(gl$piero_percentile) |
+                                              abs(before - gl$piero_percentile) > 1e-9))
+  if (length(add) || n_pp > 0L) {
     # No PSV before 2013-14 / no net goals in that season, by design: write the
     # columns as NA so the blog sees one schema. Fabricated columns, all NA, said so.
-    gl <- data.table::as.data.table(arrow::read_parquet(src[i]))
     for (cc in add) data.table::set(gl, j = cc, value = if (cc %in% CHAR_COLS) NA_character_ else NA_real_)
     arrow::write_parquet(gl, paths[i])
-    cat(sprintf("  %s: added %d all-NA column(s): %s\n", basename(src[i]), length(add), paste(add, collapse = ", ")))
+    if (length(add)) cat(sprintf("  %s: added %d all-NA column(s): %s\n", basename(src[i]), length(add), paste(add, collapse = ", ")))
+    if (n_pp > 0L) cat(sprintf("  %s: piero_percentile recomputed season-wide on %d of %d rows\n", basename(src[i]), n_pp, nrow(gl)))
   } else {
     stopifnot(file.copy(src[i], paths[i], overwrite = TRUE))
   }
+  rm(gl, before)
 }
 alias <- file.path(stage, "game_logs.parquet"); stopifnot(file.copy(paths[length(paths)], alias, overwrite = TRUE))
 paths <- c(paths, alias)

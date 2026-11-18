@@ -1,3 +1,11 @@
+# panna 0.3.130
+
+- `piero_percentile` in the published game logs is now a season-wide rank. 10b ranks over the
+  leagues one run builds and the rebuild builds each season in parts by league, so each player was
+  ranked within his part (2023-2024: 1,956 of 11,347 players carried more than one percentile, up
+  to 87 points off). `pack_publish_game_logs.R` now recomputes it on each whole season file before
+  publishing, through the new internal `recompute_piero_percentile()` (panna#507).
+
 # panna 0.3.129
 
 - The weekly PSR job publishes `psv_live_constants.csv` (blog-latest) and step 08 publishes

@@ -868,3 +868,30 @@ build_where_clause <- function(filters, prefix = TRUE) {
   }
   out
 }
+
+#' Season-wide piero percentile for a game-logs table
+#'
+#' Rank of each player's summed `piero` over every row in `game_logs`, scaled to
+#' 0-100 (ties take the lowest rank). A player with no `piero` in any game gets
+#' NA rather than a total of 0 ranked mid-table. This is the same formula
+#' `10b_export_game_logs.R` applies, but it is only a season-wide rank when
+#' `game_logs` holds the whole season: a part built from a subset of leagues
+#' ranks its players among themselves, so the table that joins the parts must
+#' call this again (panna#507).
+#'
+#' @param game_logs data.table with `player_id`, `piero` and `piero_percentile`;
+#'   modified by reference.
+#' @return `game_logs`, invisibly, with `piero_percentile` recomputed. Returned
+#'   unchanged when `piero` or `piero_percentile` is absent.
+#' @noRd
+recompute_piero_percentile <- function(game_logs) {
+  if (!all(c("player_id", "piero", "piero_percentile") %in% names(game_logs))) {
+    return(invisible(game_logs))
+  }
+  pt <- game_logs[, .(total_piero = if (all(is.na(piero))) NA_real_ else
+                        sum(piero, na.rm = TRUE)), by = player_id]
+  pt[, pp := round(100 * rank(total_piero, ties.method = "min", na.last = "keep") /
+                     sum(!is.na(total_piero)), 1)]
+  game_logs[pt, piero_percentile := i.pp, on = "player_id"]
+  invisible(game_logs)
+}
