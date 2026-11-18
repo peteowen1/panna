@@ -51,6 +51,25 @@ current_config <- list(leagues = leagues, seasons = seasons,
 message("\n=== Loading xG Model ===\n")
 xg_model <- load_xg_model()
 
+# Scored shots published by the EPV xMetrics job (issue #505). Step 1 reuses a
+# league-season's shots only when the entry's key equals the key recomputed from
+# the events loaded below (events + shot lookup + xG model + scoring version);
+# anything else converts and scores here, through the same score_spadl_shots()
+# the EPV job uses. Set scored_shots_path <- NULL (or PANNA_SCORED_SHOTS="") to
+# force the local conversion for every league-season.
+scored_shots_path <- if (exists("scored_shots_path")) scored_shots_path else
+  Sys.getenv("PANNA_SCORED_SHOTS",
+             file.path("data-raw", "cache", "epv", "opta_scored_shots.parquet"))
+scored_shots_table <- read_scored_shots(scored_shots_path)
+message(if (is.null(scored_shots_table)) {
+  "Scored-shots cache: none found, converting every league-season"
+} else {
+  sprintf("Scored-shots cache: %s rows from %s", format(nrow(scored_shots_table), big.mark = ","),
+          scored_shots_path)
+})
+shots_cache_hits <- character(0)
+shots_cache_misses <- character(0)
+
 # 5. Load Data by League-Season ----
 
 message("\n=== Loading Opta Data ===\n")
@@ -341,70 +360,40 @@ for (league in leagues) {
         next
       }
 
-      # Build (or load cached) SPADL. Replaces an old file.exists() check that
-      # silently degraded the pipeline to 0-xG splints when caches were absent
-      # (notably on fresh GHA runners that don't ship SPADL caches alongside
-      # opta-latest assets). get_or_build_spadl() rebuilds from raw_events on
-      # cache miss; downstream behaviour is identical when a valid cache exists.
-      spadl <- tryCatch(
-        get_or_build_spadl(raw_events, league, season),
-        error = function(e) {
-          message(sprintf("    SPADL build failed for %s: %s", label, e$message))
-          NULL
-        }
-      )
+      # Shared scored-shots cache (issue #505). The key is recomputed from the
+      # events loaded above, so a changed event file or xG model is a miss.
+      shot_lookup <- .epv_shot_lookup(league, season)
+      shot_key <- scored_shots_key(raw_events, xg_model, shot_lookup)
+      spadl <- lookup_scored_shots(scored_shots_table, league, season, shot_key)
+      from_cache <- !is.null(spadl)
 
-      if (is.null(spadl) || nrow(spadl) == 0) {
-        message(sprintf("    No SPADL for %s — skipping shot scoring", label))
-        .note_skip(label, "no SPADL")
-        next
+      if (!from_cache) {
+        # Build (or load cached) SPADL. Replaces an old file.exists() check that
+        # silently degraded the pipeline to 0-xG splints when caches were absent
+        # (notably on fresh GHA runners that don't ship SPADL caches alongside
+        # opta-latest assets). get_or_build_spadl() rebuilds from raw_events on
+        # cache miss; downstream behaviour is identical when a valid cache exists.
+        spadl <- tryCatch(
+          get_or_build_spadl(raw_events, league, season),
+          error = function(e) {
+            message(sprintf("    SPADL build failed for %s: %s", label, e$message))
+            NULL
+          }
+        )
+
+        if (is.null(spadl) || nrow(spadl) == 0) {
+          message(sprintf("    No SPADL for %s — skipping shot scoring", label))
+          .note_skip(label, "no SPADL")
+          next
+        }
+      }
+      if (from_cache) {
+        shots_cache_hits <- c(shots_cache_hits, label)
+      } else {
+        shots_cache_misses <- c(shots_cache_misses, label)
       }
 
       {
-        # Penalties. SPADL already carries is_penalty (qualifier 9, parsed from
-        # the qualifier object's key in R/spadl_conversion), the flag the EPV job
-        # uses. Step 1 used to re-detect from raw events with a regex written for
-        # a JSON array; the qualifiers are an object ({"9":...}), so it matched
-        # nothing: 0 penalties in 2,185,707 shots across 349 league-seasons (run
-        # 44910064488), and every penalty stayed in npxG at the model's xG
-        # (panna#505, #513). The raw-events path below is kept only for a SPADL
-        # cache that predates the column, with the same key-anchored pattern
-        # SPADL uses. It matches on (match_id, player_id, minute, second) so two
-        # shots by one player in the same minute do not collide.
-        .spadl_has_pen <- "is_penalty" %in% names(spadl)
-        spadl$is_penalty <- if (.spadl_has_pen) as.integer(spadl$is_penalty %in% c(1L, TRUE)) else 0L
-        if (!.spadl_has_pen && !is.null(raw_events) && nrow(raw_events) > 0) {
-          message(sprintf("    Note: SPADL has no is_penalty for %s %s (stale cache?), deriving from raw events", league, season))
-          has_pen_qualifier <- grepl('[{,]"9":', raw_events$qualifier_json)
-          pen_mask <- raw_events$type_id %in% c(13L, 14L, 15L, 16L) & has_pen_qualifier
-          if (sum(pen_mask) > 0) {
-            raw_second <- if ("second" %in% names(raw_events)) {
-              raw_events$second[pen_mask]
-            } else {
-              message(sprintf("    Note: raw events missing 'second' column for %s %s. Penalty matching may be incomplete.", league, season))
-              rep(0L, sum(pen_mask))
-            }
-            pen_keys <- paste(
-              raw_events$match_id[pen_mask],
-              raw_events$player_id[pen_mask],
-              raw_events$minute[pen_mask],
-              raw_second,
-              sep = "_"
-            )
-            spadl_shot_idx <- which(spadl$action_type == "shot")
-            if (length(spadl_shot_idx) > 0) {
-              spadl_keys <- paste(
-                spadl$match_id[spadl_shot_idx],
-                spadl$player_id[spadl_shot_idx],
-                floor(spadl$time_seconds[spadl_shot_idx] / 60),
-                floor(spadl$time_seconds[spadl_shot_idx] %% 60),
-                sep = "_"
-              )
-              spadl$is_penalty[spadl_shot_idx[spadl_keys %in% pen_keys]] <- 1L
-            }
-          }
-        }
-
         # Capture exact period-end times from raw events (type_id == 30
         # marker; second-level precision). Splint creation uses these to
         # avoid the historical "+0.5 min buffer" hack that produced
@@ -421,22 +410,14 @@ for (league in leagues) {
           all_player_timing[[label]] <- extract_player_timing_from_events(raw_events)
         }
 
-        # Score shots with xG model. `season` is required by a season-aware
-        # model -- SPADL has no season column of its own -- and shot_lookup
-        # supplies body_part + situation, which SPADL also cannot (its
-        # `bodypart` is a stub reading "foot" for every shot). Without the
-        # lookup six of the model's features are constant 0 and xG is ~6% off.
-        # raw_events carries qualifier 263 (Opta's direct-corner tag): without it
-        # the panna#277 direct-corner override falls back to the corner-flag box
-        # rule and misses the tagged shots outside the box.
-        spadl <- add_xg_to_spadl(spadl, xg_model, season = season,
-                                 shot_lookup = .epv_shot_lookup(league, season),
-                                 events = raw_events)
-
-        # Override penalty xG
-        penalty_idx <- spadl$action_type == "shot" & spadl$is_penalty == 1L
-        if (sum(penalty_idx) > 0) {
-          spadl$xg[penalty_idx] <- PENALTY_XG
+        # Score shots with the EPV job's own path. `season` is required by a
+        # season-aware model, shot_lookup supplies body_part + situation (SPADL's
+        # `bodypart` reads "foot" for every shot), and raw_events carries
+        # qualifier 263 (Opta's direct-corner tag) for the panna#277 override.
+        # Penalties come from SPADL's is_penalty. A cache hit is already scored.
+        if (!from_cache) {
+          spadl <- score_spadl_shots(spadl, raw_events, xg_model, season = season,
+                                     shot_lookup = shot_lookup)
         }
 
         # Extract shots for splint pipeline
@@ -524,6 +505,8 @@ if (n_shots_total >= 5000L && n_pen_total == 0L) {
   stop(sprintf("Step 1 scored %d shots and found 0 penalties: the penalty flag is missing (panna#521), so npxG would include every penalty.",
                n_shots_total))
 }
+message(sprintf("Scored-shots cache: %d league-seasons reused, %d converted locally",
+                length(shots_cache_hits), length(shots_cache_misses)))
 
 # 6. Combine All Data ----
 

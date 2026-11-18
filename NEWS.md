@@ -8,6 +8,14 @@
 - Keeper GSAA, `xgot_faced` and `goals_minus_xgot` in the xmetrics table use the md5-pinned xGOT
   v3.2, as the shot table and 10b do (panna#523, #524). `placement_added`/`xgot_placement` still
   subtract the September xG until panna#466.
+- Opta RAPM step 1 and the EPV xMetrics job score shots through one function, `score_spadl_shots()`
+  (`R/scored_shots_cache.R`), instead of two copies (issue #505). The EPV job writes
+  `data-raw/cache/epv/opta_scored_shots.parquet`, one row per shot with a `cache_key` per league-season
+  (hash of the events, the shot lookup, the xG model and `SCORED_SHOTS_VERSION`). RAPM step 1 reuses a
+  league-season only when that key equals the key recomputed from the events it loaded; anything else
+  (no file, no entry, a changed event file or xG model) converts and scores locally as before.
+  Nothing publishes or downloads the file yet, so until a workflow does, every league-season is a
+  local conversion.
 - Structural WP: the `red_home` monotone constraint is -1, not +1 (panna#511). `red_home` is home
   reds minus away reds, so the +1 constraint could not be met and the live model ignores red cards.
   Takes effect when the model is retrained (05d) and republished.

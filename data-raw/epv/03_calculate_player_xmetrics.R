@@ -133,6 +133,7 @@ for (league in LEAGUES) {
 cli_h2("Step 3: Process League-Seasons")
 
 all_results <- list()
+scored_shot_rows <- list()  # per league-season scored shots, shared with RAPM step 1 (#505)
 errors <- list()
 duel_woe_failures <- character(0)  # labels where compute_duel_woe() errored (R055)
 # Real failures (not "no data") are written here; epv-pipeline.yml's last step
@@ -186,39 +187,6 @@ for (league in names(league_seasons)) {
         cli_alert_info("  Converted to SPADL ({format(nrow(spadl), big.mark=',')} actions)")
       }
 
-      # 4c. Penalty detection (H2-PEN). SPADL already carries a correctly
-      # parsed is_penalty (qualifier 9, anchored regex `[{,]"9":` in
-      # parse_opta_qualifiers()/spadl_conversion.R) -- use it rather than
-      # re-deriving and overwriting it. The unanchored `'"9"'` match used here
-      # previously false-positived on qualifier VALUES (e.g. `"55":"9"`), not
-      # just qualifier keys.
-      if ("is_penalty" %in% names(spadl)) {
-        spadl$is_penalty <- as.integer(spadl$is_penalty)
-      } else {
-        # Fallback for stale cached SPADL RDS files predating the is_penalty
-        # column: re-derive from raw events using the same anchored pattern.
-        cli_alert_warning("  spadl$is_penalty missing (stale cache?) - deriving from raw events")
-        pen_evt_idx <- events$type_id %in% c(13L, 14L, 15L, 16L) &
-          grepl('[{,]"9":', events$qualifier_json)
-        pen_keys <- paste(
-          events$match_id[pen_evt_idx],
-          events$player_id[pen_evt_idx],
-          events$minute[pen_evt_idx],
-          sep = "_"
-        )
-        spadl$is_penalty <- 0L
-        spadl_shot_idx <- which(spadl$action_type == "shot")
-        if (length(pen_keys) > 0 && length(spadl_shot_idx) > 0) {
-          spadl_keys <- paste(
-            spadl$match_id[spadl_shot_idx],
-            spadl$player_id[spadl_shot_idx],
-            floor(spadl$time_seconds[spadl_shot_idx] / 60),
-            sep = "_"
-          )
-          spadl$is_penalty[spadl_shot_idx[spadl_keys %in% pen_keys]] <- 1L
-        }
-      }
-
       # 4c-bis. Shot events, loaded ONCE and used by both xG and xGOT. This load
       # used to sit inside the xGOT block below; xG needs it too, because SPADL
       # cannot supply body part or situation (see add_xg_to_spadl()).
@@ -230,12 +198,13 @@ for (league in names(league_seasons)) {
         }
       )
 
-      # 4d. Add xG to shots. shot_lookup carries body_part + situation: without
-      # it every header scores as a foot shot (+6.3% on total xG) and every set
-      # piece as open play (-4.7%). `events` carries qualifier 263 (Opta's
-      # direct-corner tag) for the panna#277 override; without it only the
-      # corner-flag box rule applies. xGOT below gets it too, so the two
-      # overrides flag the same shots.
+      # 4c/4d. Flag penalties and score xG through score_spadl_shots(), the one
+      # path shared with Opta RAPM step 1 (issue #505). shot_lookup carries
+      # body_part + situation: without it every header scores as a foot shot
+      # (+6.3% on total xG) and every set piece as open play (-4.7%). `events`
+      # carries qualifier 263 (Opta's direct-corner tag) for the panna#277
+      # override; xGOT below gets it too, so the two overrides flag the same
+      # shots.
       xg_lk_cols <- intersect(c("match_id", "event_id", "body_part", "situation"),
                               names(shot_ev))
       xg_lookup <- if (!is.null(shot_ev) &&
@@ -244,15 +213,13 @@ for (league in names(league_seasons)) {
       } else {
         NULL
       }
-      spadl <- add_xg_to_spadl(spadl, xg_model, season = season,
-                               shot_lookup = xg_lookup, events = events)
+      spadl <- score_spadl_shots(spadl, events, xg_model, season = season,
+                                 shot_lookup = xg_lookup)
 
-      # Override penalty xG with fixed value
-      penalty_idx <- spadl$action_type == "shot" & spadl$is_penalty == 1L
-      if (sum(penalty_idx) > 0) {
-        spadl$xg[penalty_idx] <- PENALTY_XG
-        cli_alert_info("  Set {sum(penalty_idx)} penalties to xG={PENALTY_XG}")
-      }
+      # Publish this league-season's scored shots for RAPM step 1, keyed on the
+      # events, shot lookup and xG model they were scored from.
+      scored_shot_rows[[label]] <- scored_shots_rows(
+        spadl, league, season, scored_shots_key(events, xg_model, xg_lookup))
 
       # 4d-bis. Add xGOT (post-shot xG) to on-target shots. Goal-mouth coords
       # come from shot_events (backfilled, locale-safe); joined onto SPADL by
@@ -379,6 +346,16 @@ for (league in names(league_seasons)) {
       }
     })
   }
+}
+
+# 4b. Scored-shots table for Opta RAPM step 1 (issue #505) ----
+# RAPM step 1 reuses an entry only when its key still matches the events it has
+# loaded; see R/scored_shots_cache.R. Local file only: publishing it to the
+# opta-latest release is a workflow step (see NEWS).
+if (length(scored_shot_rows) > 0) {
+  scored_shots_path <- file.path("data-raw", "cache", "epv", "opta_scored_shots.parquet")
+  write_scored_shots(scored_shot_rows, scored_shots_path)
+  cli_alert_success("Wrote scored shots for {length(scored_shot_rows)} league-seasons to {scored_shots_path}")
 }
 
 # 5. Summary ----
