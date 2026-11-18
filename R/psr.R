@@ -265,9 +265,11 @@
 #'   estimator's running sums are far cheaper than refiltering all history at
 #'   every date. Resuming a checkpoint also restores the position counts, and a
 #'   checkpoint from a non-\code{as_of} run is rejected (fingerprint).
-#'   \code{as_of = TRUE} requires cached \code{position_multipliers} and
-#'   \code{prior_centers} in \code{decay_params} and stops without them, since
-#'   computing them here would use matches after each date.
+#'   \code{as_of = TRUE} requires cached \code{position_multipliers} in
+#'   \code{decay_params} and stops without them, since computing them here
+#'   would use matches after each date. Without cached \code{prior_centers}
+#'   each date's centres come from the matches before it (running sums), as
+#'   \code{estimate_player_skills()} does; a partial set still stops.
 #' @param verbose Print progress (default TRUE).
 #'
 #' @return Named list keyed by date string. Each element is a data.table (one
