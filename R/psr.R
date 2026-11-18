@@ -360,15 +360,19 @@
   # as_of promises the single-date estimator's view, which takes position multipliers and prior
   # centres from the pre-date slice. Without the cached ones in decay_params, the batch path below
   # would compute both from the WHOLE of match_stats: a lookahead in every prior centre.
-  if (as_of && (is.null(decay_params$position_multipliers) || is.null(decay_params$prior_centers))) {
+  if (as_of && is.null(decay_params$position_multipliers)) {
     cli::cli_abort(c(
-      "{.code as_of = TRUE} needs {.field position_multipliers} and {.field prior_centers} in {.arg decay_params}.",
-      "i" = "Without them both would come from all of {.arg match_stats}, including matches after each date.",
+      "{.code as_of = TRUE} needs {.field position_multipliers} in {.arg decay_params}.",
+      "i" = "Without them they would come from all of {.arg match_stats}, including matches after each date.",
       "i" = "Load them as step 08b does (the cached skills step 02b output)."))
   }
+  # No cached prior_centers: compute each date's centres from the matches before it, as
+  # estimate_player_skills() does on its pre-date slice (predictions step 02b passes no
+  # centres, panna#442). Running minutes-weighted sums, updated as the cursor moves.
+  centres_asof <- as_of && is.null(decay_params$prior_centers)
   # A partial cache leaks the same way: .stat_grand_means() fills any stat missing from
   # prior_centers with its mean over the whole of match_stats.
-  if (as_of) {
+  if (as_of && !centres_asof) {
     no_centre <- setdiff(stat_cols, names(decay_params$prior_centers))
     if (length(no_centre)) {
       cli::cli_abort(c(
@@ -529,6 +533,15 @@
   dt_stat_vals <- list()
   for (sc in stat_cols) dt_stat_vals[[sc]] <- dt[[sc]]
 
+  # Running prior-centre sums (centres_asof only): sum(stat x minutes) and
+  # sum(minutes) over the rows before the current date, NA treated as 0 exactly
+  # as .stat_grand_means() does.
+  if (centres_asof) {
+    dt_wts <- data.table::fifelse(is.na(dt$total_minutes), 0, as.numeric(dt$total_minutes))
+    cum_w <- 0
+    cum_vw <- stats::setNames(numeric(length(stat_cols)), stat_cols)
+  }
+
   # Pre-extract efficiency denominators (already computed)
   # eff_denoms[[sc]] is a full-length vector aligned with dt rows
 
@@ -564,6 +577,7 @@
   # Only added when TRUE so default-mode fingerprints (and any checkpoint a
   # default run is mid-way through) are unchanged.
   if (as_of) fingerprint$as_of <- TRUE
+  if (centres_asof) fingerprint$centres_asof <- TRUE
   if (!is.null(checkpoint_path) && file.exists(checkpoint_path)) {
     cp <- tryCatch(readRDS(checkpoint_path), error = function(e) {
       # A truncated/corrupt RDS (e.g. from a killed process -- exactly the
@@ -590,6 +604,11 @@
         seen <- cp$seen
         rate_alpha0 <- cp$rate_alpha0
         eff_mu0 <- cp$eff_mu0
+      }
+      if (centres_asof) {
+        cum_w <- cp$cum_w
+        cum_vw <- cp$cum_vw
+        grand_means <- cp$grand_means
       }
       resume_from <- cp$i + 1L
       for (k in seq_len(cp$i)) {
@@ -756,6 +775,26 @@
         }
       }
 
+      # --- centres_asof: move the prior centres to the rows seen so far, and
+      # re-centre every player's prior (the centre is shared, so all move). ---
+      if (centres_asof && has_new) {
+        w_new <- dt_wts[new_rows]
+        cum_w <- cum_w + sum(w_new)
+        for (sc in stat_cols) cum_vw[sc] <- cum_vw[sc] + sum(dt_stat_vals[[sc]][new_rows] * w_new)
+        grand_means[stat_cols] <- if (cum_w > 0) cum_vw[stat_cols] / cum_w else 0
+        for (ci in seq_along(rate_stats)) {
+          sc <- rate_stats[ci]
+          pm_lookup <- if (sc %in% names(pos_multipliers)) pos_multipliers[[sc]] else NULL
+          a0 <- .position_prior_center(grand_means[sc], pm_lookup, cur_pg)
+          rate_alpha0[, ci] <- pmax(a0 * stat_prior_strengths[sc], 1e-4)
+        }
+        for (sc in eff_stats) {
+          pm_lookup <- if (sc %in% names(pos_multipliers)) pos_multipliers[[sc]] else NULL
+          m0 <- .position_prior_center(grand_means[sc], pm_lookup, cur_pg)
+          eff_mu0[[sc]] <- pmax(pmin(m0, 1 - 1e-6), 1e-6)
+        }
+      }
+
       # --- Compute posteriors from running sums ---
 
       # Rate stats
@@ -858,6 +897,9 @@
         cp_state <- c(cp_state, list(pos_cnt = pos_cnt, cur_pg = cur_pg, seen = seen,
                                      rate_alpha0 = rate_alpha0, eff_mu0 = eff_mu0))
       }
+      if (centres_asof) {
+        cp_state <- c(cp_state, list(cum_w = cum_w, cum_vw = cum_vw, grand_means = grand_means))
+      }
       saveRDS(cp_state, checkpoint_path)
     }
   }
@@ -945,6 +987,12 @@
     missing_as_of <- setdiff(as_of_keys, names(cp))
     if (length(missing_as_of) > 0) {
       return(sprintf("incomplete (missing %s)", paste(missing_as_of, collapse = ", ")))
+    }
+  }
+  if (isTRUE(fingerprint$centres_asof)) {
+    missing_c <- setdiff(c("cum_w", "cum_vw", "grand_means"), names(cp))
+    if (length(missing_c) > 0) {
+      return(sprintf("incomplete (missing %s)", paste(missing_c, collapse = ", ")))
     }
   }
   if (!identical(cp$fingerprint, fingerprint)) {
