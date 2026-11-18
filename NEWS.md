@@ -1,3 +1,11 @@
+# panna 0.3.130
+
+- WPA net ledger, own goals (panna#273, #514): `wpa_build_ledger()` gives 25% of the
+  scoring side's gain to its last player on the ball before the own goal, in the same half
+  (`own_goal_credit`, role `own_goal_setup`, in `wpa_own`), and moves 25% of the own-goal
+  scorer's blame to his team's pool (`own_goal_relief`). Team totals are unchanged; both at
+  0 reproduce the old ledger. Brighton 5-0 Palace: Groß 0.029 -> 0.076, Canvot -0.201 -> -0.159.
+
 # panna 0.3.129
 
 - The weekly PSR job publishes `psv_live_constants.csv` (blog-latest) and step 08 publishes
