@@ -144,8 +144,8 @@ n_failed <- 0L
 # One pass over match_stats for every skill date (panna#442). The batch
 # estimator's as_of mode returns what estimate_player_skills() returns at each
 # date -- same players, positions and prior centres from the pre-date matches
-# only -- within 2e-13 on each 1 July 2014-2021 (checked 2026-11-18 on the real
-# caches with this step's settings; 2022-2026 see panna#442). The per-date loop it replaces recomputed
+# only -- within 3e-13 on each 1 July 2014-2026, identical players and positions
+# (checked 2026-11-18 on the real caches with this step's settings). The per-date loop it replaces recomputed
 # every past season from scratch on every run (~4.5 of this step's ~7 min).
 # The batch needs the cached position multipliers (02b_decay_params.rds); a run
 # without them keeps the old per-date path, which derives them per date.
