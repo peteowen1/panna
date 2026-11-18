@@ -1,20 +1,26 @@
 # Returning-player adjustment to Panna
 
-Players coming back after a spell with no minutes deliver less than
-their Panna says for their first few games back (panna#497). Across
-8,404 returns after 60-179 days out, their team's xG difference with
-them on the pitch fell 0.032 per 90 short of their Panna relative to
-same-rated regulars. A shrink that grows with time away over-corrected
-players back from 180+ days. A flat discount, tuned on returns before
-2024-07-01, did best on later ones: keep 85% of the player's lead over
-replacement level. Test loss fell from 0.0022 to 0.0009, and regulars
-were unchanged
-(`pannaverse/docs/reviews/panna-validity-2026-11/shrink_shapes_holdout.R`).
+Players coming back from an absence deliver less than their Panna says
+for their first games back (panna#497). The rule has no cliffs (Pete,
+2026-11-17): each player carries a "rust" value between 0 and 1 (see
+[`returner_rust()`](https://peteowen1.github.io/panna/reference/returner_rust.md)),
+and his Panna keeps `1 - max_discount * rust` of its lead over
+replacement level. With the defaults that is 0.875 after missing 4 club
+matches and 0.75 after 8 or more, fading back to 1 over his first 1,800
+minutes back. Chosen on a hold-out (returns and fringe players before
+2024-07-01 to fit, later ones to score; eight groups, regulars held
+still): test loss 0.00083 against 0.00075 for the earlier flat rule
+(difference -0.00024 to +0.00041) and 0.00160 for none
+(`pannaverse/docs/reviews/panna-validity-2026-11/shrink_fringe_holdout.R`,
+`shrink_bench_holdout.R`, `shrink_bench_w.R`). An unused-substitute game
+counts 0.75 of a missed match (Pete, 2026-11-18; the data could not
+separate bench from not-in-squad, train loss within 1% for any weight
+0-1).
 
 ## Usage
 
 ``` r
-returner_adjusted_panna(panna, replacement, returning, keep = 0.85)
+returner_adjusted_panna(panna, replacement, rust, max_discount = 0.25)
 ```
 
 ## Arguments
@@ -27,31 +33,31 @@ returner_adjusted_panna(panna, replacement, returning, keep = 0.85)
 
   Replacement-level Panna, length 1 or the same length as `panna`.
 
-- returning:
+- rust:
 
-  Logical vector, the same length as `panna`: is the player returning?
-  See
-  [`returner_status()`](https://peteowen1.github.io/panna/reference/returner_status.md).
+  Numeric vector in \[0, 1\], the same length as `panna`; NA counts as
+  0.
 
-- keep:
+- max_discount:
 
-  Share of the lead over replacement kept while returning.
+  Share of the lead over replacement removed at rust 1.
 
 ## Value
 
-`panna` with returning players pulled towards `replacement`. `NA` inputs
-stay `NA`.
+`panna` pulled towards `replacement` by `max_discount * rust`. `NA`
+ratings stay `NA`.
 
 ## Details
 
 The shortfall reads as a return dip (fitness) rather than an out-of-date
-rating, so this is applied where a current-form number is wanted (the
-team page, match predictions). It is never applied to the career rating
-itself.
+rating, so this is for a current-form number (the team page). It is
+never applied to the career rating itself, and match predictions do not
+use it (out-of-sample error unchanged, 1.0915 -\> 1.0914 on 675
+matches).
 
 ## Examples
 
 ``` r
-returner_adjusted_panna(c(0.12, 0.12), -0.11, c(TRUE, FALSE))
-#> [1] 0.0855 0.1200
+returner_adjusted_panna(c(0.12, 0.12), -0.11, c(1, 0))
+#> [1] 0.0625 0.1200
 ```

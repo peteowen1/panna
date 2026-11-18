@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.124</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.125</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -40,6 +40,11 @@
     </div>
 
     <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.125" id="panna-03125">panna 0.3.125<a class="anchor" aria-label="anchor" href="#panna-03125"></a></h2>
+<ul><li>
+<code>returner_status()</code> is replaced by <code><a href="../reference/returner_rust.html">returner_rust()</a></code>, a returning-player rule with no cliffs (<a href="https://github.com/peteowen1/panna/issues/497" class="external-link">#497</a>): rust rises on an S-curve of club matches missed (centre 4; an unused-sub game counts 0.75) and drains over 1,800 minutes back. <code><a href="../reference/returner_adjusted_panna.html">returner_adjusted_panna()</a></code> now takes rust, with <code>max_discount = 0.25</code>. Chosen on hold-outs that include fringe players; ties the earlier flat rule. Not used by any pipeline.</li>
+</ul></div>
+    <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.124" id="panna-03124">panna 0.3.124<a class="anchor" aria-label="anchor" href="#panna-03124"></a></h2>
 <ul><li>
 <code>skills-seasonal.yml</code>’s Monday schedule now publishes <code>06_seasonal_ratings.rds</code> and its siblings on main. It was gate-only until Pete walked the first publish through on named players (2026-11-14); the coverage gate and the republished-mid-run refusal still guard every upload.</li>
@@ -47,7 +52,7 @@
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.123" id="panna-03123">panna 0.3.123<a class="anchor" aria-label="anchor" href="#panna-03123"></a></h2>
 <ul><li>Keeper OSR/DSR (and OSV/DSV) are now the keeper PSR fit split by what each stat is: distribution (passes, accurate passes, long balls, throws, touches; club-adjusted) is attack, every other term is defence (<a href="https://github.com/peteowen1/panna/issues/429" class="external-link">#429</a>). The separate <code>gk_osr</code>/<code>gk_dsr</code> fits had conceding raise DSR and errors raise OSR (Neuer 0.322 attack / -0.068 defence; now 0.004 / 0.249). Total PSR/PSV are unchanged; <code>gk_osr_coefficients.csv</code>/<code>gk_dsr_coefficients.csv</code> are no longer read.</li>
-<li>New <code><a href="../reference/returner_status.html">returner_status()</a></code> and <code><a href="../reference/returner_adjusted_panna.html">returner_adjusted_panna()</a></code>: the returning-player rule and the flat discount (keep 85% of the lead over replacement) chosen on a hold-out in <a href="https://github.com/peteowen1/panna/issues/497" class="external-link">#497</a>. Not used by any pipeline; the team page uses pannadata’s copy.</li>
+<li>New <code>returner_status()</code> and <code><a href="../reference/returner_adjusted_panna.html">returner_adjusted_panna()</a></code>: the returning-player rule and the flat discount (keep 85% of the lead over replacement) chosen on a hold-out in <a href="https://github.com/peteowen1/panna/issues/497" class="external-link">#497</a>. Not used by any pipeline; the team page uses pannadata’s copy.</li>
 </ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.122" id="panna-03122">panna 0.3.122<a class="anchor" aria-label="anchor" href="#panna-03122"></a></h2>

@@ -1,5 +1,18 @@
 # Changelog
 
+## panna 0.3.125
+
+- `returner_status()` is replaced by
+  [`returner_rust()`](https://peteowen1.github.io/panna/reference/returner_rust.md),
+  a returning-player rule with no cliffs
+  ([\#497](https://github.com/peteowen1/panna/issues/497)): rust rises
+  on an S-curve of club matches missed (centre 4; an unused-sub game
+  counts 0.75) and drains over 1,800 minutes back.
+  [`returner_adjusted_panna()`](https://peteowen1.github.io/panna/reference/returner_adjusted_panna.md)
+  now takes rust, with `max_discount = 0.25`. Chosen on hold-outs that
+  include fringe players; ties the earlier flat rule. Not used by any
+  pipeline.
+
 ## panna 0.3.124
 
 - `skills-seasonal.yml`’s Monday schedule now publishes
@@ -19,9 +32,7 @@
   PSR/PSV are unchanged;
   `gk_osr_coefficients.csv`/`gk_dsr_coefficients.csv` are no longer
   read.
-- New
-  [`returner_status()`](https://peteowen1.github.io/panna/reference/returner_status.md)
-  and
+- New `returner_status()` and
   [`returner_adjusted_panna()`](https://peteowen1.github.io/panna/reference/returner_adjusted_panna.md):
   the returning-player rule and the flat discount (keep 85% of the lead
   over replacement) chosen on a hold-out in
