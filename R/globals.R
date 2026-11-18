@@ -839,4 +839,5 @@ utils::globalVariables(c(".o_team", ".opp_shots"))
 utils::globalVariables(c("md", "mins", "nm", "cum", "x.cum", "prev_md", "prev_team", "gap", "cm", "ret_md",
                          "days_out", "last_md", "last_team", "out_days", "out_cm", "still_out", "back",
                          "returning", "minutes_since_return", "team_id", "minutes_played", "match_date",
-                         "first_pt"))
+                         "first_pt", "r_after", "jump", "episode", "ep_cm", "ep_days", "ep_mins", "cm_now",
+                         "s_now", "rust", "club_matches_missed", "nb", "cb", "nb_now"))
