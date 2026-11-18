@@ -37,6 +37,14 @@ psr_target <- if (coef_xg != "") "xg" else "goals"
 .psr_position_means <- if (exists("position_normalize") && !isTRUE(position_normalize)) {
   NULL
 } else load_position_role_means()
+# PSR_BASELINE=skill (panna#449, Pete 2026-11-19): take each date's position means from that
+# date's skills table (skill_position_means()) instead of the raw per-season rates, so drifting
+# stats (last-man tackles) stop costing a whole role. Every role then averages ~0, so it ships
+# only with a position calibration refitted on it (#216). Default "raw" = unchanged.
+psr_baseline <- Sys.getenv("PSR_BASELINE", "raw")
+if (!psr_baseline %in% c("raw", "skill")) stop("PSR_BASELINE must be 'raw' or 'skill', not '", psr_baseline, "'")
+if (is.null(.psr_position_means) && psr_baseline == "skill") stop("PSR_BASELINE=skill needs position normalisation on")
+message(sprintf("  PSR position baseline: %s", psr_baseline))
 if (psr_target == "goals") {
   cat("Note: xG coefficients not found, using goal-diff PSR instead.\n")
   cat("Re-run step 07 after fixing splint xG columns for xG-based PSR.\n\n")
@@ -261,8 +269,8 @@ psr_model_fingerprint <- digest::digest(list(
   coefficients   = vapply(file.path(.extdata, .coef_files), .fp_file, character(1), USE.NAMES = FALSE),
   coef_names     = .coef_files,
   target         = psr_target,
-  position_means = if (is.null(.psr_position_means)) "off" else
-    .fp_file(file.path(.extdata, "position_role_means.csv")),
+  position_means = if (is.null(.psr_position_means)) "off" else if (psr_baseline == "skill")
+    "skill_position_means v1" else .fp_file(file.path(.extdata, "position_role_means.csv")),
   decay_params   = .fp_file(decay_params_path),
   offsets        = .fp_file(file.path(cache_dir, "psr_league_offsets.parquet")),
   calibration    = .fp_file(file.path(.extdata, "psr_calibration.csv"))
@@ -809,7 +817,8 @@ for (i in seq_along(snapshot_dates)) {
 
   psr <- tryCatch(
     compute_player_psr(skills, center = TRUE, target = psr_target,
-                       position_means = .psr_position_means,
+                       position_means = if (psr_baseline == "skill")
+                         skill_position_means(skills, skills_role8, skills_is_gk) else .psr_position_means,
                        is_gk = skills_is_gk,
                        role_override = skills_role8),
     error = function(e) {

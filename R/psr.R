@@ -2170,6 +2170,69 @@ load_position_role_means <- function() {
   data.table::fread(p)
 }
 
+#' Position means taken from an estimated-skills table (skill vs skill)
+#'
+#' The bundled \code{position_role_means.csv} holds each season's RAW per-match
+#' rate. A skills table holds decayed, shrunk career estimates, so for any stat
+#' whose recorded rate drifts over the years the two disagree for everyone in a
+#' role: Opta logs 4-5x more last-man tackles since 2024, and that alone cost the
+#' average centre-back 0.044 goals of PSR per 90 (panna#449,
+#' pannaverse \code{docs/reviews/CB-PSR-WALK-2026-11-19.md}). These means come from
+#' the skills being scored, so a player is compared with how his position's
+#' skills read on the same date, and every role averages about zero: what a
+#' position is worth is left to the position calibration (Pete, 2026-11-19).
+#'
+#' Pass the WHOLE skills table for a date (never a slice, such as one fixture's
+#' players), and pass the result as \code{position_means} to
+#' \code{\link{compute_player_psr}} with the same \code{role}/\code{is_gk}.
+#'
+#' @param skills Estimated skills for one date or season.
+#' @param role Role per row (role8), as passed to \code{compute_player_psr()}'s
+#'   \code{role_override}. Keepers are pinned to "GK" from \code{is_gk}; NA
+#'   becomes "OTHER", as the scorer does.
+#' @param is_gk Logical per row.
+#' @param weight Per-row weight; default \code{skills$weighted_90s}. NA counts 0.
+#' @param stats Stat columns; default every PSR and keeper skill column present.
+#' @return data.table(role, stat_name, mean): the weight-weighted mean of each
+#'   stat over the rows of each role with a value (NA skills are skipped).
+#' @keywords internal
+skill_position_means <- function(skills, role, is_gk, weight = NULL, stats = NULL) {
+  n <- nrow(skills)
+  if (length(role) != n || length(is_gk) != n) {
+    cli::cli_abort("{.arg role} and {.arg is_gk} need one entry per row of {.arg skills} ({n}).")
+  }
+  if (is.null(weight)) {
+    if (!"weighted_90s" %in% names(skills)) cli::cli_abort("{.arg skills} has no {.field weighted_90s}; pass {.arg weight}.")
+    weight <- skills[["weighted_90s"]]
+  }
+  if (length(weight) != n) cli::cli_abort("{.arg weight} needs one entry per row of {.arg skills} ({n}).")
+  w <- as.numeric(weight); w[is.na(w) | w < 0] <- 0
+  r <- .psv_pin_gk(toupper(as.character(role)), is_gk)
+  r[is.na(r)] <- "OTHER"
+  if (is.null(stats)) stats <- intersect(union(.get_psr_skill_cols(), .get_gk_skill_cols()), names(skills))
+  if (!length(stats)) cli::cli_abort("No skill columns found in {.arg skills}.")
+  roles <- sort(unique(r))
+  out <- data.table::rbindlist(lapply(stats, function(s) {
+    v <- as.numeric(skills[[s]])
+    ok <- !is.na(v) & w > 0
+    num <- tapply(v[ok] * w[ok], factor(r[ok], levels = roles), sum)
+    den <- tapply(w[ok], factor(r[ok], levels = roles), sum)
+    data.table::data.table(role = roles, stat_name = s, mean = as.numeric(num / den))
+  }))
+  # Coverage, asserted: .position_normalize_skills() zero-fills a missing
+  # (role, stat) cell, which would quietly score that cell against 0. A stat no
+  # one in a role has (a keeper-only stat for outfield roles) is 0 on purpose
+  # and is said so; a role with no weight at all is an error.
+  no_w <- roles[!roles %in% unique(r[w > 0])]
+  if (length(no_w)) cli::cli_abort("skill_position_means: role{?s} {.val {no_w}} ha{?s/ve} no rows with weight > 0.")
+  n_empty <- sum(is.na(out$mean))
+  if (n_empty) {
+    cli::cli_inform("skill_position_means: {n_empty} role x stat cell{?s} with no values set to 0 (e.g. keeper-only stats for outfield roles).")
+    out[is.na(mean), mean := 0]
+  }
+  out[]
+}
+
 #' Load the bundled per-match reliability artifact for PSV pricing
 #'
 #' Per-(model, stat) variance decomposition of the single-match per-90 rate

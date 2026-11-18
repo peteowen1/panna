@@ -25,6 +25,12 @@ cat(sprintf("Using lambda = %s for seasonal ratings\n", seasonal_lambda))
 .psr_position_means <- if (exists("position_normalize") && !isTRUE(position_normalize)) {
   NULL
 } else load_position_role_means()
+# PSR_BASELINE=skill (panna#449): each season's position means from that season's skills
+# (skill_position_means()); see 08b_export_psr_weekly.R. Default "raw" = unchanged.
+psr_baseline <- Sys.getenv("PSR_BASELINE", "raw")
+if (!psr_baseline %in% c("raw", "skill")) stop("PSR_BASELINE must be 'raw' or 'skill', not '", psr_baseline, "'")
+if (is.null(.psr_position_means) && psr_baseline == "skill") stop("PSR_BASELINE=skill needs position normalisation on")
+cat(sprintf("PSR position baseline: %s\n", psr_baseline))
 
 # extract_season_end_year() is defined in R/utils.R
 
@@ -368,7 +374,10 @@ fit_season_skill_ratings <- function(splint_data, skill_features, season,
     # Within-position normalization (BPM-style): value a player vs their role,
     # not vs all outfielders. Display-only (the RAPM psvf90 target is untouched).
     psr_result <- compute_player_psr(season_skills, center = TRUE,
-                                     position_means = .psr_position_means,
+                                     position_means = if (psr_baseline == "skill")
+                                       skill_position_means(season_skills, season_skills$.role8_full,
+                                                            season_skills$.is_gk_full)
+                                     else .psr_position_means,
                                      is_gk = season_skills$.is_gk_full,
                                      role_override = season_skills$.role8_full)
     if (!is.null(psr_result) && nrow(psr_result) > 0) {

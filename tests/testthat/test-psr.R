@@ -2549,3 +2549,42 @@ test_that("an as_of run rejects a checkpoint missing the position state", {
   expect_match(panna:::.psr_checkpoint_reject_reason(cp, .psr_test_fingerprint(), 20L),
                "as_of")
 })
+
+test_that("skill_position_means: weighted role means from the skills, keepers pinned, NA skipped", {
+  sk <- data.table::data.table(
+    player_id = paste0("p", 1:6),
+    weighted_90s = c(10, 30, 20, 0, 5, 5),
+    last_man_tackle_p90 = c(0.01, 0.03, 0.10, 9, NA, 0.02),
+    saves_p90 = c(NA, NA, NA, NA, 3, NA))
+  role <- c("CB", "CB", "ST", "ST", "CB", NA)
+  is_gk <- c(FALSE, FALSE, FALSE, FALSE, TRUE, FALSE)
+  pm <- panna:::skill_position_means(sk, role, is_gk, stats = c("last_man_tackle_p90", "saves_p90"))
+  get <- function(r, s) pm[role == r & stat_name == s, mean]
+  expect_setequal(unique(pm$role), c("CB", "ST", "GK", "OTHER"))
+  expect_equal(get("CB", "last_man_tackle_p90"), (0.01 * 10 + 0.03 * 30) / 40)  # p5 is a keeper
+  expect_equal(get("ST", "last_man_tackle_p90"), 0.10)                          # zero weight ignored
+  expect_equal(get("GK", "saves_p90"), 3)
+  expect_equal(get("GK", "last_man_tackle_p90"), 0)                             # no values: 0, said so
+  expect_equal(get("OTHER", "last_man_tackle_p90"), 0.02)                       # NA role -> OTHER
+})
+
+test_that("skill_position_means: a role with no weight is an error, not a silent 0", {
+  sk <- data.table::data.table(weighted_90s = c(10, 0), last_man_tackle_p90 = c(0.01, 0.02))
+  expect_error(panna:::skill_position_means(sk, c("CB", "ST"), c(FALSE, FALSE),
+                                            stats = "last_man_tackle_p90"), "no rows with weight")
+  expect_error(panna:::skill_position_means(sk, "CB", c(FALSE, FALSE)), "one entry per row")
+})
+
+test_that("skill_position_means: normalising with them leaves each role's weighted mean skill at 0", {
+  set.seed(4)
+  n <- 40
+  sk <- data.table::data.table(player_id = paste0("p", seq_len(n)), weighted_90s = runif(n, 1, 30),
+                               last_man_tackle_p90 = runif(n), tackles_p90 = runif(n, 0, 3))
+  role <- rep(c("CB", "ST"), each = n / 2)
+  pm <- panna:::skill_position_means(sk, role, rep(FALSE, n), stats = c("last_man_tackle_p90", "tackles_p90"))
+  nz <- panna:::.position_normalize_skills(data.table::copy(sk), pm, is_gk = rep(FALSE, n), role_override = role)
+  for (r in c("CB", "ST")) for (s in c("last_man_tackle_p90", "tackles_p90")) {
+    i <- role == r
+    expect_equal(sum(nz[[s]][i] * sk$weighted_90s[i]) / sum(sk$weighted_90s[i]), 0, tolerance = 1e-12)
+  }
+})
