@@ -995,7 +995,9 @@ NG_STOP_ACTIONS <- c("keeper_save")
 #' @param dacts_share How much of the **defensive pool's credit half** to route
 #'   by each player's defensive work rather than flat. 0 is a flat spread; 1
 #'   routes it entirely by defensive work. Default **0.5** (Pete, 2026-09-21). See the note below on why
-#'   only the credit half, and why the default is 0.
+#'   only the credit half, and why the default is 0. Credit from a keeper's
+#'   save or an own goal is always spread flat (Pete, 2026-11-18): nobody's
+#'   defending earned it.
 #' @param dacts_measure What "defensive work" means.
 #'   `"act_value"` (the default) weights each act by how much its own
 #'   `epv_delta` moved the game, so a clearance off the line outweighs one on
@@ -1044,7 +1046,11 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5, keeper_poo
   acts <- av[, .(match_id, action_id, period_id,
                  minute = as.numeric(time_seconds) / 60,
                  act_team = if ("team_id" %in% names(av)) team_id else NA_character_,
-                 start_x = if ("start_x" %in% names(av)) as.numeric(start_x) else NA_real_)]
+                 start_x = if ("start_x" %in% names(av)) as.numeric(start_x) else NA_real_,
+                 # Pools that nobody's defending earned (Pete, 2026-11-18): a
+                 # keeper's save and an own goal. See the dacts_share tilt below.
+                 no_tilt = (if ("action_type" %in% names(av)) action_type %chin% "keeper_save" else FALSE) |
+                           (if ("is_own_goal" %in% names(av)) is_own_goal %in% TRUE else FALSE))]
   pools <- merge(pools, acts, by = c("match_id", "action_id"), all.x = TRUE)
   # Where the pooled play happened, in the POOL team's frame: its own third or
   # not. SPADL's x runs 0-100 in the ACTING team's attacking direction, so for
@@ -1084,6 +1090,13 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5, keeper_poo
   # of what torp hit at rating vintage v11, where one setting spread a side's
   # OFFENCE pool by DEFENSIVE acts and charged defenders most for defending.
   pools[, half := fifelse(value_own >= 0, "credit", "blame")]
+  # Credit from a keeper's save or an own goal is spread flat, never by
+  # defensive work (Pete, 2026-11-18). Brighton 5-0 Palace on 2026-10-18: 2.34
+  # of Brighton's 5.31 goals of defensive-pool credit was Canvot's own goal and
+  # Palace saves that fell to Brighton rebound goals, and the tilt gave
+  # Vuskovic about a quarter of it for his tackles and interceptions. Its own
+  # half value keeps it in separate buckets, so the tilt below skips it.
+  pools[half == "credit" & no_tilt %in% TRUE, half := "credit_flat"]
   buck <- pools[, .(value_home = sum(value_home), value_own = sum(value_own)),
                 by = .(match_id, team_id, role, entry, half, zone, period_id, mbin,
                        stint_min)]
@@ -1179,7 +1192,7 @@ ng_spread_pools <- function(pay, actions, lineups, dacts_share = 0.5, keeper_poo
   # in the feed and is not recognised (rare).
   kb <- j$is_keeper & j$entry %in% "defence" & j$half %in% "blame"
   j[kb, w := w * keeper_pool_blame]
-  kc <- j$is_keeper & j$entry %in% "defence" & j$half %in% "credit"
+  kc <- j$is_keeper & j$entry %in% "defence" & j$half %in% c("credit", "credit_flat")
   j[kc, w := w * keeper_pool_credit]
   # Outside his own third a keeper's weight in ANY pool is keeper_outside_weight
   # (1 = shares like anyone; 0 = own third only).

@@ -475,6 +475,33 @@ test_that("dacts_share routes only the defensive pool's credit half", {
             flat[player_id == "a11", sum(value_own)])
 })
 
+test_that("credit from a keeper save or an own goal is spread flat, not by defensive work", {
+  # Pete, 2026-11-18 (Brighton 5-0 Palace, 18 Oct): an opponent's save that falls
+  # to a rebound goal, or an own goal, is nobody's defending.
+  lineup <- data.frame(
+    match_id = "m1", player_id = c(paste0("h", 1:11), paste0("a", 1:11)),
+    team_id = rep(c("H", "A"), each = 11), is_starter = TRUE, minutes_played = 90,
+    sub_on_minute = 0, sub_off_minute = 0, stringsAsFactors = FALSE)
+  # One H action whose loss lands in A's defensive pool as credit, and a1's
+  # tackle so the tilt has someone to favour.
+  pay <- data.table::data.table(match_id = "m1", team_id = "A", action_id = 1L,
+                                player_id = NA_character_, role = "pool_def", entry = "defence",
+                                play_type = "x", value_home = -0.5, is_home = FALSE, value_own = 0.5)
+  acts_for <- function(type, own_goal = FALSE) data.frame(
+    match_id = "m1", action_id = 1:2, period_id = 1L, time_seconds = c(600, 300),
+    team_id = c("H", "A"), player_id = c("h1", "a1"), action_type = c(type, "tackle"),
+    result = "success", epv_delta = c(-0.5, 0.05), is_own_goal = c(own_goal, FALSE),
+    start_x = 50, stringsAsFactors = FALSE)
+  a1 <- function(acts) {
+    s <- ng_spread_pools(pay, acts, lineup, dacts_share = 1, verbose = FALSE)
+    expect_equal(sum(s$value_own), 0.5, tolerance = 1e-12)
+    s[player_id == "a1", sum(value_own)]
+  }
+  expect_gt(a1(acts_for("pass")), 0.5 / 11 + 1e-9)                      # tilted to a1
+  expect_equal(a1(acts_for("keeper_save")), 0.5 / 11, tolerance = 1e-12) # flat
+  expect_equal(a1(acts_for("shot", own_goal = TRUE)), 0.5 / 11, tolerance = 1e-12)
+})
+
 test_that("dacts_share is validated", {
   d <- ng_fixture_spadl()
   pay <- ng_build_ledger(d, adj = NULL, allocate = TRUE, convention = "team",
