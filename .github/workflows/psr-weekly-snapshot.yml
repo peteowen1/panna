@@ -18,6 +18,10 @@ on:
         description: 'Rebuild EVERY weekly snapshot, not just new weeks (needed once after a stale-input incident, e.g. review R001)'
         type: boolean
         default: false
+      raw_skill_baseline:
+        description: 'Calibration refit input (panna#216/#449): full rebuild with PSR_BASELINE=skill and NO position calibration; never uploaded, kept as a run artifact'
+        type: boolean
+        default: false
 
 concurrency:
   # main/dev share panna-release-writer so release writes never overlap. Any other ref is a dry
@@ -224,6 +228,10 @@ jobs:
           XMETRICS_SOURCE: remote
           # One-off full rebuild (dispatch input); empty = incremental.
           PSR_FORCE_FULL_REBUILD: ${{ inputs.force_full_rebuild && '1' || '' }}
+          # Calibration refit input (dispatch only): 08b's raw mode forces a full rebuild, skips the
+          # calibration and never uploads; the file is kept by the artifact step below.
+          PSR_RAW_UNCALIBRATED: ${{ inputs.raw_skill_baseline && '1' || '' }}
+          PSR_BASELINE: ${{ inputs.raw_skill_baseline && 'skill' || 'raw' }}
         run: |
           cat > /tmp/run_psr_weekly.R << 'EOF'
           pannadata_path <- Sys.getenv("PANNADATA_DIR", "../pannadata/data")
@@ -255,6 +263,23 @@ jobs:
           source("data-raw/estimated-skills/run_skills_pipeline.R")
           EOF
           Rscript /tmp/run_psr_weekly.R
+
+      # upload-artifact takes paths inside the workspace only
+      - name: Stage the raw skill-baseline snapshots
+        if: ${{ inputs.raw_skill_baseline }}
+        run: |
+          mkdir -p raw_artifact
+          cp "${{ runner.temp }}/pannadata/opta/opta_psr_weekly_RAW_uncalibrated.parquet" raw_artifact/
+          ls -la raw_artifact
+
+      - name: Keep the raw skill-baseline snapshots (calibration refit input)
+        if: ${{ inputs.raw_skill_baseline }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: opta_psr_weekly_RAW_uncalibrated_skill_baseline
+          path: raw_artifact/opta_psr_weekly_RAW_uncalibrated.parquet
+          if-no-files-found: error
+          retention-days: 14
 
       # panna#123: refresh the live-PSV centering constants weekly so C_pop
       # tracks the season as it accumulates (and tournament leagues like the WC
