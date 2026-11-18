@@ -29,7 +29,9 @@ Needs \code{match_id}, \code{action_id}, \code{time_seconds}.}
 \item{dacts_share}{How much of the \strong{defensive pool's credit half} to route
 by each player's defensive work rather than flat. 0 is a flat spread; 1
 routes it entirely by defensive work. Default \strong{0.5} (Pete, 2026-09-21). See the note below on why
-only the credit half, and why the default is 0.}
+only the credit half, and why the default is 0. Credit from a keeper's
+save or an own goal is always spread flat (Pete, 2026-11-18): nobody's
+defending earned it.}
 
 \item{keeper_pool_blame, keeper_pool_credit}{A goalkeeper's weight in the
 \strong{defensive pool's} blame and credit halves, relative to an outfield
