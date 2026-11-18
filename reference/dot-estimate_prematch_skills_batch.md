@@ -137,8 +137,11 @@ new observations. Uses [`rowsum()`](https://rdrr.io/r/base/rowsum.html)
   history at every date. Resuming a checkpoint also restores the
   position counts, and a checkpoint from a non-`as_of` run is rejected
   (fingerprint). `as_of = TRUE` requires cached `position_multipliers`
-  and `prior_centers` in `decay_params` and stops without them, since
-  computing them here would use matches after each date.
+  in `decay_params` and stops without them, since computing them here
+  would use matches after each date. Without cached `prior_centers` each
+  date's centres come from the matches before it (running sums), as
+  [`estimate_player_skills()`](https://peteowen1.github.io/panna/reference/estimate_player_skills.md)
+  does; a partial set still stops.
 
 - verbose:
 

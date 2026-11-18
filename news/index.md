@@ -1,5 +1,16 @@
 # Changelog
 
+## panna 0.3.128
+
+- Predictions step 02b computes its 1 July skill snapshots in one batch
+  pass instead of one
+  [`estimate_player_skills()`](https://peteowen1.github.io/panna/reference/estimate_player_skills.md)
+  call per date (panna#442, ~4 min off each daily run). The batch
+  estimator’s `as_of` mode now works without cached prior centres: each
+  date is centred on the matches before it, as the single-date estimator
+  does. Checked on the real caches for every date 2014-2026: identical
+  players and positions, skills within 3e-13.
+
 ## panna 0.3.127
 
 - Net goals: pool credit from a keeper save or an own goal is now spread
