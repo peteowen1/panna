@@ -1,5 +1,14 @@
 # Changelog
 
+## panna 0.3.129
+
+- The weekly PSR job publishes `psv_live_constants.csv` (blog-latest)
+  and step 08 publishes `opta_skills.parquet` /
+  `opta_match_stats.parquet` (opta-latest) through
+  [`vb_publish()`](https://peteowen1.github.io/panna/reference/vb_publish.md),
+  not `gh release upload --clobber` / `pb_upload(overwrite = TRUE)`,
+  which delete the live asset before uploading (panna#512).
+
 ## panna 0.3.128
 
 - Predictions step 02b computes its 1 July skill snapshots in one batch

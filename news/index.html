@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.128</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.129</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,10 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.129" id="panna-03129">panna 0.3.129<a class="anchor" aria-label="anchor" href="#panna-03129"></a></h2>
+<ul><li>The weekly PSR job publishes <code>psv_live_constants.csv</code> (blog-latest) and step 08 publishes <code>opta_skills.parquet</code> / <code>opta_match_stats.parquet</code> (opta-latest) through <code><a href="../reference/vb_publish.html">vb_publish()</a></code>, not <code>gh release upload --clobber</code> / <code>pb_upload(overwrite = TRUE)</code>, which delete the live asset before uploading (panna#512).</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.128" id="panna-03128">panna 0.3.128<a class="anchor" aria-label="anchor" href="#panna-03128"></a></h2>
 <ul><li>Predictions step 02b computes its 1 July skill snapshots in one batch pass instead of one <code><a href="../reference/estimate_player_skills.html">estimate_player_skills()</a></code> call per date (panna#442, ~4 min off each daily run). The batch estimator’s <code>as_of</code> mode now works without cached prior centres: each date is centred on the matches before it, as the single-date estimator does. Checked on the real caches for every date 2014-2026: identical players and positions, skills within 3e-13.</li>
