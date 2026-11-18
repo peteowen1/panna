@@ -1,3 +1,10 @@
+# panna 0.3.126
+
+- `career-panna.yml` publishes only after a rank check: step 09 builds, and a new last step uploads
+  `career_panna.parquet` when its rank Spearman against the published file is at least 0.95
+  (`force_publish` dispatch input for a deliberate change). The weekly run used to publish before its
+  compare step ran.
+
 # panna 0.3.125
 
 - `returner_status()` is replaced by `returner_rust()`, a returning-player rule with no cliffs (#497):
