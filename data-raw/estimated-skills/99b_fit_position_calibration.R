@@ -104,8 +104,25 @@ role8_of <- function(role16) {
         default = NA_character_)
 }
 
+## PSR_99B_GRAIN=pos10 (panna#216): the 10 calibration positions (.role16_to_pos10(), which
+## splits wing-backs from full-backs and wide midfielders from wingers) instead of the 8 above.
+GRAIN <- Sys.getenv("PSR_99B_GRAIN", "role8")
+if (identical(GRAIN, "pos10")) {
+  BUCKETS <- c("GK","CB","FB","WB","DM","CM","AM","WM","W","ST")
+  role8_of <- function(role16) { p <- .role16_to_pos10(role16); p[p == "OTHER"] <- NA_character_; p }
+} else if (!identical(GRAIN, "role8")) stop("PSR_99B_GRAIN must be role8 or pos10, not ", GRAIN)
+cat(sprintf("grain: %s (%d buckets)\n", GRAIN, length(BUCKETS)))
+
 ## ---- match scaffolding (same source as 99_) ----------------------------
-ms <- as.data.table(readRDS("data-raw/cache-skills/01_match_stats.rds"))
+## PSR_99B_MATCH_STATS: read the match rows from an opta_match_stats.parquet (only the columns
+## used here) instead of the local cache-skills/01_match_stats.rds, which can be months old.
+.ms_pq <- Sys.getenv("PSR_99B_MATCH_STATS")
+ms <- if (nzchar(.ms_pq)) as.data.table(read_parquet(.ms_pq, col_select = c(
+        "player_id", "player_name", "match_id", "team_id", "match_date", "season", "competition",
+        "total_minutes", "position", "position_side", "home_score", "away_score", "is_home"))) else
+      as.data.table(readRDS("data-raw/cache-skills/01_match_stats.rds"))
+cat(sprintf("match rows: %s, %s to %s (%s)\n", format(nrow(ms), big.mark = ","), min(ms$match_date),
+            max(ms$match_date), if (nzchar(.ms_pq)) .ms_pq else "cache-skills/01_match_stats.rds"))
 ms[, match_date := as.Date(match_date)]
 ms[, season_end_year := as.integer(extract_season_end_year(season))]
 ms <- ms[!is.na(season_end_year) & !is.na(total_minutes) & total_minutes > 0]
@@ -327,6 +344,14 @@ setorder(b5, -val_cal)
 cat("\nAFTER, Big-5/UCL top 15 (named players, not summary stats):\n")
 print(head(b5[, .(player_name, role8, competition, val = round(val, 3),
                   val_cal = round(val_cal, 3))], 15))
+## Named anchors (Pete, 2026-11-19: "Haaland should be near the top"). Ranks of the
+## 900-minute cohort, all comps and Big-5/UCL, before (val) and after (val_cal).
+pl[, `:=`(rank_before = frank(-val, ties.method = "min"), rank_after = frank(-val_cal, ties.method = "min"))]
+b5[, `:=`(b5_before = frank(-val, ties.method = "min"), b5_after = frank(-val_cal, ties.method = "min"))]
+anc <- merge(pl[, .(player_id, player_name, role8, competition, rank_before, rank_after)],
+             b5[, .(player_id, b5_before, b5_after)], by = "player_id", all.x = TRUE)
+cat(sprintf("\nNamed anchors, ranks of %d players with 900+ minutes in %d (Big-5/UCL: %d):\n", nrow(pl), sey, nrow(b5)))
+print(anc[grepl("Haaland|Mbapp|Kane|Salah|Olise|Yamal|Gabriel Magalh|van Dijk|Saliba|Rice|Rodri$|Neuer|Courtois", player_name)][order(rank_after)])
 
 cat("\n---- NOT DECIDED, and why nothing ships from this file ----\n")
 cat("Slopes are not factors. Shipping needs a normalisation choice: scale so\n")
