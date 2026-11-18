@@ -150,7 +150,7 @@ jobs:
           FORCE: ${{ inputs.force_publish && 'true' || 'false' }}
         run: |
           set -euo pipefail
-          if [ -z "$SPEARMAN" ] || [ "$SPEARMAN" = "NA" ]; then
+          if ! printf '%s' "$SPEARMAN" | grep -Eq '^-?[0-9]+(\.[0-9]+)?$'; then
             echo "::error title=No rank check::the compare step produced no Spearman value; not publishing."
             exit 1
           fi
