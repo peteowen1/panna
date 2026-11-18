@@ -46,9 +46,12 @@
 #' @param own_goal_credit Share of the scoring side's gain from an own goal
 #'   paid to its last player on the ball before it, as his own (`wpa_own`, role
 #'   `own_goal_setup`); the rest stays in the team pool, spread by minutes. The
-#'   player who put it in his own net keeps his blame. Default 0.25 (Pete,
-#'   2026-11-19: a bit more credit for the player before, not all of it). 0
-#'   gives the old split.
+#'   player who put it in his own net keeps his blame apart from
+#'   `own_goal_relief`. Default 0.25 (Pete, 2026-11-19: a bit more credit for
+#'   the player before, not all of it). 0 gives the old split.
+#' @param own_goal_relief Share of the own-goal scorer's blame moved to his
+#'   team's pool, spread by minutes (Pete, 2026-11-19: a bit less blame, not a
+#'   full removal). Default 0.25; 0 gives the old split.
 #' @param tol Largest allowed gap between a team's total and its target, and
 #'   between the engine's match total and (result - opening win chance).
 #' @param verbose Print a summary. Default `TRUE`.
@@ -66,10 +69,12 @@
 #' @export
 wpa_build_ledger <- function(actions, wp_actions, fixtures, lineups, adj = NULL,
                              start = 0.5, dacts_share = 0, own_goal_credit = 0.25,
-                             tol = 1e-6, verbose = TRUE) {
-  if (!is.numeric(own_goal_credit) || length(own_goal_credit) != 1L || is.na(own_goal_credit) ||
-      own_goal_credit < 0 || own_goal_credit > 1) {
-    cli::cli_abort("{.arg own_goal_credit} must be one number between 0 and 1.")
+                             own_goal_relief = 0.25, tol = 1e-6, verbose = TRUE) {
+  for (nm in c("own_goal_credit", "own_goal_relief")) {
+    v <- get(nm)
+    if (!is.numeric(v) || length(v) != 1L || is.na(v) || v < 0 || v > 1) {
+      cli::cli_abort("{.arg {nm}} must be one number between 0 and 1.")
+    }
   }
   a <- data.table::as.data.table(actions)
   w <- data.table::as.data.table(wp_actions)
@@ -125,7 +130,7 @@ wpa_build_ledger <- function(actions, wp_actions, fixtures, lineups, adj = NULL,
   pay <- ng_build_ledger(a, adj = adj, fixtures = fx[, .(match_id, home_team_id, away_team_id)],
                          lineups = lineups, convention = "team", shot_chain = FALSE,
                          shot_aftermath = FALSE, verbose = FALSE)
-  pay <- .wpa_own_goal_setup(pay, a, share = own_goal_credit, verbose = verbose)
+  pay <- .wpa_own_goal_setup(pay, a, share = own_goal_credit, relief = own_goal_relief, verbose = verbose)
   pay <- ng_spread_pools(pay, a, lineups, dacts_share = dacts_share, verbose = FALSE)
   pg <- data.table::as.data.table(ng_player_game(pay, lineups, verbose = FALSE))
 
@@ -196,32 +201,57 @@ wpa_build_ledger <- function(actions, wp_actions, fixtures, lineups, adj = NULL,
 
 # Own goals (panna#273, Pete 2026-11-19). The engine books the scoring side's gain
 # from an own goal to that side's pool, so every player on it gets the same small
-# share. Move `share` of it to the scoring side's last player on the ball before
-# the own goal, as his own credit (role "own_goal_setup", offence); the rest stays
-# in the pool. The own-goal scorer's blame is untouched, so each team's total is
-# unchanged. An own goal with no earlier action by the other side keeps the pool.
-.wpa_own_goal_setup <- function(pay, actions, share, verbose = TRUE) {
+# share, and books nearly all of the loss to the player who put it in (as if it
+# were his own shot). Two partial moves, both inside one team, so each team's
+# total is unchanged:
+#   * credit: `share` of the scoring side's pool gain goes to its last player on
+#     the ball before the own goal, as his own (role "own_goal_setup", offence);
+#   * blame: `relief` of the own-goal scorer's blame moves to his team's pool
+#     (role "pool_def", defence), spread with the rest of the pool.
+# An own goal with no earlier action by the other side keeps the credit in the pool.
+.wpa_own_goal_setup <- function(pay, actions, share, relief = 0, verbose = TRUE) {
   p <- data.table::as.data.table(pay)
-  if (share <= 0 || !"is_own_goal" %in% names(actions)) return(p)
+  if ((share <= 0 && relief <= 0) || !"is_own_goal" %in% names(actions)) return(p)
   a <- data.table::as.data.table(actions)
   og <- a[a$is_own_goal %in% TRUE]
   if (!nrow(og)) return(p)
-  n_moved <- 0L; moved <- 0; add <- vector("list", nrow(og))
+  n_cred <- 0L; cred <- 0; n_rel <- 0L; rel <- 0; add <- list()
   for (i in seq_len(nrow(og))) {
-    m <- og$match_id[i]; aid <- og$action_id[i]; tm <- og$team_id[i]
-    prior <- a[a$match_id == m & a$action_id < aid & a$team_id != tm & !is.na(a$player_id)]
-    pool <- which(p$match_id == m & p$action_id == aid & p$role == "pool_def" & p$team_id != tm)
-    if (!nrow(prior) || !length(pool)) next
-    who <- prior[which.max(prior$action_id)]
-    new <- data.table::copy(p[pool])
-    new[, `:=`(player_id = who$player_id, role = "own_goal_setup", entry = "offence",
-               value_own = value_own * share, value_home = value_home * share)]
-    p[pool, `:=`(value_own = value_own * (1 - share), value_home = value_home * (1 - share))]
-    add[[i]] <- new
-    n_moved <- n_moved + 1L; moved <- moved + sum(new$value_own)
+    m <- og$match_id[i]; aid <- og$action_id[i]; tm <- og$team_id[i]; pl <- og$player_id[i]
+    if (share > 0) {
+      # Same half only: a first-half player is not "the player before" a second-half own goal.
+      prior <- a[a$match_id == m & a$action_id < aid & a$team_id != tm & !is.na(a$player_id) &
+                   a$period_id == og$period_id[i]]
+      pool <- which(p$match_id == m & p$action_id == aid & p$role == "pool_def" & p$team_id != tm)
+      if (nrow(prior) && length(pool)) {
+        who <- prior[which.max(prior$action_id)]
+        new <- data.table::copy(p[pool])
+        new[, `:=`(player_id = who$player_id, role = "own_goal_setup", entry = "offence",
+                   value_own = value_own * share, value_home = value_home * share)]
+        p[pool, `:=`(value_own = value_own * (1 - share), value_home = value_home * (1 - share))]
+        add[[length(add) + 1L]] <- new
+        n_cred <- n_cred + 1L; cred <- cred + sum(new$value_own)
+      }
+    }
+    if (relief > 0 && !is.na(pl)) {
+      mine <- which(p$match_id == m & p$action_id == aid & p$team_id == tm & p$player_id %in% pl &
+                      p$value_own < 0)
+      if (length(mine)) {
+        new <- data.table::copy(p[mine])
+        new[, `:=`(player_id = NA_character_, role = "pool_def", entry = "defence",
+                   value_own = value_own * relief, value_home = value_home * relief)]
+        p[mine, `:=`(value_own = value_own * (1 - relief), value_home = value_home * (1 - relief))]
+        add[[length(add) + 1L]] <- new
+        n_rel <- n_rel + 1L; rel <- rel + sum(new$value_own)
+      }
+    }
   }
-  if (isTRUE(verbose) && n_moved > 0L) {
-    cli::cli_alert_info("WPA ledger: {n_moved} own goal{?s}: {round(100 * share)}% of the scoring side's gain ({signif(moved, 3)} in all) to its last player on the ball before it.")
+  if (isTRUE(verbose)) {
+    cli::cli_alert_info(paste0(
+      "WPA ledger: {nrow(og)} own goal{?s}: {round(100 * share)}% of the scoring side's gain ({signif(cred, 3)} in all) ",
+      "to its last player before it on {n_cred}; {round(100 * relief)}% of the scorer's blame ({signif(rel, 3)}) ",
+      "to his team's pool on {n_rel}."))
   }
+  if (!length(add)) return(p)
   data.table::rbindlist(c(list(p), add), use.names = TRUE, fill = TRUE)
 }

@@ -132,8 +132,9 @@ test_that("an own goal pays a share of the scoring side's gain to its last playe
   act <- wpa_fx_actions(); act$team_id[4] <- "A"; act$player_id[4] <- "a2"
   act$is_own_goal <- c(FALSE, FALSE, FALSE, TRUE)
   wp <- wpa_fx_wp(); wp$team_id[4] <- "A"; wp$wp[4] <- 0.30; wp$wpa[4] <- -0.30
-  p0 <- wpa_build_ledger(act, wp, wpa_fx_fixtures(), wpa_fx_lineup(), own_goal_credit = 0, verbose = FALSE)
-  p1 <- wpa_build_ledger(act, wp, wpa_fx_fixtures(), wpa_fx_lineup(), verbose = FALSE)
+  p0 <- wpa_build_ledger(act, wp, wpa_fx_fixtures(), wpa_fx_lineup(), own_goal_credit = 0,
+                         own_goal_relief = 0, verbose = FALSE)
+  p1 <- wpa_build_ledger(act, wp, wpa_fx_fixtures(), wpa_fx_lineup(), own_goal_relief = 0, verbose = FALSE)
   v <- function(p, id, col = "wpa_neutral") p[player_id == id][[col]]
   expect_equal(v(p1, "h2", "wpa_own_goal_setup"), 0.075, tolerance = 1e-12)
   expect_equal(v(p1, "h2") - v(p0, "h2"), 0.075 - 0.075 / 11, tolerance = 1e-12)
@@ -143,4 +144,16 @@ test_that("an own goal pays a share of the scoring side's gain to its last playe
   expect_equal(p1$wpa_own + p1$wpa_won + p1$wpa_shared, p1$wpa_neutral, tolerance = 1e-12)
   expect_error(wpa_build_ledger(act, wp, wpa_fx_fixtures(), wpa_fx_lineup(), own_goal_credit = 2,
                                 verbose = FALSE), "between 0 and 1")
+
+  # Relief: the engine books 0.9 x 0.30 = 0.27 of A's loss to a2 as the shooter
+  # (ng_shares() shot_keep = 0.9); own_goal_relief = 0.25 moves 0.0675 of it to A's
+  # pool, spread over A's 11 players. H is untouched by the relief.
+  p2 <- wpa_build_ledger(act, wp, wpa_fx_fixtures(), wpa_fx_lineup(), own_goal_credit = 0, verbose = FALSE)
+  expect_equal(v(p0, "a2", "wpa_shooter"), -0.27, tolerance = 1e-12)
+  expect_equal(v(p2, "a2", "wpa_shooter"), -0.27 * 0.75, tolerance = 1e-12)
+  expect_equal(v(p2, "a2") - v(p0, "a2"), 0.0675 - 0.0675 / 11, tolerance = 1e-12)
+  expect_equal(v(p2, "a5") - v(p0, "a5"), -0.0675 / 11, tolerance = 1e-12)
+  expect_equal(v(p2, "h2"), v(p0, "h2"), tolerance = 1e-12)
+  expect_equal(p2[, sum(wpa_neutral), by = team_id]$V1, p0[, sum(wpa_neutral), by = team_id]$V1, tolerance = 1e-12)
+  expect_equal(p2$wpa_own + p2$wpa_won + p2$wpa_shared, p2$wpa_neutral, tolerance = 1e-12)
 })

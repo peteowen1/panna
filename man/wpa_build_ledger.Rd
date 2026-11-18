@@ -13,6 +13,7 @@ wpa_build_ledger(
   start = 0.5,
   dacts_share = 0,
   own_goal_credit = 0.25,
+  own_goal_relief = 0.25,
   tol = 1e-06,
   verbose = TRUE
 )
@@ -41,9 +42,13 @@ team's frame, NOT centred: \code{add_wp_vars(..., centre = FALSE)}).}
 \item{own_goal_credit}{Share of the scoring side's gain from an own goal
 paid to its last player on the ball before it, as his own (\code{wpa_own}, role
 \code{own_goal_setup}); the rest stays in the team pool, spread by minutes. The
-player who put it in his own net keeps his blame. Default 0.25 (Pete,
-2026-11-19: a bit more credit for the player before, not all of it). 0
-gives the old split.}
+player who put it in his own net keeps his blame apart from
+\code{own_goal_relief}. Default 0.25 (Pete, 2026-11-19: a bit more credit for
+the player before, not all of it). 0 gives the old split.}
+
+\item{own_goal_relief}{Share of the own-goal scorer's blame moved to his
+team's pool, spread by minutes (Pete, 2026-11-19: a bit less blame, not a
+full removal). Default 0.25; 0 gives the old split.}
 
 \item{tol}{Largest allowed gap between a team's total and its target, and
 between the engine's match total and (result - opening win chance).}
