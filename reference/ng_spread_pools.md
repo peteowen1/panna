@@ -50,6 +50,8 @@ ng_spread_pools(
   player's defensive work rather than flat. 0 is a flat spread; 1 routes
   it entirely by defensive work. Default **0.5** (Pete, 2026-09-21). See
   the note below on why only the credit half, and why the default is 0.
+  Credit from a keeper's save or an own goal is always spread flat
+  (Pete, 2026-11-18): nobody's defending earned it.
 
 - keeper_pool_blame, keeper_pool_credit:
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## panna 0.3.127
+
+- Net goals: pool credit from a keeper save or an own goal is now spread
+  flat across the players on the pitch, never by defensive work
+  ([`ng_spread_pools()`](https://peteowen1.github.io/panna/reference/ng_spread_pools.md),
+  Pete 2026-11-18). The rest of the defensive pool keeps
+  `dacts_share = 0.5`. Brighton 5-0 Palace (18 Oct): 2.34 of Brighton’s
+  5.31 goals of defensive-pool credit was an own goal and Palace saves
+  falling to rebound goals. ENG 2026-27: team totals unchanged, position
+  means per 90 within 0.003, Vušković -0.32, Groß +0.19 for the season.
+
 ## panna 0.3.126
 
 - `career-panna.yml` publishes only after a rank check: step 09 builds,
