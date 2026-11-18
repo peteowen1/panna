@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.129</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.130</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,10 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.130" id="panna-03130">panna 0.3.130<a class="anchor" aria-label="anchor" href="#panna-03130"></a></h2>
+<ul><li>WPA net ledger, own goals (panna#273, <a href="https://github.com/peteowen1/panna/issues/514" class="external-link">#514</a>): <code><a href="../reference/wpa_build_ledger.html">wpa_build_ledger()</a></code> gives 25% of the scoring side’s gain to its last player on the ball before the own goal, in the same half (<code>own_goal_credit</code>, role <code>own_goal_setup</code>, in <code>wpa_own</code>), and moves 25% of the own-goal scorer’s blame to his team’s pool (<code>own_goal_relief</code>). Team totals are unchanged; both at 0 reproduce the old ledger. Brighton 5-0 Palace: Groß 0.029 -&gt; 0.076, Canvot -0.201 -&gt; -0.159.</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.129" id="panna-03129">panna 0.3.129<a class="anchor" aria-label="anchor" href="#panna-03129"></a></h2>
 <ul><li>The weekly PSR job publishes <code>psv_live_constants.csv</code> (blog-latest) and step 08 publishes <code>opta_skills.parquet</code> / <code>opta_match_stats.parquet</code> (opta-latest) through <code><a href="../reference/vb_publish.html">vb_publish()</a></code>, not <code>gh release upload --clobber</code> / <code>pb_upload(overwrite = TRUE)</code>, which delete the live asset before uploading (panna#512).</li>

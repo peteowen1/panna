@@ -11,7 +11,7 @@ match cancel."><meta property="og:image" content="https://peteowen1.github.io/pa
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.129</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.130</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -60,6 +60,8 @@ match cancel.</p>
 <span>  adj <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  start <span class="op">=</span> <span class="fl">0.5</span>,</span>
 <span>  dacts_share <span class="op">=</span> <span class="fl">0</span>,</span>
+<span>  own_goal_credit <span class="op">=</span> <span class="fl">0.25</span>,</span>
+<span>  own_goal_relief <span class="op">=</span> <span class="fl">0.25</span>,</span>
 <span>  tol <span class="op">=</span> <span class="fl">1e-06</span>,</span>
 <span>  verbose <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
@@ -101,6 +103,21 @@ team's frame, NOT centred: <code>add_wp_vars(..., centre = FALSE)</code>).</p></
 
 <dt id="arg-dacts-share">dacts_share<a class="anchor" aria-label="anchor" href="#arg-dacts-share"></a></dt>
 <dd><p>Passed to <code><a href="ng_spread_pools.html">ng_spread_pools()</a></code>. Default 0 (flat pools).</p></dd>
+
+
+<dt id="arg-own-goal-credit">own_goal_credit<a class="anchor" aria-label="anchor" href="#arg-own-goal-credit"></a></dt>
+<dd><p>Share of the scoring side's gain from an own goal
+paid to its last player on the ball before it, as his own (<code>wpa_own</code>, role
+<code>own_goal_setup</code>); the rest stays in the team pool, spread by minutes. The
+player who put it in his own net keeps his blame apart from
+<code>own_goal_relief</code>. Default 0.25 (Pete, 2026-11-19: a bit more credit for
+the player before, not all of it). 0 gives the old split.</p></dd>
+
+
+<dt id="arg-own-goal-relief">own_goal_relief<a class="anchor" aria-label="anchor" href="#arg-own-goal-relief"></a></dt>
+<dd><p>Share of the own-goal scorer's blame moved to his
+team's pool, spread by minutes (Pete, 2026-11-19: a bit less blame, not a
+full removal). Default 0.25; 0 gives the old split.</p></dd>
 
 
 <dt id="arg-tol">tol<a class="anchor" aria-label="anchor" href="#arg-tol"></a></dt>
