@@ -1,3 +1,18 @@
+# panna 0.3.130
+
+- Opta RAPM step 1 and the EPV xMetrics job score shots through one function, `score_spadl_shots()`
+  (`R/scored_shots_cache.R`), instead of two copies (issue #505). The EPV job writes
+  `data-raw/cache/epv/opta_scored_shots.parquet`, one row per shot with a `cache_key` per league-season
+  (hash of the events, the shot lookup, the xG model and `SCORED_SHOTS_VERSION`). RAPM step 1 reuses a
+  league-season only when that key equals the key recomputed from the events it loaded; anything else
+  (no file, no entry, a changed event file or xG model) converts and scores locally as before.
+  Step 1 still never reuses its own output (R060/R068/R076). Nothing publishes or downloads the file
+  yet, so until a workflow does, every league-season is a local conversion.
+- **Changes RAPM numbers:** step 1's own penalty detector never matched (it expected a JSON array, the
+  qualifiers are an object), so RAPM scored penalties as open-play shots and counted them in npxG. It now
+  uses SPADL's `is_penalty` like the EPV job: penalties get `PENALTY_XG` and leave npxG. Copa America
+  2024: 10 of 749 shots, total xG 82.82 -> 84.34, non-penalty shot xG unchanged.
+
 # panna 0.3.129
 
 - The weekly PSR job publishes `psv_live_constants.csv` (blog-latest) and step 08 publishes
