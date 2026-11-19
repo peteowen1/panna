@@ -252,11 +252,53 @@ g[, gd := fifelse(as.logical(is_home), home_score - away_score, away_score - hom
 for (p in pg) g[, paste0("d_", p) := get(p) - get(paste0("o_", p))]
 dc <- paste0("d_", pg)
 
-m1 <- lm(reformulate(dc, "gd"), data = g)
+## PSR_99B_FORMATION (default on; Pete 2026-11-19): control for the difference in the
+## NUMBER of starters each side fields per position. The features are per-position SUMS,
+## so a back three facing a back four reads as "more CB" for the extra player alone:
+## 33% of team-matches differ in starting CBs, and without this control the CB slope
+## fell to 0.555 and WB rose to 2.735, mostly a head-count artifact (0.766 / 1.134 with
+## it). Starter counts are known before kick-off; starter MINUTES are not (red cards and
+## early subs leak the result), so counts, never minutes. Set it to 0 to reproduce the
+## pre-2026-11-19 fit.
+FORMATION <- Sys.getenv("PSR_99B_FORMATION", "1") != "0"
+ctrl <- character(0)
+if (FORMATION) {
+  ## In MIX mode a row's role8 is the role in that match (or a season mix for the
+  ## few unresolved rows); a player counts once per match, in each role he holds.
+  rows8 <- if (MIX) xm else x
+  st_n <- dcast(unique(rows8[, .(match_id, team_id, player_id, role8)])[
+                  , .N, by = .(match_id, team_id, role8)],
+                match_id + team_id ~ role8, value.var = "N", fill = 0)
+  for (p in setdiff(pg, names(st_n))) st_n[, (p) := 0L]
+  setnames(st_n, pg, paste0("s_", pg))
+  os <- copy(st_n)
+  setnames(os, c("team_id", paste0("s_", pg)), c("o_team_id", paste0("os_", pg)))
+  n_before <- nrow(g)
+  g <- merge(merge(g, st_n[, c("match_id", "team_id", paste0("s_", pg)), with = FALSE],
+                   by = c("match_id", "team_id")),
+             os[, c("match_id", "o_team_id", paste0("os_", pg)), with = FALSE],
+             by = c("match_id", "o_team_id"))
+  stopifnot(nrow(g) == n_before)
+  ## GK left out: every side starts one, so its count difference is always ~0.
+  for (p in setdiff(pg, "GK")) g[, paste0("ds_", p) := get(paste0("s_", p)) - get(paste0("os_", p))]
+  ctrl <- paste0("ds_", setdiff(pg, "GK"))
+  cat(sprintf("formation control ON: sides start a different number of CBs in %s of %s team-matches\n",
+              format(g[ds_CB != 0, .N], big.mark = ","), format(nrow(g), big.mark = ",")))
+} else cat("formation control OFF (PSR_99B_FORMATION=0)\n")
+
+m1 <- lm(reformulate(c(dc, ctrl), "gd"), data = g)
 co <- summary(m1)$coefficients
-res <- data.table(bucket = sub("^d_", "", rownames(co)[-1]),
-                  slope  = round(co[-1, 1], 4),
-                  se     = round(co[-1, 2], 4))
+co <- co[intersect(dc, rownames(co)), , drop = FALSE]
+stopifnot(nrow(co) == length(dc))
+res <- data.table(bucket = sub("^d_", "", rownames(co)),
+                  slope  = round(co[, 1], 4),
+                  se     = round(co[, 2], 4))
+## Shipped factor = slope / the minutes-weighted mean slope, so the average minute's
+## factor is 1 and PSR's overall scale is unchanged.
+.wm <- if (MIX) xm[, .(m = sum(mins90 * share)), by = role8] else x[, .(m = sum(mins90)), by = role8]
+res <- merge(res, .wm, by.x = "bucket", by.y = "role8", all.x = TRUE)
+stopifnot(!anyNA(res$m))
+res[, factor := round(slope / weighted.mean(slope, m), 4)][, m := NULL]
 setorder(res, slope)
 cat(sprintf("\n=== 8-bucket slopes, PSR as-at === n team-matches = %s | R2 %.4f\n",
             format(nrow(g), big.mark = ","), summary(m1)$r.squared))
@@ -291,7 +333,7 @@ print(ct[, .(broad_group, contrast, diff, se, t)])
 ## If a future finer taxonomy produces an se comparable to its own slope,
 ## shrink that cell toward the broad-group slope before shipping it.
 cat(sprintf("\nthinnest cell: %s (se %.4f = %.1f%% of its slope)\n",
-            res[which.max(se/abs(slope))]$bucket, max(res$se),
+            res[which.max(se/abs(slope))]$bucket, res[which.max(se/abs(slope))]$se,
             100 * max(res$se / abs(res$slope))))
 fwrite(res, OUT_CSV)
 cat(sprintf("wrote %s\n", OUT_CSV))
@@ -334,9 +376,9 @@ mix <- function(d, col, lab) {
               paste(sprintf("%s=%d", names(mx), as.integer(mx)), collapse = "  ")))
 }
 cat("\n########## top-20 position mix, before vs after ##########\n")
-mix(pl,                        "val",     "BEFORE (current 4-bucket) all comps")
+mix(pl,                        "val",     "BEFORE (input file, no refit) all comps")
 mix(pl[competition %in% BIG5], "val",     "BEFORE  Big-5/UCL")
-mix(pl,                        "val_cal", "AFTER (8-bucket fitted) all comps")
+mix(pl,                        "val_cal", "AFTER (refit factors) all comps")
 mix(pl[competition %in% BIG5], "val_cal", "AFTER   Big-5/UCL")
 
 b5 <- pl[competition %in% BIG5]
@@ -353,9 +395,6 @@ anc <- merge(pl[, .(player_id, player_name, role8, competition, rank_before, ran
 cat(sprintf("\nNamed anchors, ranks of %d players with 900+ minutes in %d (Big-5/UCL: %d):\n", nrow(pl), sey, nrow(b5)))
 print(anc[grepl("Haaland|Mbapp|Kane|Salah|Olise|Yamal|Gabriel Magalh|van Dijk|Saliba|Rice|Rodri$|Neuer|Courtois", player_name)][order(rank_after)])
 
-cat("\n---- NOT DECIDED, and why nothing ships from this file ----\n")
-cat("Slopes are not factors. Shipping needs a normalisation choice: scale so\n")
-cat("the minutes-weighted mean factor is 1 (preserves the overall PSR scale,\n")
-cat("what PSV's GK factor did) or so the target slope is 1.0 (makes PSR\n")
-cat("goal-denominated, which it currently is not -- PSR has no goals-unit\n")
-cat("scale constant, unlike PSV's PSV_RELIABILITY_GD_SCALE).\n")
+cat("\n---- factor = slope / minutes-weighted mean slope (Pete 2026-11-19): the average\n")
+cat("minute keeps factor 1, so PSR keeps its overall scale. Nothing ships from this\n")
+cat("file; wiring the factors into PSR is a separate, reviewed change.\n")
