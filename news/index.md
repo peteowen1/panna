@@ -1,5 +1,28 @@
 # Changelog
 
+## panna 0.3.131
+
+- Live PSV constants now carry the PSV league offset (panna#516). 10b
+  adds `psv_league_offset` to game-log PSV after centring and
+  calibration, and `07c_build_live_psv_constants.R` did not, so live PSV
+  on match pages sat `-offset` away from the game logs (Scottish
+  Premiership starters +0.11 a game, A-League +0.12, Premier League
+  -0.02). 07c now subtracts each league’s offset from K (`psr` in full,
+  `osr`/`dsr` half each) through the new internal
+  [`.psv_live_fold_league_offsets()`](https://peteowen1.github.io/panna/reference/dot-psv_live_fold_league_offsets.md),
+  and stops if `psr_league_offsets.parquet` is missing.
+  `inst/extdata/psv_live_constants.csv` is the build CI published to
+  pannadata `blog-latest` on 19 Nov with the same step applied (61,229
+  player-games behind it, against 16,075 in the hand-built file it
+  replaces).
+- `piero_percentile` in the published game logs is now a season-wide
+  rank. 10b ranks over the leagues one run builds and the rebuild builds
+  each season in parts by league, so each player was ranked within his
+  part (2023-2024: 1,956 of 11,347 players carried more than one
+  percentile, up to 87 points off). `pack_publish_game_logs.R` now
+  recomputes it on each whole season file before publishing, through the
+  new internal `recompute_piero_percentile()` (panna#507).
+
 ## panna 0.3.130
 
 - WPA net ledger, own goals (panna#273,

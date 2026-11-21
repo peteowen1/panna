@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.130</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.131</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,12 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.131" id="panna-03131">panna 0.3.131<a class="anchor" aria-label="anchor" href="#panna-03131"></a></h2>
+<ul><li>Live PSV constants now carry the PSV league offset (panna#516). 10b adds <code>psv_league_offset</code> to game-log PSV after centring and calibration, and <code>07c_build_live_psv_constants.R</code> did not, so live PSV on match pages sat <code>-offset</code> away from the game logs (Scottish Premiership starters +0.11 a game, A-League +0.12, Premier League -0.02). 07c now subtracts each league’s offset from K (<code>psr</code> in full, <code>osr</code>/<code>dsr</code> half each) through the new internal <code><a href="../reference/dot-psv_live_fold_league_offsets.html">.psv_live_fold_league_offsets()</a></code>, and stops if <code>psr_league_offsets.parquet</code> is missing. <code>inst/extdata/psv_live_constants.csv</code> is the build CI published to pannadata <code>blog-latest</code> on 19 Nov with the same step applied (61,229 player-games behind it, against 16,075 in the hand-built file it replaces).</li>
+<li>
+<code>piero_percentile</code> in the published game logs is now a season-wide rank. 10b ranks over the leagues one run builds and the rebuild builds each season in parts by league, so each player was ranked within his part (2023-2024: 1,956 of 11,347 players carried more than one percentile, up to 87 points off). <code>pack_publish_game_logs.R</code> now recomputes it on each whole season file before publishing, through the new internal <code>recompute_piero_percentile()</code> (panna#507).</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.130" id="panna-03130">panna 0.3.130<a class="anchor" aria-label="anchor" href="#panna-03130"></a></h2>
 <ul><li>WPA net ledger, own goals (panna#273, <a href="https://github.com/peteowen1/panna/issues/514" class="external-link">#514</a>): <code><a href="../reference/wpa_build_ledger.html">wpa_build_ledger()</a></code> gives 25% of the scoring side’s gain to its last player on the ball before the own goal, in the same half (<code>own_goal_credit</code>, role <code>own_goal_setup</code>, in <code>wpa_own</code>), and moves 25% of the own-goal scorer’s blame to his team’s pool (<code>own_goal_relief</code>). Team totals are unchanged; both at 0 reproduce the old ledger. Brighton 5-0 Palace: Groß 0.029 -&gt; 0.076, Canvot -0.201 -&gt; -0.159.</li>
