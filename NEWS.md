@@ -6,7 +6,9 @@
   +0.11 a game, A-League +0.12, Premier League -0.02). 07c now subtracts each league's offset from
   K (`psr` in full, `osr`/`dsr` half each) through the new internal
   `.psv_live_fold_league_offsets()`, and stops if `psr_league_offsets.parquet` is missing.
-  `inst/extdata/psv_live_constants.csv` is the previous file with the same step applied.
+  `inst/extdata/psv_live_constants.csv` is the build CI published to pannadata `blog-latest` on
+  19 Nov with the same step applied (61,229 player-games behind it, against 16,075 in the
+  hand-built file it replaces).
 - WPA net ledger, own goals (panna#273, #514): `wpa_build_ledger()` gives 25% of the
   scoring side's gain to its last player on the ball before the own goal, in the same half
   (`own_goal_credit`, role `own_goal_setup`, in `wpa_own`), and moves 25% of the own-goal
