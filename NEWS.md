@@ -5,6 +5,11 @@
   (`own_goal_credit`, role `own_goal_setup`, in `wpa_own`), and moves 25% of the own-goal
   scorer's blame to his team's pool (`own_goal_relief`). Team totals are unchanged; both at
   0 reproduce the old ledger. Brighton 5-0 Palace: Groß 0.029 -> 0.076, Canvot -0.201 -> -0.159.
+- `piero_percentile` in the published game logs is now a season-wide rank. 10b ranks over the
+  leagues one run builds and the rebuild builds each season in parts by league, so each player was
+  ranked within his part (2023-2024: 1,956 of 11,347 players carried more than one percentile, up
+  to 87 points off). `pack_publish_game_logs.R` now recomputes it on each whole season file before
+  publishing, through the new internal `recompute_piero_percentile()` (panna#507).
 
 # panna 0.3.129
 
