@@ -259,8 +259,9 @@ jobs:
       # panna#123: refresh the live-PSV centering constants weekly so C_pop
       # tracks the season as it accumulates (and tournament leagues like the WC
       # appear/disappear with their windows). Runs AFTER the 8b export so a
-      # constants failure can't block the PSR snapshot upload. 07c needs only
-      # cache-skills/01_match_stats.rds + the coefficient CSVs in the checkout —
+      # constants failure can't block the PSR snapshot upload. 07c needs
+      # cache-skills/01_match_stats.rds, cache-skills/psr_league_offsets.parquet
+      # (panna#516, downloaded above) + the coefficient CSVs in the checkout —
       # it deliberately does NOT enrich with xMetrics (see the note in 07c), so
       # no xmetrics_bymatch download is required. 07c hard-fails (no upload,
       # last good CSV stays on the bus) if an expected live-subset league is

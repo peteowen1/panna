@@ -811,3 +811,58 @@ test_that("league offset follows PSV's resolved minutes, not lineups total_minut
   # Column absent altogether -> legacy behaviour (lineups minutes, clamped >= 0)
   expect_equal(.psv_offset_mins_scale(NULL, c(90, NA, -3)), c(1, 0, 0))
 })
+
+test_that(".psv_live_fold_league_offsets subtracts the offset from live K (panna#516)", {
+  k <- data.table::data.table(
+    league = c("ENG", "SCO", "ESP", "__default__"),
+    role = "MID", role8 = "CM",
+    psr = c(0.50, 0.40, 0.30, 0.45),
+    osr = c(0.30, 0.25, 0.10, 0.25),
+    dsr = c(0.20, 0.15, 0.20, 0.20),
+    n = c(100L, 80L, 60L, 0L), live_subset = FALSE
+  )
+  # Opta naming, as in psr_league_offsets.parquet. No La_Liga row on purpose.
+  off <- data.table::data.table(league = c("EPL", "Scottish_Premiership"),
+                                offset = c(0.02, -0.10))
+  expect_message(out <- .psv_live_fold_league_offsets(k, off), "no league offset")
+
+  # 10b ADDS the offset to game-log PSV; live is f*raw - K, so K moves the other way.
+  expect_equal(out[league == "ENG", psr], 0.50 - 0.02)
+  expect_equal(out[league == "SCO", psr], 0.40 + 0.10)
+  # Half on each of osr and dsr, so osr + dsr = psr still holds.
+  expect_equal(out[league == "SCO", osr], 0.25 + 0.05)
+  expect_equal(out[league == "SCO", dsr], 0.15 + 0.05)
+  expect_equal(out$osr + out$dsr, out$psr)
+  # A league with no offset row gets 0, and __default__ is never touched.
+  expect_equal(unlist(out[league == "ESP", .(psr, osr, dsr)], use.names = FALSE),
+               c(0.30, 0.10, 0.20))
+  expect_equal(unlist(out[league == "__default__", .(psr, osr, dsr)], use.names = FALSE),
+               c(0.45, 0.25, 0.20))
+  expect_equal(out$psv_league_offset, c(0.02, -0.10, 0, 0))
+  # Input untouched, and no rows gained or lost.
+  expect_equal(k$psr, c(0.50, 0.40, 0.30, 0.45))
+  expect_equal(nrow(out), nrow(k))
+
+  # What the live scorer then shows: a 90-minute SCO player whose game-log PSV is
+  # (raw - K) + offset must get the same number from raw - K_new.
+  raw <- 0.70
+  expect_equal(raw - out[league == "SCO", psr], (raw - 0.40) + (-0.10))
+})
+
+test_that(".psv_live_fold_league_offsets refuses to ship constants with no offset applied", {
+  k <- data.table::data.table(league = c("ENG", "__default__"), psr = 0.5, osr = 0.3, dsr = 0.2)
+  # No league matches (offsets keyed by something else entirely): a silent no-op otherwise.
+  expect_error(.psv_live_fold_league_offsets(
+    k, data.table::data.table(league = "Scottish_Premiership", offset = -0.1)),
+    "matched")
+  expect_error(.psv_live_fold_league_offsets(
+    k, data.table::data.table(league = character(), offset = numeric())), "at least one row")
+  expect_error(.psv_live_fold_league_offsets(
+    k, data.table::data.table(league = c("EPL", "EPL"), offset = c(0.1, 0.2))), "duplicated")
+  expect_error(.psv_live_fold_league_offsets(
+    k, data.table::data.table(league = "EPL", offset = NA_real_)), "NA")
+  # Folding twice would double the offset.
+  once <- .psv_live_fold_league_offsets(k, data.table::data.table(league = "EPL", offset = 0.02))
+  expect_error(.psv_live_fold_league_offsets(
+    once, data.table::data.table(league = "EPL", offset = 0.02)), "twice")
+})

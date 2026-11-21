@@ -1,5 +1,12 @@
 # panna 0.3.130
 
+- Live PSV constants now carry the PSV league offset (panna#516). 10b adds `psv_league_offset` to
+  game-log PSV after centring and calibration, and `07c_build_live_psv_constants.R` did not, so
+  live PSV on match pages sat `-offset` away from the game logs (Scottish Premiership starters
+  +0.11 a game, A-League +0.12, Premier League -0.02). 07c now subtracts each league's offset from
+  K (`psr` in full, `osr`/`dsr` half each) through the new internal
+  `.psv_live_fold_league_offsets()`, and stops if `psr_league_offsets.parquet` is missing.
+  `inst/extdata/psv_live_constants.csv` is the previous file with the same step applied.
 - WPA net ledger, own goals (panna#273, #514): `wpa_build_ledger()` gives 25% of the
   scoring side's gain to its last player on the ball before the own goal, in the same half
   (`own_goal_credit`, role `own_goal_setup`, in `wpa_own`), and moves 25% of the own-goal
