@@ -551,7 +551,7 @@ utils::globalVariables(c(
   # PSR columns
   "psr_raw",
   "psr",
-  "osr",
+  "osr", "psv_league_offset",
   "dsr",
   "n_players",
   "x.event_team",

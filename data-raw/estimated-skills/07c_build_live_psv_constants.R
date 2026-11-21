@@ -521,8 +521,9 @@ print(unique(g[, .(league, psv_league_offset = round(psv_league_offset, 4))])[or
 # Direction anchor, chosen before looking: a Scottish Premiership game is worth
 # less than a Premier League one, so its offset is lower and its K rises by more.
 .anch <- unique(g[league %in% c("ENG", "SCO"), .(league, psv_league_offset)])
-if (nrow(.anch) == 2L &&
-    !(.anch[league == "SCO", psv_league_offset] < .anch[league == "ENG", psv_league_offset]))
+if (nrow(.anch) != 2L)
+  stop("league offset anchor cannot run: ENG and SCO must both be in the constants.")
+if (!(.anch[league == "SCO", psv_league_offset] < .anch[league == "ENG", psv_league_offset]))
   stop("league offset anchor failed: SCO offset is not below ENG. Wrong offsets file or league mapping.")
 
 out <- rbind(
