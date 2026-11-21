@@ -3538,6 +3538,77 @@ apply_psr_league_offsets <- function(psr_dt, offsets, verbose = FALSE) {
 }
 
 
+#' Fold the PSV league offsets into the live-PSV centring constants
+#'
+#' Step 10b adds a per-league offset to game-log PSV after centring and
+#' position calibration (\code{psv + offset * minutes / 90}, with half of it on
+#' each of \code{osv} and \code{dsv}). The live scorer computes
+#' \code{(f * raw - K) * minutes / 90}, so K has to carry the same offset with
+#' the opposite sign or every league's live PSV sits \code{-offset} away from
+#' its game-log PSV (panna#516). This subtracts the offset from \code{psr} and
+#' half of it from each of \code{osr} and \code{dsr}, which keeps
+#' \code{osr + dsr = psr}.
+#'
+#' League codes are mapped the way 10b maps them (\code{to_opta_league()},
+#' falling back to the code itself). A league with no offset row gets 0, as in
+#' 10b. The \code{"__default__"} rows are left alone: the live scorer only uses
+#' them for a league that has no constants of its own, and such a league has no
+#' offset to apply.
+#'
+#' @param constants data.table of live constants with columns \code{league},
+#'   \code{psr}, \code{osr}, \code{dsr}.
+#' @param offsets Offset table (columns \code{league} in Opta naming,
+#'   \code{offset}), as written to \code{psr_league_offsets.parquet}.
+#' @return \code{constants} with \code{psr}/\code{osr}/\code{dsr} shifted and a
+#'   \code{psv_league_offset} column recording the per-90 offset used.
+#' @keywords internal
+.psv_live_fold_league_offsets <- function(constants, offsets) {
+  dt <- data.table::copy(data.table::as.data.table(constants))
+  off <- data.table::as.data.table(offsets)
+  need <- c("league", "psr", "osr", "dsr")
+  if (!all(need %in% names(dt))) {
+    cli::cli_abort("{.arg constants} needs columns {.val {need}}.")
+  }
+  if (!all(c("league", "offset") %in% names(off)) || nrow(off) == 0L) {
+    cli::cli_abort("{.arg offsets} needs columns {.val league} and {.val offset} and at least one row.")
+  }
+  if (anyDuplicated(off$league) || anyNA(off$league) || anyNA(off$offset)) {
+    cli::cli_abort("{.arg offsets} has a duplicated league, or an NA league or offset.")
+  }
+  if ("psv_league_offset" %in% names(dt)) {
+    cli::cli_abort(c(
+      "{.arg constants} already has a {.field psv_league_offset} column.",
+      "x" = "Folding the offsets in twice would double them."
+    ))
+  }
+  lgs <- setdiff(unique(dt$league), "__default__")
+  opta <- vapply(lgs, function(L) tryCatch(to_opta_league(L), error = function(e) L),
+                 character(1))
+  per_league <- off$offset[match(opta, off$league)]
+  names(per_league) <- lgs
+  if (!length(lgs) || all(is.na(per_league))) {
+    cli::cli_abort(c(
+      "No league in {.arg constants} matched a league in {.arg offsets}.",
+      "x" = "The constants would ship without any league offset (panna#516)."
+    ))
+  }
+  no_off <- sort(lgs[is.na(per_league)])
+  if (length(no_off)) {
+    cli::cli_inform(c(
+      "!" = "Live PSV constants: {length(no_off)} league{?s} with no league offset get 0, as in 10b.",
+      "i" = "Leagues: {no_off}"
+    ))
+  }
+  per_league[is.na(per_league)] <- 0
+  dt[, psv_league_offset := 0]
+  dt[league != "__default__", psv_league_offset := unname(per_league[league])]
+  dt[, `:=`(psr = psr - psv_league_offset,
+            osr = osr - psv_league_offset / 2,
+            dsr = dsr - psv_league_offset / 2)]
+  dt[]
+}
+
+
 # ============================================================================
 # Convenience wrapper: player_psr()
 # ============================================================================
