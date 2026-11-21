@@ -500,6 +500,32 @@ g[, live_subset := league %in% LIVE_SUBSET_LEAGUES]
 g[live_subset == TRUE & n > 0, `:=`(psr = c_psr, osr = c_osr, dsr = c_dsr)]
 g <- g[!(live_subset == TRUE & n == 0)]
 
+# ---- Fold in the PSV league offsets (panna#516) --------------------------------
+# 10b adds psv_league_offset to game-log PSV AFTER centring and calibration, so it
+# is not part of the K measured above (score_one() never applies it). Without this
+# step live PSV = game-log PSV - offset: Scottish Premiership starters read +0.11
+# a game high, Premier League ones 0.02 low. Subtract it from K here, after the
+# shrinkage, so a league whose prior is the cross-league default still gets its
+# own full offset. Missing file = stop: a CSV built without it is exactly the bug.
+psv_offsets_path <- file.path("data-raw", "cache-skills", "psr_league_offsets.parquet")
+if (!file.exists(psv_offsets_path))
+  stop(sprintf(paste("%s not found. 10b adds these offsets to game-log PSV, so live",
+                     "constants built without them are biased by league (panna#516).",
+                     "Download it from pannadata's predictions-cache release."),
+               psv_offsets_path))
+g <- .psv_live_fold_league_offsets(g, arrow::read_parquet(psv_offsets_path))
+cat("
+[league offset] per-90 offset folded into K (psr - offset, osr/dsr - offset/2):
+")
+print(unique(g[, .(league, psv_league_offset = round(psv_league_offset, 4))])[order(psv_league_offset)])
+# Direction anchor, chosen before looking: a Scottish Premiership game is worth
+# less than a Premier League one, so its offset is lower and its K rises by more.
+.anch <- unique(g[league %in% c("ENG", "SCO"), .(league, psv_league_offset)])
+if (nrow(.anch) != 2L)
+  stop("league offset anchor cannot run: ENG and SCO must both be in the constants.")
+if (!(.anch[league == "SCO", psv_league_offset] < .anch[league == "ENG", psv_league_offset]))
+  stop("league offset anchor failed: SCO offset is not below ENG. Wrong offsets file or league mapping.")
+
 out <- rbind(
   # role8 sits between role and psr; live_subset MUST stay the last column
   # (psr-weekly-snapshot.yml reads it as awk $NF).
