@@ -406,3 +406,45 @@ test_that("fit_spm_xgb gives the same model whatever the caller's random state (
   set.seed(9); before <- stats::runif(1); set.seed(9); invisible(fit()); after <- stats::runif(1)
   expect_identical(before, after)
 })
+
+
+test_that("calibrate_spm_variance rescales sd, keeps order and mean (panna#168)", {
+  set.seed(1)
+  spm <- c(rnorm(200, 0, 0.025), 0.145)  # compressed, long positive tail
+  rapm <- rnorm(201, 0, 0.1)
+
+  pop_sd <- function(x) sqrt(mean((x - mean(x))^2))  # weighted sd with equal weights
+  out <- calibrate_spm_variance(spm, target = rapm)
+  expect_equal(pop_sd(out), pop_sd(rapm), tolerance = 1e-10)
+  expect_equal(mean(out), mean(spm), tolerance = 1e-12)
+  expect_identical(order(out), order(spm))
+  expect_equal(attr(out, "scale"), pop_sd(rapm) / pop_sd(spm), tolerance = 1e-10)
+  # linear map: skew is untouched
+  z <- function(x) (x - mean(x)) / stats::sd(x)
+  expect_equal(as.numeric(z(out)), as.numeric(z(spm)), tolerance = 1e-10)
+
+  # explicit target_sd, takes priority over target
+  out2 <- calibrate_spm_variance(spm, target = rapm, target_sd = 0.07)
+  expect_equal(pop_sd(out2), 0.07, tolerance = 1e-10)
+})
+
+test_that("calibrate_spm_variance handles weights, NA and bad input (panna#168)", {
+  spm <- c(-0.02, 0, 0.01, NA, 0.05)
+  w <- c(900, 1500, 2000, 1000, 3000)
+  out <- calibrate_spm_variance(spm, target_sd = 0.06, weights = w)
+  expect_true(is.na(out[4]))
+  ok <- !is.na(spm)
+  wn <- w[ok] / sum(w[ok])
+  m <- sum(wn * out[ok])
+  expect_equal(sqrt(sum(wn * (out[ok] - m)^2)), 0.06, tolerance = 1e-10)
+  expect_identical(order(out[ok]), order(spm[ok]))
+
+  # zero-weight rows are ignored for the moments but still rescaled
+  expect_no_error(calibrate_spm_variance(spm, target_sd = 0.06, weights = c(0, w[-1])))
+
+  expect_error(calibrate_spm_variance(spm), "target_sd")
+  expect_error(calibrate_spm_variance(spm, target_sd = -1), "positive")
+  expect_error(calibrate_spm_variance(rep(0.01, 5), target_sd = 0.05), "spread")
+  expect_error(calibrate_spm_variance(spm, target_sd = 0.05, weights = 1), "same length")
+  expect_error(calibrate_spm_variance("a", target_sd = 0.05), "numeric")
+})
