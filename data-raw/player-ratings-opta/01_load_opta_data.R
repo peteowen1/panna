@@ -356,17 +356,21 @@ for (league in leagues) {
       }
 
       {
-        # Detect penalties from raw events (qualifier 9)
-        # Uses (match_id, player_id, minute, second) composite key to avoid
-        # collisions when a player has multiple shots in the same minute
-        spadl$is_penalty <- 0L
-        if (!is.null(raw_events) && nrow(raw_events) > 0) {
-          # Match qualifier 9 as a standalone value in the JSON array.
-          # Handles both string ("9") and bare numeric (9) formats.
-          # Anchored regex avoids false positives from "19", "90", "109", etc.
-          has_pen_qualifier <- grepl(
-            '(^|[,\\[])\\s*"?9"?\\s*(,|\\]|$)', raw_events$qualifier_json
-          )
+        # Penalties. SPADL already carries is_penalty (qualifier 9, parsed from
+        # the qualifier object's key in R/spadl_conversion), the flag the EPV job
+        # uses. Step 1 used to re-detect from raw events with a regex written for
+        # a JSON array; the qualifiers are an object ({"9":...}), so it matched
+        # nothing: 0 penalties in 2,185,707 shots across 349 league-seasons (run
+        # 44910064488), and every penalty stayed in npxG at the model's xG
+        # (panna#505, #513). The raw-events path below is kept only for a SPADL
+        # cache that predates the column, with the same key-anchored pattern
+        # SPADL uses. It matches on (match_id, player_id, minute, second) so two
+        # shots by one player in the same minute do not collide.
+        .spadl_has_pen <- "is_penalty" %in% names(spadl)
+        spadl$is_penalty <- if (.spadl_has_pen) as.integer(spadl$is_penalty %in% c(1L, TRUE)) else 0L
+        if (!.spadl_has_pen && !is.null(raw_events) && nrow(raw_events) > 0) {
+          message(sprintf("    Note: SPADL has no is_penalty for %s %s (stale cache?), deriving from raw events", league, season))
+          has_pen_qualifier <- grepl('[{,]"9":', raw_events$qualifier_json)
           pen_mask <- raw_events$type_id %in% c(13L, 14L, 15L, 16L) & has_pen_qualifier
           if (sum(pen_mask) > 0) {
             raw_second <- if ("second" %in% names(raw_events)) {
