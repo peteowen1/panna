@@ -1,3 +1,12 @@
+# panna (development)
+
+- New exported `calibrate_spm_variance()` (panna#168): an order-preserving linear rescale of SPM to a
+  target sd (a vector such as RAPM, or a number), about the weighted mean, for a separate display
+  column such as `spm_display`. SPM is compressed at every grain (season sd 0.025 against PSV
+  0.06-0.07); this is the issue's cheapest knob. It is not wired into any pipeline or export, so no
+  published number changes, and the xRAPM prior still reads the raw `spm`. Lambda below
+  `lambda.min` and a glmnet-only or match-grain-trained SPM for per-match display are not done.
+
 # panna 0.3.131
 
 - Live PSV constants now carry the PSV league offset (panna#516). 10b adds `psv_league_offset` to
