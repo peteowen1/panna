@@ -10,7 +10,7 @@
    "name": "Predictions Pipeline",
    "workflow": "predictions-pipeline.yml",
    "about": "Rebuilds the match statistics, refits the goals and outcome models, predicts every upcoming fixture, builds the blog's game logs, action equity and team strength files, then publishes everything to the predictions-latest and blog-latest releases. Only runs on the main branch that were started by the daily scrape or the weekly schedule are counted; manual and branch test runs are left out.",
-   "triggers": "The pannadata repo's daily Opta scrape sends opta-scrape-complete when it finishes; a weekly schedule (Wednesday 8am UTC) is the backstop. When it succeeds it sends predictions-complete to the pannadata repo, which starts the blog data build there.",
+   "triggers": "The pannadata repo's daily Opta scrape sends opta-scrape-complete when it finishes; a weekly schedule (Wednesday 7pm Sydney time in summer) is the backstop. When it succeeds it sends predictions-complete to the pannadata repo, which starts the blog data build there.",
    "median_s": 3717.0,
    "min_s": 2837.0,
    "max_s": 3859.0,
