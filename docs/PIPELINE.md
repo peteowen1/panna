@@ -286,7 +286,7 @@ Workflow: [`skills-seasonal.yml`](https://github.com/peteowen1/panna/blob/HEAD/.
 
 Rebuilds the player skills chain on a runner (it used to be run by hand): match stats, the recency-weighted RAPM target, skill features, the skill SPM and the seasonal skill ratings, then checks the new tables against the published ones and publishes them to the predictions-cache release (which the Predictions Pipeline downloads as required input). Each stage is its own job on a fresh machine, passing files on as run artifacts. Counted: weekly scheduled runs on main (only three exist so far, so fewer than 5 runs back this guide).
 
-**What starts it, and what it starts:** GitHub's own schedule, set for Monday 3pm Sydney time in summer (4am UTC); it can also be started by hand. It starts nothing itself: the Predictions Pipeline reads the 06_seasonal_ratings.rds and psr_league_offsets.parquet it publishes.
+**What starts it, and what it starts:** GitHub's own schedule, set for Monday 3pm Sydney time in summer (2pm in winter); it can also be started by hand. It starts nothing itself: the Predictions Pipeline reads the 06_seasonal_ratings.rds and psr_league_offsets.parquet it publishes.
 
 ### The order jobs run in
 
