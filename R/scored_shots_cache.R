@@ -133,7 +133,9 @@ scored_shots_key <- function(events, xg_model, shot_lookup = NULL) {
 #' @noRd
 score_spadl_shots <- function(spadl, events, xg_model, season, shot_lookup = NULL) {
   if ("is_penalty" %in% names(spadl)) {
-    spadl$is_penalty <- as.integer(spadl$is_penalty)
+    # %in% maps NA (and anything but 1/TRUE) to 0, so step 1's penalty sum and its
+    # zero-penalty guard (panna#521) never see NA.
+    spadl$is_penalty <- as.integer(spadl$is_penalty %in% c(1L, TRUE))
   } else {
     # A SPADL cache predating the is_penalty column: re-derive from the events
     # with the same anchored pattern (the unanchored one matched qualifier
