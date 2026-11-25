@@ -1,4 +1,4 @@
-# panna (development)
+# panna 0.3.132
 
 - New exported `calibrate_spm_variance()` (panna#168): an order-preserving linear rescale of SPM to a
   target sd (a vector such as RAPM, or a number), about the weighted mean, for a separate display
