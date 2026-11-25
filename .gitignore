@@ -25,6 +25,10 @@ data/
 pkgdown-site/
 docs/*
 !docs/agents/
+# generated CI pipeline guide (ops/scripts/pipeline_guide.py) and its config
+!docs/PIPELINE.md
+!docs/pipeline.json
+!docs/pipeline-summary.json
 
 # IDE
 .vscode/

@@ -1,0 +1,141 @@
+{
+  "repo": "peteowen1/panna",
+  "title": "panna pipeline",
+  "about": "How the football ratings and match predictions get built on GitHub Actions: two workflows, both started by the daily Opta scrape in the pannadata repo. The Predictions Pipeline builds the match predictions and the blog's game logs and publishes them; the Opta RAPM/SPM Pipeline refits the player ratings and publishes them. The pannadata repo's pipeline guide covers the scrape before these and the blog data build after them. Each workflow is timed on its own; runs are not stitched across repos.",
+  "runs": 5,
+  "pipelines": [
+    {
+      "name": "Predictions Pipeline",
+      "workflow": "predictions-pipeline.yml",
+      "about": "Rebuilds the match statistics, refits the goals and outcome models, predicts every upcoming fixture, builds the blog's game logs, action equity and team strength files, then publishes everything to the predictions-latest and blog-latest releases. Only runs on the main branch that were started by the daily scrape or the weekly schedule are counted; manual and branch test runs are left out.",
+      "triggers": "The pannadata repo's daily Opta scrape sends opta-scrape-complete when it finishes; a weekly schedule (Wednesday 8am UTC) is the backstop. When it succeeds it sends predictions-complete to the pannadata repo, which starts the blog data build there.",
+      "select": {
+        "events": ["repository_dispatch", "schedule"],
+        "branch": "main",
+        "require_jobs": ["^predict$"],
+        "min_seconds": 1800
+      },
+      "jobs": [
+        {
+          "name": "predict",
+          "match": "^predict$",
+          "about": "One job: download the Opta tables, ratings and caches, rebuild the match stats, run the 20-odd prediction stages in order, publish, then start the blog build",
+          "steps": {
+            "Publish gate (R026)": "Checks the branch: only main or dev may publish; on any other branch the run builds but uploads nothing",
+            "Checkout repository": "Downloads this repo's code onto the machine",
+            "Setup R": "Installs R 4.5.0",
+            "Setup R dependencies": "Installs the R packages the pipeline needs (devtools, arrow, dplyr, xgboost, glmnet, duckdb and others), from a cache when it can",
+            "Download consolidated Opta data": "Downloads the consolidated Opta tables (player stats, shots, events, lineups, fixtures, skills, xMetrics and others) from the pannadata opta-latest release, and the career panna ratings from ratings-data; fails if a required one is missing",
+            "Download prediction caches": "Downloads the saved results of the earlier rating steps (the seasonal ratings and similar files) from the pannadata predictions-cache release, trying each three times; fails if a required one is missing",
+            "Rebuild match stats (skills step 01)": "Runs the first step of the estimated-skills pipeline (and the keeper-style step) to rebuild each player's per-match stats from the fresh Opta tables, and the smaller copies later steps read to save memory",
+            "Run predictions pipeline": "Runs data-raw/match-predictions-opta/run_predictions_opta.R: every prediction stage from fixture results to the publish (stages in the next table)",
+            "Keep predictions as an artifact (branch runs)": "Only on branch test runs: keeps the predictions and game logs as a downloadable bundle for 14 days, since nothing is published",
+            "Pipeline summary": "Writes the run's date, trigger and any non-fatal World Cup step failures onto the run's summary page",
+            "Trigger blog data build": "Sends predictions-complete to the pannadata repo, which starts the blog data build there",
+            "Fail if a league was dropped from the publish": "Ends the run red, after the publish and the blog trigger, if any league failed inside a publishing step and was left out",
+            "Rebuild WC walk-forward backfill (opt-in)": "Only when asked for by hand: rebuilds the World Cup 2014, 2018 and 2022 backfill predictions file and uploads it to predictions-cache",
+            "Keep the WC backfill as an artifact": "Only with the opt-in backfill: keeps its output file for 14 days",
+            "Keep the match dataset for walk-forward backfills": "Keeps the match dataset (04_match_dataset.rds) and fixture results for 7 days, for the league walk-forward workflow to read"
+          },
+          "log": {
+            "headers": [
+              {
+                "regex": "\\] Step (?P<name>\\d+[a-z]*: \\w+)\\s*$",
+                "label": "the stages of the predictions pipeline"
+              }
+            ],
+            "about": {
+              "1: compute_match_stats": "Skills step 01: per-90 rates and derived stats for every player-match, from the Opta player stats",
+              "1c: keeper_style": "Skills step 01c: each club's goalkeeper distribution style and each keeper's effect, used to adjust keeper stats for the club they play for",
+              "1: build_fixture_results": "Builds past results with goals and xG, and the upcoming fixtures, from the Opta lineups, events and fixtures",
+              "1b: refresh_wc2026_squads": "Rebuilds the World Cup 2026 announced-squads file from Wikipedia so expected minutes follow the latest lineups",
+              "2: player_ratings_to_team": "Turns each starting XI's player ratings into team-level features for every match",
+              "2b: team_skill_features": "Team attacking and defensive skill features from the starting XI's skill estimates at the match date",
+              "3: team_rolling_features": "Rolling form, Elo ratings and rest days per team, using only past matches",
+              "4: build_match_dataset": "Joins results, team ratings and rolling features into the match dataset, with the train, validation and test split by date",
+              "4b: export_match_features": "Writes the team-strength features the models actually use, per fixture, to a small parquet",
+              "5: fit_goals_model": "Fits the XGBoost goal-count models, one pooled and one for international matches",
+              "6: fit_outcome_model": "Fits the XGBoost home/draw/away models on top of the goals models",
+              "7: predict_fixtures": "Predicts every upcoming fixture with the fitted models",
+              "7b: snapshot_predictions": "Saves a dated copy of predictions.parquet to the predictions-history release, so past dates can be replayed with the predictions that existed then",
+              "8: evaluate_model": "Scores the models on the held-out test matches (goal errors, log-loss, accuracy, calibration)",
+              "9: upload_predictions": "Checks the predictions output is valid; it no longer uploads (step 13 does that)",
+              "10: export_blog_data": "Builds the player ratings and match predictions files for the blog, to be published in step 13",
+              "10b: export_game_logs": "Builds the per-match player value metrics (EPV, WPA and PSV) for the current season, as game_logs files",
+              "10c: export_equity": "Builds each action's EPV credit, as action_equity files the chain builder joins on",
+              "10d: export_shootout_wpa": "Builds each player's penalty-shootout win-probability-added",
+              "10e: export_keeper_style": "Registers the keeper style table for publishing, for the site's live keeper scorer",
+              "11: simulate_wc2026": "Simulates the 2026 World Cup (switched off once the final has been played)",
+              "12: export_wc2026_blog": "Builds the World Cup data files for the blog, including the match history and predictions",
+              "12b: snapshot_wc_minutes": "Saves a dated copy of the World Cup expected-minutes table (off after the tournament)",
+              "12c: snapshot_wc_strength": "Saves a dated copy of the World Cup team-strength table (off after the tournament)",
+              "12f: snapshot_wc_predictions": "Saves dated copies of the World Cup match probabilities (off after the tournament)",
+              "12d: export_domestic_team_strength": "Builds Tiento, the team rating, for every club, for the blog's Team Ratings page",
+              "12e: export_cup_pairwise": "Builds the knockout win-probability lookup for every Champions League, Europa League and Conference League pairing",
+              "13: publish_release_data": "The one publish: uploads the predictions and blog files to the predictions-latest and blog-latest releases, manifest last"
+            }
+          },
+          "stage_notes": {
+            "the stages of the predictions pipeline": "Each stage runs from its Step header line to the next one; stages 1 and 1c belong to the Rebuild match stats step, the rest to the Run predictions pipeline step, and the last runs to the end of its step."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Opta RAPM/SPM Pipeline",
+      "workflow": "opta-pipeline.yml",
+      "about": "Refits the player ratings from scratch on the latest Opta data: loads and scores the events, builds splints (stretches of play between substitutions and goals), fits RAPM, SPM and xRAPM, and publishes the seasonal ratings to the ratings-data release. Only daily runs on main started by the scrape are counted; manual and branch test runs are left out.",
+      "triggers": "The pannadata repo's daily Opta scrape sends opta-scrape-complete when it finishes (the same message starts the Predictions Pipeline). It starts nothing itself: the Predictions Pipeline and the blog data build read the ratings it publishes the next time they run.",
+      "select": {
+        "events": ["repository_dispatch"],
+        "branch": "main",
+        "require_jobs": ["^opta-pipeline$"]
+      },
+      "jobs": [
+        {
+          "name": "opta-pipeline",
+          "match": "^opta-pipeline$",
+          "about": "One job: check inputs are fresh, download the Opta tables, models and caches, run the nine rating steps, publish and save the step caches",
+          "steps": {
+            "Publish gate (R026)": "Checks the branch: only main or dev may publish; on any other branch the run builds but uploads nothing",
+            "Checkout repository": "Downloads this repo's code onto the machine",
+            "Verify opta_xmetrics freshness": "Fails the run early if opta_xmetrics.parquet on the opta-latest release is more than 14 days old, because stale xMetrics would silently empty the rating inputs",
+            "Setup R": "Installs R 4.5.0",
+            "Setup R dependencies": "Installs the R packages the pipeline needs (devtools, arrow, glmnet, xgboost, duckdb and others), from a cache when it can",
+            "Download Opta data": "Downloads the consolidated Opta tables from opta-latest and the xG, expected-pass and EPV models from the models release",
+            "Download SPM panel (Wave-4 S6 prior)": "Downloads spm_panel.rds and legacy_spm_asof.parquet from predictions-cache (both built by hand, locally) and fails at once if either is missing, rather than 40 minutes into step 5",
+            "Download intermediate caches (resume mode)": "Only when started by hand with a start step: downloads the earlier steps' saved results so the run can resume there",
+            "Run Opta RAPM/SPM pipeline": "Runs data-raw/player-ratings-opta/run_pipeline_opta.R, steps 1 to 9 (stages in the next table), while a background loop logs memory and saves each finished step's cache to the predictions-cache release",
+            "Keep step-07 output as a run artifact": "Keeps the seasonal ratings file for 7 days as a downloadable bundle",
+            "Upload caches to predictions-cache release": "Uploads every step's saved result (01 to 08, the SPM panel) to the predictions-cache release, so a later run can resume or the other workflows can read them",
+            "Pipeline summary": "Writes the run's date, trigger and whether ratings were produced onto the run's summary page; fails if no ratings file exists"
+          },
+          "log": {
+            "headers": [
+              {
+                "regex": "\\] Step (?P<name>\\d+[a-z]*: \\w+)\\s*$",
+                "label": "the stages of the rating pipeline"
+              }
+            ],
+            "about": {
+              "1: load_data": "Loads Opta lineups, events, stats and xMetrics, scores every shot with the xG model, finds penalties and works out each match's xG for the splints",
+              "2: data_processing": "Converts the Opta tables into the processed-data form the splint builder expects",
+              "3: splint_creation": "Cuts every match into splints: stretches of play between substitutions, goals and red cards",
+              "4: rapm": "Fits the base RAPM model (ridge regression of each splint's xG on who was on the pitch)",
+              "5: spm": "Fits the SPM model: elastic net and XGBoost blended 50/50 from 80-odd player stats, plus offence and defence versions",
+              "5b: export_spm_coefficients": "Writes the SPM model's coefficients to CSV files for live scoring",
+              "6: xrapm": "Fits xRAPM: RAPM with the SPM predictions as its prior",
+              "7: seasonal_ratings": "Fits RAPM, SPM and xRAPM again for each season",
+              "7c: team_season_strength": "Builds each team's attacking and defensive strength per season from its players' xRAPM, as the opponent-quality control for later models",
+              "8: panna_ratings": "Combines xRAPM, RAPM and SPM into the final ratings table",
+              "9: export_ratings": "Uploads seasonal_xrapm.parquet and seasonal_spm.parquet to the ratings-data release (skipped on branch test runs)"
+            }
+          },
+          "stage_notes": {
+            "the stages of the rating pipeline": "Each stage runs from its Step header line to the next one; the last runs to the end of the step."
+          }
+        }
+      ]
+    }
+  ]
+}

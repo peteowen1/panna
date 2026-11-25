@@ -1,0 +1,879 @@
+{
+ "repo": "peteowen1/panna",
+ "doc_path": "docs/PIPELINE.md",
+ "title": "panna pipeline",
+ "about": "How the football ratings and match predictions get built on GitHub Actions: two workflows, both started by the daily Opta scrape in the pannadata repo. The Predictions Pipeline builds the match predictions and the blog's game logs and publishes them; the Opta RAPM/SPM Pipeline refits the player ratings and publishes them. The pannadata repo's pipeline guide covers the scrape before these and the blog data build after them. Each workflow is timed on its own; runs are not stitched across repos.",
+ "newest_run_utc": "2026-11-24T16:01:18Z",
+ "newest_run_sydney": "25 Nov 2026, 3:01am",
+ "pipelines": [
+  {
+   "name": "Predictions Pipeline",
+   "workflow": "predictions-pipeline.yml",
+   "about": "Rebuilds the match statistics, refits the goals and outcome models, predicts every upcoming fixture, builds the blog's game logs, action equity and team strength files, then publishes everything to the predictions-latest and blog-latest releases. Only runs on the main branch that were started by the daily scrape or the weekly schedule are counted; manual and branch test runs are left out.",
+   "triggers": "The pannadata repo's daily Opta scrape sends opta-scrape-complete when it finishes; a weekly schedule (Wednesday 8am UTC) is the backstop. When it succeeds it sends predictions-complete to the pannadata repo, which starts the blog data build there.",
+   "median_s": 3717.0,
+   "min_s": 2837.0,
+   "max_s": 3859.0,
+   "runs": [
+    {
+     "id": 45432220071,
+     "url": "https://github.com/peteowen1/panna/actions/runs/45432220071",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "opta-scrape-complete",
+     "started_utc": "2026-11-24T16:01:18Z",
+     "started_sydney": "25 Nov 2026, 3:01am",
+     "wall_s": 3717.0,
+     "queued_s": 3.0
+    },
+    {
+     "id": 45322251827,
+     "url": "https://github.com/peteowen1/panna/actions/runs/45322251827",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "opta-scrape-complete",
+     "started_utc": "2026-11-24T03:50:30Z",
+     "started_sydney": "24 Nov 2026, 2:50pm",
+     "wall_s": 2837.0,
+     "queued_s": 2.0
+    },
+    {
+     "id": 45310645997,
+     "url": "https://github.com/peteowen1/panna/actions/runs/45310645997",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "opta-scrape-complete",
+     "started_utc": "2026-11-24T02:12:30Z",
+     "started_sydney": "24 Nov 2026, 1:12pm",
+     "wall_s": 3859.0,
+     "queued_s": 11.0
+    },
+    {
+     "id": 45299750933,
+     "url": "https://github.com/peteowen1/panna/actions/runs/45299750933",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "opta-scrape-complete",
+     "started_utc": "2026-11-24T00:45:34Z",
+     "started_sydney": "24 Nov 2026, 11:45am",
+     "wall_s": 3640.0,
+     "queued_s": 3.0
+    },
+    {
+     "id": 45219052748,
+     "url": "https://github.com/peteowen1/panna/actions/runs/45219052748",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "opta-scrape-complete",
+     "started_utc": "2026-11-23T16:39:59Z",
+     "started_sydney": "24 Nov 2026, 3:39am",
+     "wall_s": 3784.0,
+     "queued_s": 2.0
+    }
+   ],
+   "jobs": [
+    {
+     "name": "predict",
+     "about": "One job: download the Opta tables, ratings and caches, rebuild the match stats, run the 20-odd prediction stages in order, publish, then start the blog build",
+     "legs": 1,
+     "median_s": 3717.0,
+     "min_s": 2837.0,
+     "max_s": 3859.0,
+     "leg_median_s": 3717.0,
+     "slowest_leg_median_s": 3717.0,
+     "runs_seen": 5,
+     "steps": [
+      {
+       "name": "Set up job",
+       "about": "GitHub starts the machine and downloads the actions this job uses",
+       "source": "builtin",
+       "median_s": 2.0,
+       "min_s": 2.0,
+       "max_s": 3.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Publish gate (R026)",
+       "about": "Checks the branch: only main or dev may publish; on any other branch the run builds but uploads nothing",
+       "source": "config",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Checkout repository",
+       "about": "Downloads this repo's code onto the machine",
+       "source": "config",
+       "median_s": 3.0,
+       "min_s": 3.0,
+       "max_s": 5.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Setup R",
+       "about": "Installs R 4.5.0",
+       "source": "config",
+       "median_s": 32.0,
+       "min_s": 28.0,
+       "max_s": 317.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Setup R dependencies",
+       "about": "Installs the R packages the pipeline needs (devtools, arrow, dplyr, xgboost, glmnet, duckdb and others), from a cache when it can",
+       "source": "config",
+       "median_s": 54.0,
+       "min_s": 51.0,
+       "max_s": 226.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Download consolidated Opta data",
+       "about": "Downloads the consolidated Opta tables (player stats, shots, events, lineups, fixtures, skills, xMetrics and others) from the pannadata opta-latest release, and the career panna ratings from ratings-data; fails if a required one is missing",
+       "source": "config",
+       "median_s": 82.0,
+       "min_s": 33.0,
+       "max_s": 334.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Download prediction caches",
+       "about": "Downloads the saved results of the earlier rating steps (the seasonal ratings and similar files) from the pannadata predictions-cache release, trying each three times; fails if a required one is missing",
+       "source": "config",
+       "median_s": 6.0,
+       "min_s": 4.0,
+       "max_s": 7.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Rebuild match stats (skills step 01)",
+       "about": "Runs the first step of the estimated-skills pipeline (and the keeper-style step) to rebuild each player's per-match stats from the fresh Opta tables, and the smaller copies later steps read to save memory",
+       "source": "config",
+       "median_s": 681.0,
+       "min_s": 551.0,
+       "max_s": 829.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Run predictions pipeline",
+       "about": "Runs data-raw/match-predictions-opta/run_predictions_opta.R: every prediction stage from fixture results to the publish (stages in the next table)",
+       "source": "config",
+       "median_s": 2495.0,
+       "min_s": 2068.0,
+       "max_s": 2893.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Pipeline summary",
+       "about": "Writes the run's date, trigger and any non-fatal World Cup step failures onto the run's summary page",
+       "source": "config",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Trigger blog data build",
+       "about": "Sends predictions-complete to the pannadata repo, which starts the blog data build there",
+       "source": "config",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 1.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Fail if a league was dropped from the publish",
+       "about": "Ends the run red, after the publish and the blog trigger, if any league failed inside a publishing step and was left out",
+       "source": "config",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Keep the match dataset for walk-forward backfills",
+       "about": "Keeps the match dataset (04_match_dataset.rds) and fixture results for 7 days, for the league walk-forward workflow to read",
+       "source": "config",
+       "median_s": 3.0,
+       "min_s": 3.0,
+       "max_s": 4.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Post Setup R dependencies",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 6.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Post Checkout repository",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 1.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Complete job",
+       "about": "GitHub closes the job and cleans up the machine",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 5,
+       "of": 5
+      }
+     ],
+     "stages": {
+      "the stages of the predictions pipeline": [
+       {
+        "name": "1: compute_match_stats",
+        "median_s": 577.419522,
+        "min_s": 464.114995,
+        "max_s": 705.679979,
+        "n": 5
+       },
+       {
+        "name": "1c: keeper_style",
+        "median_s": 101.43992,
+        "min_s": 85.172457,
+        "max_s": 120.184202,
+        "n": 5
+       },
+       {
+        "name": "1: build_fixture_results",
+        "median_s": 69.903977,
+        "min_s": 57.384918,
+        "max_s": 84.426506,
+        "n": 5
+       },
+       {
+        "name": "1b: refresh_wc2026_squads",
+        "median_s": 19.642637,
+        "min_s": 16.1646,
+        "max_s": 22.343486,
+        "n": 5
+       },
+       {
+        "name": "2: player_ratings_to_team",
+        "median_s": 260.85453,
+        "min_s": 225.732865,
+        "max_s": 313.776727,
+        "n": 5
+       },
+       {
+        "name": "2b: team_skill_features",
+        "median_s": 197.628075,
+        "min_s": 135.8271,
+        "max_s": 220.794789,
+        "n": 5
+       },
+       {
+        "name": "3: team_rolling_features",
+        "median_s": 12.215466,
+        "min_s": 8.392504,
+        "max_s": 14.4536,
+        "n": 5
+       },
+       {
+        "name": "4: build_match_dataset",
+        "median_s": 9.844813,
+        "min_s": 7.938544,
+        "max_s": 10.520494,
+        "n": 5
+       },
+       {
+        "name": "5: fit_goals_model",
+        "median_s": 200.284404,
+        "min_s": 149.035191,
+        "max_s": 275.604442,
+        "n": 5
+       },
+       {
+        "name": "4b: export_match_features",
+        "median_s": 3.594587,
+        "min_s": 3.016607,
+        "max_s": 3.833407,
+        "n": 5
+       },
+       {
+        "name": "6: fit_outcome_model",
+        "median_s": 166.339261,
+        "min_s": 126.666541,
+        "max_s": 229.972081,
+        "n": 5
+       },
+       {
+        "name": "7: predict_fixtures",
+        "median_s": 47.370847,
+        "min_s": 42.956393,
+        "max_s": 68.559624,
+        "n": 5
+       },
+       {
+        "name": "7b: snapshot_predictions",
+        "median_s": 3.087054,
+        "min_s": 2.618186,
+        "max_s": 10.951283,
+        "n": 5
+       },
+       {
+        "name": "8: evaluate_model",
+        "median_s": 4.65542,
+        "min_s": 4.238125,
+        "max_s": 5.217099,
+        "n": 5
+       },
+       {
+        "name": "9: upload_predictions",
+        "median_s": 0.90845,
+        "min_s": 0.800461,
+        "max_s": 0.946946,
+        "n": 5
+       },
+       {
+        "name": "10: export_blog_data",
+        "median_s": 6.416316,
+        "min_s": 4.832648,
+        "max_s": 7.242663,
+        "n": 5
+       },
+       {
+        "name": "10b: export_game_logs",
+        "median_s": 1117.47352,
+        "min_s": 963.158562,
+        "max_s": 1273.589972,
+        "n": 5
+       },
+       {
+        "name": "10c: export_equity",
+        "median_s": 109.423419,
+        "min_s": 100.080931,
+        "max_s": 115.999197,
+        "n": 5
+       },
+       {
+        "name": "10d: export_shootout_wpa",
+        "median_s": 3.949454,
+        "min_s": 3.059983,
+        "max_s": 4.790166,
+        "n": 5
+       },
+       {
+        "name": "10e: export_keeper_style",
+        "median_s": 1.248663,
+        "min_s": 1.166025,
+        "max_s": 1.585669,
+        "n": 5
+       },
+       {
+        "name": "12: export_wc2026_blog",
+        "median_s": 1.584964,
+        "min_s": 1.470228,
+        "max_s": 1.727165,
+        "n": 5
+       },
+       {
+        "name": "12d: export_domestic_team_strength",
+        "median_s": 98.816598,
+        "min_s": 79.536508,
+        "max_s": 120.69572,
+        "n": 5
+       },
+       {
+        "name": "12e: export_cup_pairwise",
+        "median_s": 7.271438,
+        "min_s": 5.807037,
+        "max_s": 9.699263,
+        "n": 5
+       },
+       {
+        "name": "13: publish_release_data",
+        "median_s": 122.019034,
+        "min_s": 115.607405,
+        "max_s": 153.942732,
+        "n": 5
+       }
+      ]
+     },
+     "stage_notes": {
+      "the stages of the predictions pipeline": "Each stage runs from its Step header line to the next one; stages 1 and 1c belong to the Rebuild match stats step, the rest to the Run predictions pipeline step, and the last runs to the end of its step."
+     },
+     "stage_about": {
+      "1: compute_match_stats": "Skills step 01: per-90 rates and derived stats for every player-match, from the Opta player stats",
+      "1c: keeper_style": "Skills step 01c: each club's goalkeeper distribution style and each keeper's effect, used to adjust keeper stats for the club they play for",
+      "1: build_fixture_results": "Builds past results with goals and xG, and the upcoming fixtures, from the Opta lineups, events and fixtures",
+      "1b: refresh_wc2026_squads": "Rebuilds the World Cup 2026 announced-squads file from Wikipedia so expected minutes follow the latest lineups",
+      "2: player_ratings_to_team": "Turns each starting XI's player ratings into team-level features for every match",
+      "2b: team_skill_features": "Team attacking and defensive skill features from the starting XI's skill estimates at the match date",
+      "3: team_rolling_features": "Rolling form, Elo ratings and rest days per team, using only past matches",
+      "4: build_match_dataset": "Joins results, team ratings and rolling features into the match dataset, with the train, validation and test split by date",
+      "4b: export_match_features": "Writes the team-strength features the models actually use, per fixture, to a small parquet",
+      "5: fit_goals_model": "Fits the XGBoost goal-count models, one pooled and one for international matches",
+      "6: fit_outcome_model": "Fits the XGBoost home/draw/away models on top of the goals models",
+      "7: predict_fixtures": "Predicts every upcoming fixture with the fitted models",
+      "7b: snapshot_predictions": "Saves a dated copy of predictions.parquet to the predictions-history release, so past dates can be replayed with the predictions that existed then",
+      "8: evaluate_model": "Scores the models on the held-out test matches (goal errors, log-loss, accuracy, calibration)",
+      "9: upload_predictions": "Checks the predictions output is valid; it no longer uploads (step 13 does that)",
+      "10: export_blog_data": "Builds the player ratings and match predictions files for the blog, to be published in step 13",
+      "10b: export_game_logs": "Builds the per-match player value metrics (EPV, WPA and PSV) for the current season, as game_logs files",
+      "10c: export_equity": "Builds each action's EPV credit, as action_equity files the chain builder joins on",
+      "10d: export_shootout_wpa": "Builds each player's penalty-shootout win-probability-added",
+      "10e: export_keeper_style": "Registers the keeper style table for publishing, for the site's live keeper scorer",
+      "11: simulate_wc2026": "Simulates the 2026 World Cup (switched off once the final has been played)",
+      "12: export_wc2026_blog": "Builds the World Cup data files for the blog, including the match history and predictions",
+      "12b: snapshot_wc_minutes": "Saves a dated copy of the World Cup expected-minutes table (off after the tournament)",
+      "12c: snapshot_wc_strength": "Saves a dated copy of the World Cup team-strength table (off after the tournament)",
+      "12f: snapshot_wc_predictions": "Saves dated copies of the World Cup match probabilities (off after the tournament)",
+      "12d: export_domestic_team_strength": "Builds Tiento, the team rating, for every club, for the blog's Team Ratings page",
+      "12e: export_cup_pairwise": "Builds the knockout win-probability lookup for every Champions League, Europa League and Conference League pairing",
+      "13: publish_release_data": "The one publish: uploads the predictions and blog files to the predictions-latest and blog-latest releases, manifest last"
+     }
+    }
+   ],
+   "phases": [
+    {
+     "jobs": [
+      "predict"
+     ],
+     "median_s": 3717.0,
+     "min_s": 2837.0,
+     "max_s": 3859.0,
+     "slowest": "predict",
+     "parallel": false
+    }
+   ],
+   "critical_path": [
+    "predict"
+   ],
+   "slowest_steps": [
+    {
+     "job": "predict",
+     "step": "Run predictions pipeline",
+     "about": "Runs data-raw/match-predictions-opta/run_predictions_opta.R: every prediction stage from fixture results to the publish (stages in the next table)",
+     "median_s": 2495.0
+    },
+    {
+     "job": "predict",
+     "step": "Rebuild match stats (skills step 01)",
+     "about": "Runs the first step of the estimated-skills pipeline (and the keeper-style step) to rebuild each player's per-match stats from the fresh Opta tables, and the smaller copies later steps read to save memory",
+     "median_s": 681.0
+    },
+    {
+     "job": "predict",
+     "step": "Download consolidated Opta data",
+     "about": "Downloads the consolidated Opta tables (player stats, shots, events, lineups, fixtures, skills, xMetrics and others) from the pannadata opta-latest release, and the career panna ratings from ratings-data; fails if a required one is missing",
+     "median_s": 82.0
+    },
+    {
+     "job": "predict",
+     "step": "Setup R dependencies",
+     "about": "Installs the R packages the pipeline needs (devtools, arrow, dplyr, xgboost, glmnet, duckdb and others), from a cache when it can",
+     "median_s": 54.0
+    },
+    {
+     "job": "predict",
+     "step": "Setup R",
+     "about": "Installs R 4.5.0",
+     "median_s": 32.0
+    }
+   ]
+  },
+  {
+   "name": "Opta RAPM/SPM Pipeline",
+   "workflow": "opta-pipeline.yml",
+   "about": "Refits the player ratings from scratch on the latest Opta data: loads and scores the events, builds splints (stretches of play between substitutions and goals), fits RAPM, SPM and xRAPM, and publishes the seasonal ratings to the ratings-data release. Only daily runs on main started by the scrape are counted; manual and branch test runs are left out.",
+   "triggers": "The pannadata repo's daily Opta scrape sends opta-scrape-complete when it finishes (the same message starts the Predictions Pipeline). It starts nothing itself: the Predictions Pipeline and the blog data build read the ratings it publishes the next time they run.",
+   "median_s": 7902.0,
+   "min_s": 7692.0,
+   "max_s": 10002.0,
+   "runs": [
+    {
+     "id": 45310646054,
+     "url": "https://github.com/peteowen1/panna/actions/runs/45310646054",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "opta-scrape-complete",
+     "started_utc": "2026-11-24T03:32:18Z",
+     "started_sydney": "24 Nov 2026, 2:32pm",
+     "wall_s": 7811.0,
+     "queued_s": 4799.0
+    },
+    {
+     "id": 45299750822,
+     "url": "https://github.com/peteowen1/panna/actions/runs/45299750822",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "opta-scrape-complete",
+     "started_utc": "2026-11-24T00:45:33Z",
+     "started_sydney": "24 Nov 2026, 11:45am",
+     "wall_s": 10002.0,
+     "queued_s": 2.0
+    },
+    {
+     "id": 45219052908,
+     "url": "https://github.com/peteowen1/panna/actions/runs/45219052908",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "opta-scrape-complete",
+     "started_utc": "2026-11-23T16:40:01Z",
+     "started_sydney": "24 Nov 2026, 3:40am",
+     "wall_s": 7692.0,
+     "queued_s": 4.0
+    },
+    {
+     "id": 45028332700,
+     "url": "https://github.com/peteowen1/panna/actions/runs/45028332700",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "opta-scrape-complete",
+     "started_utc": "2026-11-22T13:36:03Z",
+     "started_sydney": "23 Nov 2026, 12:36am",
+     "wall_s": 7902.0,
+     "queued_s": 3.0
+    },
+    {
+     "id": 44973172050,
+     "url": "https://github.com/peteowen1/panna/actions/runs/44973172050",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "opta-scrape-complete",
+     "started_utc": "2026-11-22T01:48:34Z",
+     "started_sydney": "22 Nov 2026, 12:48pm",
+     "wall_s": 9452.0,
+     "queued_s": 2.0
+    }
+   ],
+   "jobs": [
+    {
+     "name": "opta-pipeline",
+     "about": "One job: check inputs are fresh, download the Opta tables, models and caches, run the nine rating steps, publish and save the step caches",
+     "legs": 1,
+     "median_s": 7902.0,
+     "min_s": 7692.0,
+     "max_s": 10002.0,
+     "leg_median_s": 7902.0,
+     "slowest_leg_median_s": 7902.0,
+     "runs_seen": 5,
+     "steps": [
+      {
+       "name": "Set up job",
+       "about": "GitHub starts the machine and downloads the actions this job uses",
+       "source": "builtin",
+       "median_s": 3.0,
+       "min_s": 2.0,
+       "max_s": 3.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Publish gate (R026)",
+       "about": "Checks the branch: only main or dev may publish; on any other branch the run builds but uploads nothing",
+       "source": "config",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 1.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Checkout repository",
+       "about": "Downloads this repo's code onto the machine",
+       "source": "config",
+       "median_s": 3.0,
+       "min_s": 3.0,
+       "max_s": 7.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Verify opta_xmetrics freshness",
+       "about": "Fails the run early if opta_xmetrics.parquet on the opta-latest release is more than 14 days old, because stale xMetrics would silently empty the rating inputs",
+       "source": "config",
+       "median_s": 2.0,
+       "min_s": 0.0,
+       "max_s": 3.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Setup R",
+       "about": "Installs R 4.5.0",
+       "source": "config",
+       "median_s": 40.0,
+       "min_s": 32.0,
+       "max_s": 169.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Setup R dependencies",
+       "about": "Installs the R packages the pipeline needs (devtools, arrow, glmnet, xgboost, duckdb and others), from a cache when it can",
+       "source": "config",
+       "median_s": 52.0,
+       "min_s": 48.0,
+       "max_s": 123.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Download Opta data",
+       "about": "Downloads the consolidated Opta tables from opta-latest and the xG, expected-pass and EPV models from the models release",
+       "source": "config",
+       "median_s": 18.0,
+       "min_s": 12.0,
+       "max_s": 85.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Download SPM panel (Wave-4 S6 prior)",
+       "about": "Downloads spm_panel.rds and legacy_spm_asof.parquet from predictions-cache (both built by hand, locally) and fails at once if either is missing, rather than 40 minutes into step 5",
+       "source": "config",
+       "median_s": 4.0,
+       "min_s": 3.0,
+       "max_s": 14.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Run Opta RAPM/SPM pipeline",
+       "about": "Runs data-raw/player-ratings-opta/run_pipeline_opta.R, steps 1 to 9 (stages in the next table), while a background loop logs memory and saves each finished step's cache to the predictions-cache release",
+       "source": "config",
+       "median_s": 7648.0,
+       "min_s": 7292.0,
+       "max_s": 9696.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Keep step-07 output as a run artifact",
+       "about": "Keeps the seasonal ratings file for 7 days as a downloadable bundle",
+       "source": "config",
+       "median_s": 2.0,
+       "min_s": 2.0,
+       "max_s": 3.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Upload caches to predictions-cache release",
+       "about": "Uploads every step's saved result (01 to 08, the SPM panel) to the predictions-cache release, so a later run can resume or the other workflows can read them",
+       "source": "config",
+       "median_s": 74.0,
+       "min_s": 64.0,
+       "max_s": 94.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Pipeline summary",
+       "about": "Writes the run's date, trigger and whether ratings were produced onto the run's summary page; fails if no ratings file exists",
+       "source": "config",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Post Setup R dependencies",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 4.0,
+       "min_s": 0.0,
+       "max_s": 6.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Post Checkout repository",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Complete job",
+       "about": "GitHub closes the job and cleans up the machine",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 5,
+       "of": 5
+      }
+     ],
+     "stages": {
+      "the stages of the rating pipeline": [
+       {
+        "name": "1: load_data",
+        "median_s": 4588.780759,
+        "min_s": 4405.945902,
+        "max_s": 5857.532776,
+        "n": 5
+       },
+       {
+        "name": "2: data_processing",
+        "median_s": 535.990673,
+        "min_s": 466.189187,
+        "max_s": 666.636436,
+        "n": 5
+       },
+       {
+        "name": "3: splint_creation",
+        "median_s": 806.694717,
+        "min_s": 795.130346,
+        "max_s": 1053.362162,
+        "n": 5
+       },
+       {
+        "name": "4: rapm",
+        "median_s": 108.025965,
+        "min_s": 105.850616,
+        "max_s": 123.419084,
+        "n": 5
+       },
+       {
+        "name": "5: spm",
+        "median_s": 518.352255,
+        "min_s": 499.129994,
+        "max_s": 697.929384,
+        "n": 5
+       },
+       {
+        "name": "5b: export_spm_coefficients",
+        "median_s": 4.431594,
+        "min_s": 4.066083,
+        "max_s": 5.165633,
+        "n": 5
+       },
+       {
+        "name": "6: xrapm",
+        "median_s": 99.639178,
+        "min_s": 91.755952,
+        "max_s": 122.688117,
+        "n": 5
+       },
+       {
+        "name": "7: seasonal_ratings",
+        "median_s": 865.01602,
+        "min_s": 804.715672,
+        "max_s": 1025.851263,
+        "n": 5
+       },
+       {
+        "name": "7c: team_season_strength",
+        "median_s": 23.90708,
+        "min_s": 23.172105,
+        "max_s": 27.915679,
+        "n": 5
+       },
+       {
+        "name": "8: panna_ratings",
+        "median_s": 59.860303,
+        "min_s": 54.623924,
+        "max_s": 74.43005,
+        "n": 5
+       },
+       {
+        "name": "9: export_ratings",
+        "median_s": 36.763625,
+        "min_s": 33.78302,
+        "max_s": 38.395417,
+        "n": 5
+       }
+      ]
+     },
+     "stage_notes": {
+      "the stages of the rating pipeline": "Each stage runs from its Step header line to the next one; the last runs to the end of the step."
+     },
+     "stage_about": {
+      "1: load_data": "Loads Opta lineups, events, stats and xMetrics, scores every shot with the xG model, finds penalties and works out each match's xG for the splints",
+      "2: data_processing": "Converts the Opta tables into the processed-data form the splint builder expects",
+      "3: splint_creation": "Cuts every match into splints: stretches of play between substitutions, goals and red cards",
+      "4: rapm": "Fits the base RAPM model (ridge regression of each splint's xG on who was on the pitch)",
+      "5: spm": "Fits the SPM model: elastic net and XGBoost blended 50/50 from 80-odd player stats, plus offence and defence versions",
+      "5b: export_spm_coefficients": "Writes the SPM model's coefficients to CSV files for live scoring",
+      "6: xrapm": "Fits xRAPM: RAPM with the SPM predictions as its prior",
+      "7: seasonal_ratings": "Fits RAPM, SPM and xRAPM again for each season",
+      "7c: team_season_strength": "Builds each team's attacking and defensive strength per season from its players' xRAPM, as the opponent-quality control for later models",
+      "8: panna_ratings": "Combines xRAPM, RAPM and SPM into the final ratings table",
+      "9: export_ratings": "Uploads seasonal_xrapm.parquet and seasonal_spm.parquet to the ratings-data release (skipped on branch test runs)"
+     }
+    }
+   ],
+   "phases": [
+    {
+     "jobs": [
+      "opta-pipeline"
+     ],
+     "median_s": 7902.0,
+     "min_s": 7692.0,
+     "max_s": 10002.0,
+     "slowest": "opta-pipeline",
+     "parallel": false
+    }
+   ],
+   "critical_path": [
+    "opta-pipeline"
+   ],
+   "slowest_steps": [
+    {
+     "job": "opta-pipeline",
+     "step": "Run Opta RAPM/SPM pipeline",
+     "about": "Runs data-raw/player-ratings-opta/run_pipeline_opta.R, steps 1 to 9 (stages in the next table), while a background loop logs memory and saves each finished step's cache to the predictions-cache release",
+     "median_s": 7648.0
+    },
+    {
+     "job": "opta-pipeline",
+     "step": "Upload caches to predictions-cache release",
+     "about": "Uploads every step's saved result (01 to 08, the SPM panel) to the predictions-cache release, so a later run can resume or the other workflows can read them",
+     "median_s": 74.0
+    },
+    {
+     "job": "opta-pipeline",
+     "step": "Setup R dependencies",
+     "about": "Installs the R packages the pipeline needs (devtools, arrow, glmnet, xgboost, duckdb and others), from a cache when it can",
+     "median_s": 52.0
+    },
+    {
+     "job": "opta-pipeline",
+     "step": "Setup R",
+     "about": "Installs R 4.5.0",
+     "median_s": 40.0
+    },
+    {
+     "job": "opta-pipeline",
+     "step": "Download Opta data",
+     "about": "Downloads the consolidated Opta tables from opta-latest and the xG, expected-pass and EPV models from the models release",
+     "median_s": 18.0
+    }
+   ]
+  }
+ ],
+ "warnings": []
+}
