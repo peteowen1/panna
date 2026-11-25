@@ -109,18 +109,39 @@ jobs:
           mkdir -p "$OPTA_DIR"
 
           echo "Downloading consolidated Opta files..."
+          # Every file below is on opta-latest on a normal day, so a failed download is a
+          # fetch error, not an absent asset: retry it. 26 Nov 2026 2:45am a GitHub 503
+          # made opta_shot_events.parquet "Skipped (not found)" and step 10b died 30
+          # minutes later on the missing file (run 45648229839). Files the core steps
+          # cannot run without stop the job here; the rest warn visibly.
+          REQUIRED="opta_player_stats.parquet opta_shot_events.parquet opta_events.parquet opta_lineups.parquet opta_fixtures.parquet"
+          MISSING_REQUIRED=""
           for f in opta_player_stats.parquet opta_shots.parquet opta_shot_events.parquet \
                    opta_events.parquet opta_lineups.parquet opta_fixtures.parquet \
                    opta_skills.parquet opta_match_stats.parquet opta_xmetrics.parquet \
                    opta_epr_weekly.parquet opta_psr_weekly.parquet opta_match_xg.parquet \
                    opta_xmetrics_bymatch.parquet \
                    opta-catalog.json; do
-            if gh release download opta-latest --repo peteowen1/pannadata --pattern "$f" --dir "$OPTA_DIR" 2>/dev/null; then
+            ok=0
+            for wait_s in 0 10 30; do
+              sleep "$wait_s"
+              if gh release download opta-latest --repo peteowen1/pannadata --pattern "$f" --dir "$OPTA_DIR" --clobber 2>/dev/null; then
+                ok=1; break
+              fi
+            done
+            if [ "$ok" = 1 ]; then
               echo "  Downloaded $f"
+            elif [[ " $REQUIRED " == *" $f "* ]]; then
+              echo "::error::$f failed to download from opta-latest after 3 attempts"
+              MISSING_REQUIRED="$MISSING_REQUIRED $f"
             else
-              echo "  Skipped $f (not found)"
+              echo "::warning::$f failed to download from opta-latest after 3 attempts; steps that read it degrade"
             fi
           done
+          if [ -n "$MISSING_REQUIRED" ]; then
+            echo "::error::Required Opta file(s) missing:$MISSING_REQUIRED. Stopping before the pipeline runs."
+            exit 1
+          fi
 
           # Career-trait panna (the real `panna` RATING — decay-weighted multi-season
           # xRAPM) lives on the ratings-data release, not opta-latest. Step 12 joins it
