@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.131</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.132</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,12 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.132" id="panna-03132">panna 0.3.132<a class="anchor" aria-label="anchor" href="#panna-03132"></a></h2>
+<ul><li>New exported <code><a href="../reference/calibrate_spm_variance.html">calibrate_spm_variance()</a></code> (panna#168): an order-preserving linear rescale of SPM to a target sd (a vector such as RAPM, or a number), about the weighted mean, for a separate display column such as <code>spm_display</code>. SPM is compressed at every grain (season sd 0.025 against PSV 0.06-0.07); this is the issue’s cheapest knob. It is not wired into any pipeline or export, so no published number changes, and the xRAPM prior still reads the raw <code>spm</code>. Lambda below <code>lambda.min</code> and a glmnet-only or match-grain-trained SPM for per-match display are not done.</li>
+<li>
+<code>pack_publish_game_logs.R</code> writes the current-season alias <code>game_logs.parquet</code> only when the pack includes the newest season. A past-seasons-only republish (<code>GL_SEASONS</code> without 2026-27) would have pointed the alias at 2025-26; caught on the 25 Nov dry run, before the 22-season republish.</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.131" id="panna-03131">panna 0.3.131<a class="anchor" aria-label="anchor" href="#panna-03131"></a></h2>
 <ul><li>Live PSV constants now carry the PSV league offset (panna#516). 10b adds <code>psv_league_offset</code> to game-log PSV after centring and calibration, and <code>07c_build_live_psv_constants.R</code> did not, so live PSV on match pages sat <code>-offset</code> away from the game logs (Scottish Premiership starters +0.11 a game, A-League +0.12, Premier League -0.02). 07c now subtracts each league’s offset from K (<code>psr</code> in full, <code>osr</code>/<code>dsr</code> half each) through the new internal <code><a href="../reference/dot-psv_live_fold_league_offsets.html">.psv_live_fold_league_offsets()</a></code>, and stops if <code>psr_league_offsets.parquet</code> is missing. <code>inst/extdata/psv_live_constants.csv</code> is the build CI published to pannadata <code>blog-latest</code> on 19 Nov with the same step applied (61,229 player-games behind it, against 16,075 in the hand-built file it replaces).</li>

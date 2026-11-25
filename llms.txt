@@ -255,6 +255,8 @@ Statistical Plus-Minus model
   : Calculate SPM ratings for all players
 - [`calculate_spm_ratings_xgb()`](https://peteowen1.github.io/panna/reference/calculate_spm_ratings_xgb.md)
   : Calculate SPM ratings using XGBoost model
+- [`calibrate_spm_variance()`](https://peteowen1.github.io/panna/reference/calibrate_spm_variance.md)
+  : Rescale SPM to a target spread for display (panna#168)
 - [`fit_spm_model()`](https://peteowen1.github.io/panna/reference/fit_spm_model.md)
   : Fit SPM model
 - [`get_spm_feature_importance()`](https://peteowen1.github.io/panna/reference/get_spm_feature_importance.md)
