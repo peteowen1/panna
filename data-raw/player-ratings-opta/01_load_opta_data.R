@@ -135,6 +135,11 @@ for (.t in .BIG_TABLES) dir.create(file.path(stage_dir, .t), recursive = TRUE, s
 all_period_ends <- list()  # exact second-precision period boundaries (Opta type_id == 30)
 all_player_timing <- list()  # per-(match, player) on/off times derived from chains
 all_match_xg <- list()
+# Shots and penalties scored, summed over every league-season: the guard after the
+# loop stops the step when no penalty is found at all (panna#521: the old detector
+# found 0 of 2,185,707 for years, and every penalty sat in npxG unnoticed).
+n_shots_total <- 0L
+n_pen_total <- 0L
 
 # Coverage ledger. The per-season handler below logs a failure and CONTINUES,
 # which is deliberate (one bad league-season must not kill a 40-minute run) but
@@ -487,6 +492,10 @@ for (league in leagues) {
 
         message(sprintf("    SPADL: %d shots scored, %d penalties",
                         nrow(shots_df), sum(shots_df$is_penalty)))
+        # Plain <-: this is tryCatch's expression, evaluated in the script's own
+        # environment (unlike the error handler below, a function, which needs <<-).
+        n_shots_total <- n_shots_total + nrow(shots_df)
+        n_pen_total <- n_pen_total + sum(shots_df$is_penalty)
       }
 
     }, error = function(e) {
@@ -504,6 +513,16 @@ for (league in leagues) {
   # OPT #1: free this league's full-season frames before the next league.
   rm(lg_lineups, lg_events, lg_stats, lg_xmetrics, lg_match_events)
   gc(verbose = FALSE)
+}
+
+# panna#521 guard. Penalties are about 1.2% of shots (26,556 of 2,189,740 on
+# 25 Nov 2026), so a run that scores thousands of shots and finds none has lost
+# the penalty flag again and would put every penalty back into npxG.
+message(sprintf("  Penalties found: %d of %d shots (%.2f%%)", n_pen_total, n_shots_total,
+                100 * n_pen_total / max(n_shots_total, 1L)))
+if (n_shots_total >= 5000L && n_pen_total == 0L) {
+  stop(sprintf("Step 1 scored %d shots and found 0 penalties: the penalty flag is missing (panna#521), so npxG would include every penalty.",
+               n_shots_total))
 }
 
 # 6. Combine All Data ----
