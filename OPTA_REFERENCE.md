@@ -54,7 +54,12 @@ Clearance". This exact set of corrections independently cost `inthegame-blog` a 
 same wrong labels.
 
 `75/76/79/80/81/84`: genuinely not in any public F24 reference; named "Unknown" deliberately
-rather than guessed. See `spadl_conversion.R`'s header comment for per-code corpus frequency if
+rather than guessed. Lead for 84 (26 Nov 2026, not confirmed): the community-maintained
+`data/opta-truth.json` in github.com/withqwerty/football-docs labels it "Deleted after review",
+said to be checked by hand against the Stats Perform F24 appendices; panna's corpus has it at ~10.8k
+a season, without a pitch location but with goalmouth qualifiers 102/103 and 230/231. Keep it
+"Unknown" in code until an official source or a match-level check confirms it
+(pannaverse `docs/reviews/football-docs-mcp-2026-11-26.md`). See `spadl_conversion.R`'s header comment for per-code corpus frequency if
 you're trying to pin one down.
 
 ## Qualifier IDs (`qualifierId`)
