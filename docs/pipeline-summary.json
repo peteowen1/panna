@@ -2,7 +2,7 @@
  "repo": "peteowen1/panna",
  "doc_path": "docs/PIPELINE.md",
  "title": "panna pipeline",
- "about": "How the football ratings and match predictions get built on GitHub Actions: two workflows, both started by the daily Opta scrape in the pannadata repo. The Predictions Pipeline builds the match predictions and the blog's game logs and publishes them; the Opta RAPM/SPM Pipeline refits the player ratings and publishes them. The pannadata repo's pipeline guide covers the scrape before these and the blog data build after them. Each workflow is timed on its own; runs are not stitched across repos.",
+ "about": "How the football ratings and match predictions get built on GitHub Actions: four workflows. Three are started by the daily Opta scrape in the pannadata repo: the Predictions Pipeline builds the match predictions and the blog's game logs and publishes them; the Opta RAPM/SPM Pipeline refits the player ratings and publishes them; the EPV/WPA Model Training workflow scores shots and passes and publishes the xMetrics files. The Skills Seasonal Build runs weekly on its own and publishes the skill ratings tables. The pannadata repo's pipeline guide covers the scrape before these and the blog data build after them. Each workflow is timed on its own; runs are not stitched across repos.",
  "newest_run_utc": "2026-11-24T16:01:18Z",
  "newest_run_sydney": "25 Nov 2026, 3:01am",
  "pipelines": [
@@ -873,7 +873,1288 @@
      "median_s": 18.0
     }
    ]
+  },
+  {
+   "name": "EPV/WPA Model Training",
+   "workflow": "epv-pipeline.yml",
+   "about": "Despite the name, the runs counted here do not retrain any model. They score every player's shots and passes with the models already published (xG and xPass), and publish the results as opta_xmetrics.parquet and opta_xmetrics_bymatch.parquet. Retraining the EPV, xG, xPass and win-probability models is only done by hand (those training steps are skipped in these runs). Counted: runs on main started by the daily scrape or the weekly schedule, at least 30 minutes long.",
+   "triggers": "The pannadata repo's daily Opta scrape sends opta-scrape-complete when it finishes (the same message starts the other two panna workflows); a weekly schedule (Monday 5am Sydney time in summer) is the backstop. It starts nothing itself: the Opta RAPM/SPM Pipeline refuses to run if opta_xmetrics.parquet is more than 14 days old, and the game logs read opta_xmetrics_bymatch.parquet.",
+   "median_s": 5971.0,
+   "min_s": 4702.0,
+   "max_s": 6673.0,
+   "runs": [
+    {
+     "id": 45432219490,
+     "url": "https://github.com/peteowen1/panna/actions/runs/45432219490",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "opta-scrape-complete",
+     "started_utc": "2026-11-24T16:01:17Z",
+     "started_sydney": "25 Nov 2026, 3:01am",
+     "wall_s": 6673.0,
+     "queued_s": 2.0
+    },
+    {
+     "id": 45322251954,
+     "url": "https://github.com/peteowen1/panna/actions/runs/45322251954",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "opta-scrape-complete",
+     "started_utc": "2026-11-24T03:58:54Z",
+     "started_sydney": "24 Nov 2026, 2:58pm",
+     "wall_s": 4702.0,
+     "queued_s": 506.0
+    },
+    {
+     "id": 45310646149,
+     "url": "https://github.com/peteowen1/panna/actions/runs/45310646149",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "opta-scrape-complete",
+     "started_utc": "2026-11-24T02:25:07Z",
+     "started_sydney": "24 Nov 2026, 1:25pm",
+     "wall_s": 5625.0,
+     "queued_s": 768.0
+    },
+    {
+     "id": 45299750825,
+     "url": "https://github.com/peteowen1/panna/actions/runs/45299750825",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "opta-scrape-complete",
+     "started_utc": "2026-11-24T00:45:33Z",
+     "started_sydney": "24 Nov 2026, 11:45am",
+     "wall_s": 5971.0,
+     "queued_s": 2.0
+    },
+    {
+     "id": 45219052724,
+     "url": "https://github.com/peteowen1/panna/actions/runs/45219052724",
+     "event": "repository_dispatch",
+     "branch": "main",
+     "title": "opta-scrape-complete",
+     "started_utc": "2026-11-23T16:39:59Z",
+     "started_sydney": "24 Nov 2026, 3:39am",
+     "wall_s": 6666.0,
+     "queued_s": 2.0
+    }
+   ],
+   "jobs": [
+    {
+     "name": "epv-pipeline",
+     "about": "One job: download the Opta events, score every league-season with the published models, combine and publish the xMetrics files",
+     "legs": 1,
+     "median_s": 5971.0,
+     "min_s": 4702.0,
+     "max_s": 6673.0,
+     "leg_median_s": 5971.0,
+     "slowest_leg_median_s": 5971.0,
+     "runs_seen": 5,
+     "steps": [
+      {
+       "name": "Set up job",
+       "about": "GitHub starts the machine and downloads the actions this job uses",
+       "source": "builtin",
+       "median_s": 2.0,
+       "min_s": 1.0,
+       "max_s": 3.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Publish gate (R026)",
+       "about": "Checks the branch: only main or dev may publish; on any other branch the run builds but uploads nothing",
+       "source": "config",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 1.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Checkout repository",
+       "about": "Downloads this repo's code onto the machine",
+       "source": "config",
+       "median_s": 3.0,
+       "min_s": 2.0,
+       "max_s": 3.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Setup R",
+       "about": "Installs R",
+       "source": "config",
+       "median_s": 32.0,
+       "min_s": 24.0,
+       "max_s": 36.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Setup R dependencies",
+       "about": "Installs the R packages the scripts need, from a cache when it can",
+       "source": "config",
+       "median_s": 53.0,
+       "min_s": 49.0,
+       "max_s": 73.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Download Opta event data",
+       "about": "Downloads the lineups, fixtures, shot events and catalog, then every per-league events file, from the opta-latest release in the pannadata repo (each events file retried once); a failed events file is recorded and fails the run at the end",
+       "source": "config",
+       "median_s": 168.0,
+       "min_s": 151.0,
+       "max_s": 455.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Calculate player xMetrics",
+       "about": "Runs data-raw/epv/03_calculate_player_xmetrics.R with the published xG and xPass models over every league-season, then 04_export_xmetrics.R and 04b_export_xmetrics_bymatch.R, which combine the results and upload opta_xmetrics.parquet and opta_xmetrics_bymatch.parquet to opta-latest; fails if either file was not produced",
+       "source": "config",
+       "median_s": 5416.0,
+       "min_s": 4458.0,
+       "max_s": 6427.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Upload trained models",
+       "about": "Uploads any retrained model files to the models release; in these runs nothing was retrained, so it has nothing to send",
+       "source": "config",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Fail if a league-season was dropped from the xMetrics",
+       "about": "Ends the run red, after the upload, if any league-season failed to score or any events file failed to download",
+       "source": "config",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Post Setup R dependencies",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 4.0,
+       "min_s": 0.0,
+       "max_s": 7.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Post Checkout repository",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 1.0,
+       "n": 5,
+       "of": 5
+      },
+      {
+       "name": "Complete job",
+       "about": "GitHub closes the job and cleans up the machine",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 1.0,
+       "n": 5,
+       "of": 5
+      }
+     ],
+     "stages": {
+      "the stages of the xMetrics calculation": [
+       {
+        "name": "Step 1: Load Trained Models",
+        "median_s": 3.745996,
+        "min_s": 3.507488,
+        "max_s": 9.206328,
+        "n": 5
+       },
+       {
+        "name": "Step 2: Discover Available Seasons",
+        "median_s": 0.410015,
+        "min_s": 0.346996,
+        "max_s": 1.501339,
+        "n": 5
+       },
+       {
+        "name": "Step 3: Process League-Seasons",
+        "median_s": 5359.954495,
+        "min_s": 4419.087894,
+        "max_s": 6376.969083,
+        "n": 5
+       },
+       {
+        "name": "Step 4: Summary",
+        "median_s": 0.522623,
+        "min_s": 0.313163,
+        "max_s": 0.981787,
+        "n": 5
+       },
+       {
+        "name": "Export xMetrics to GitHub Releases",
+        "median_s": 8.21657,
+        "min_s": 6.34321,
+        "max_s": 8.740146,
+        "n": 5
+       },
+       {
+        "name": "Export per-match xMetrics to GitHub Releases",
+        "median_s": 33.107056,
+        "min_s": 26.228294,
+        "max_s": 35.479724,
+        "n": 5
+       }
+      ]
+     },
+     "stage_notes": {
+      "the stages of the xMetrics calculation": "Each stage runs from its header line to the next one; the last runs to the end of its step."
+     },
+     "stage_about": {
+      "Step 1: Load Trained Models": "Loads the published xG and xPass models from the pannamodels release",
+      "Step 2: Discover Available Seasons": "Lists the league-seasons that have Opta events",
+      "Step 3: Process League-Seasons": "For each league-season, scores every shot and pass and adds up each player's xG, xA and xPass, saving one file per league-season",
+      "Step 4: Summary": "Prints the totals and the top scorers by xG as a sense check",
+      "Export xMetrics to GitHub Releases": "Combines every league-season into opta_xmetrics.parquet and uploads it to opta-latest",
+      "Export per-match xMetrics to GitHub Releases": "Combines every league-season into opta_xmetrics_bymatch.parquet (about 3.5 million player-matches) and uploads it to opta-latest"
+     }
+    }
+   ],
+   "phases": [
+    {
+     "jobs": [
+      "epv-pipeline"
+     ],
+     "median_s": 5971.0,
+     "min_s": 4702.0,
+     "max_s": 6673.0,
+     "slowest": "epv-pipeline",
+     "parallel": false
+    }
+   ],
+   "critical_path": [
+    "epv-pipeline"
+   ],
+   "slowest_steps": [
+    {
+     "job": "epv-pipeline",
+     "step": "Calculate player xMetrics",
+     "about": "Runs data-raw/epv/03_calculate_player_xmetrics.R with the published xG and xPass models over every league-season, then 04_export_xmetrics.R and 04b_export_xmetrics_bymatch.R, which combine the results and upload opta_xmetrics.parquet and opta_xmetrics_bymatch.parquet to opta-latest; fails if either file was not produced",
+     "median_s": 5416.0
+    },
+    {
+     "job": "epv-pipeline",
+     "step": "Download Opta event data",
+     "about": "Downloads the lineups, fixtures, shot events and catalog, then every per-league events file, from the opta-latest release in the pannadata repo (each events file retried once); a failed events file is recorded and fails the run at the end",
+     "median_s": 168.0
+    },
+    {
+     "job": "epv-pipeline",
+     "step": "Setup R dependencies",
+     "about": "Installs the R packages the scripts need, from a cache when it can",
+     "median_s": 53.0
+    },
+    {
+     "job": "epv-pipeline",
+     "step": "Setup R",
+     "about": "Installs R",
+     "median_s": 32.0
+    },
+    {
+     "job": "epv-pipeline",
+     "step": "Post Setup R dependencies",
+     "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+     "median_s": 4.0
+    }
+   ]
+  },
+  {
+   "name": "Skills Seasonal Build",
+   "workflow": "skills-seasonal.yml",
+   "about": "Rebuilds the player skills chain on a runner (it used to be run by hand): match stats, the recency-weighted RAPM target, skill features, the skill SPM and the seasonal skill ratings, then checks the new tables against the published ones and publishes them to the predictions-cache release (which the Predictions Pipeline downloads as required input). Each stage is its own job on a fresh machine, passing files on as run artifacts. Counted: weekly scheduled runs on main (only three exist so far, so fewer than 5 runs back this guide).",
+   "triggers": "GitHub's own schedule, set for Monday 3pm Sydney time in summer (4am UTC); it can also be started by hand. It starts nothing itself: the Predictions Pipeline reads the 06_seasonal_ratings.rds and psr_league_offsets.parquet it publishes.",
+   "median_s": 2601.0,
+   "min_s": 2383.0,
+   "max_s": 4121.0,
+   "runs": [
+    {
+     "id": 45188971216,
+     "url": "https://github.com/peteowen1/panna/actions/runs/45188971216",
+     "event": "schedule",
+     "branch": "main",
+     "title": "Skills Seasonal Build",
+     "started_utc": "2026-11-23T13:56:50Z",
+     "started_sydney": "24 Nov 2026, 12:56am",
+     "wall_s": 4121.0,
+     "queued_s": 2.0
+    },
+    {
+     "id": 43866006317,
+     "url": "https://github.com/peteowen1/panna/actions/runs/43866006317",
+     "event": "schedule",
+     "branch": "main",
+     "title": "Skills Seasonal Build",
+     "started_utc": "2026-11-16T12:22:40Z",
+     "started_sydney": "16 Nov 2026, 11:22pm",
+     "wall_s": 2601.0,
+     "queued_s": 3.0
+    },
+    {
+     "id": 42617183671,
+     "url": "https://github.com/peteowen1/panna/actions/runs/42617183671",
+     "event": "schedule",
+     "branch": "main",
+     "title": "Skills Seasonal Build",
+     "started_utc": "2026-11-09T12:27:36Z",
+     "started_sydney": "9 Nov 2026, 11:27pm",
+     "wall_s": 2383.0,
+     "queued_s": 3.0
+    }
+   ],
+   "jobs": [
+    {
+     "name": "s04c",
+     "about": "Stage 04c: the recency-weighted RAPM target (runs alongside stage 01)",
+     "legs": 1,
+     "median_s": 413.0,
+     "min_s": 249.0,
+     "max_s": 415.0,
+     "leg_median_s": 413.0,
+     "slowest_leg_median_s": 413.0,
+     "runs_seen": 3,
+     "steps": [
+      {
+       "name": "Set up job",
+       "about": "GitHub starts the machine and downloads the actions this job uses",
+       "source": "builtin",
+       "median_s": 1.0,
+       "min_s": 1.0,
+       "max_s": 3.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Checkout repository",
+       "about": "Downloads this repo's code onto the machine",
+       "source": "config",
+       "median_s": 1.0,
+       "min_s": 1.0,
+       "max_s": 2.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Setup R",
+       "about": "Installs R 4.5.0",
+       "source": "config",
+       "median_s": 36.0,
+       "min_s": 29.0,
+       "max_s": 41.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Setup R dependencies",
+       "about": "Installs the R packages the stage needs (devtools, arrow, dplyr, data.table and others), from a cache when it can",
+       "source": "config",
+       "median_s": 161.0,
+       "min_s": 47.0,
+       "max_s": 184.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Download Opta data (opta-latest)",
+       "about": "Downloads the Opta tables this stage reads (match stats, player stats, fixtures, catalog, skills and xMetrics) from the opta-latest release in the pannadata repo",
+       "source": "config",
+       "median_s": 22.0,
+       "min_s": 20.0,
+       "max_s": 31.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Download caches (predictions-cache, blog-latest)",
+       "about": "Downloads the saved Opta rating results (03_splints, 04_rapm, 05_spm, 07_seasonal_ratings), the tuned decay settings and the as-of skill SPM from the predictions-cache release, and the per-season game logs from blog-latest; each tried three times, and a missing required one fails the job",
+       "source": "config",
+       "median_s": 16.0,
+       "min_s": 6.0,
+       "max_s": 28.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Stage 04c (peak memory and time measured)",
+       "about": "Runs data-raw/player-ratings-opta/04c_rapm_decayed.R: a RAPM fit that weights recent matches more, to be the target the skill SPM learns from",
+       "source": "config",
+       "median_s": 135.0,
+       "min_s": 124.0,
+       "max_s": 144.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Pass outputs on",
+       "about": "Saves this stage's output files as a run artifact (kept 7 days) for the later stages",
+       "source": "config",
+       "median_s": 7.0,
+       "min_s": 6.0,
+       "max_s": 8.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Post Setup R dependencies",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 4.0,
+       "min_s": 4.0,
+       "max_s": 5.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Post Checkout repository",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 1.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Complete job",
+       "about": "GitHub closes the job and cleans up the machine",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 3,
+       "of": 3
+      }
+     ],
+     "stages": {},
+     "stage_notes": {},
+     "stage_about": {}
+    },
+    {
+     "name": "s01",
+     "about": "Stage 01: rebuilds the per-match stats and the keeper style table",
+     "legs": 1,
+     "median_s": 741.0,
+     "min_s": 685.0,
+     "max_s": 991.0,
+     "leg_median_s": 741.0,
+     "slowest_leg_median_s": 741.0,
+     "runs_seen": 3,
+     "steps": [
+      {
+       "name": "Set up job",
+       "about": "GitHub starts the machine and downloads the actions this job uses",
+       "source": "builtin",
+       "median_s": 2.0,
+       "min_s": 2.0,
+       "max_s": 2.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Checkout repository",
+       "about": "Downloads this repo's code onto the machine",
+       "source": "config",
+       "median_s": 2.0,
+       "min_s": 1.0,
+       "max_s": 2.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Setup R",
+       "about": "Installs R 4.5.0",
+       "source": "config",
+       "median_s": 33.0,
+       "min_s": 32.0,
+       "max_s": 41.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Setup R dependencies",
+       "about": "Installs the R packages the stage needs (devtools, arrow, dplyr, data.table and others), from a cache when it can",
+       "source": "config",
+       "median_s": 182.0,
+       "min_s": 42.0,
+       "max_s": 199.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Download Opta data (opta-latest)",
+       "about": "Downloads the Opta tables this stage reads (match stats, player stats, fixtures, catalog, skills and xMetrics) from the opta-latest release in the pannadata repo",
+       "source": "config",
+       "median_s": 23.0,
+       "min_s": 23.0,
+       "max_s": 48.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Download caches (predictions-cache, blog-latest)",
+       "about": "Downloads the saved Opta rating results (03_splints, 04_rapm, 05_spm, 07_seasonal_ratings), the tuned decay settings and the as-of skill SPM from the predictions-cache release, and the per-season game logs from blog-latest; each tried three times, and a missing required one fails the job",
+       "source": "config",
+       "median_s": 12.0,
+       "min_s": 10.0,
+       "max_s": 14.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Stage 01 (peak memory and time measured)",
+       "about": "Runs skills steps 01 and 01c (data-raw/estimated-skills/run_skills_pipeline.R): each player's per-90 match stats, then each club's goalkeeper style as of each season, timed with /usr/bin/time so peak memory is recorded",
+       "source": "config",
+       "median_s": 553.0,
+       "min_s": 469.0,
+       "max_s": 665.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Pass outputs on",
+       "about": "Saves this stage's output files as a run artifact (kept 7 days) for the later stages",
+       "source": "config",
+       "median_s": 15.0,
+       "min_s": 12.0,
+       "max_s": 15.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Post Setup R dependencies",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 3.0,
+       "min_s": 1.0,
+       "max_s": 4.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Post Checkout repository",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 1.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Complete job",
+       "about": "GitHub closes the job and cleans up the machine",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 3,
+       "of": 3
+      }
+     ],
+     "stages": {},
+     "stage_notes": {},
+     "stage_about": {}
+    },
+    {
+     "name": "s02",
+     "about": "Stage 02: the skill features (after stage 01)",
+     "legs": 1,
+     "median_s": 573.0,
+     "min_s": 353.0,
+     "max_s": 907.0,
+     "leg_median_s": 573.0,
+     "slowest_leg_median_s": 573.0,
+     "runs_seen": 3,
+     "steps": [
+      {
+       "name": "Set up job",
+       "about": "GitHub starts the machine and downloads the actions this job uses",
+       "source": "builtin",
+       "median_s": 3.0,
+       "min_s": 3.0,
+       "max_s": 5.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Checkout repository",
+       "about": "Downloads this repo's code onto the machine",
+       "source": "config",
+       "median_s": 4.0,
+       "min_s": 1.0,
+       "max_s": 5.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Setup R",
+       "about": "Installs R 4.5.0",
+       "source": "config",
+       "median_s": 63.0,
+       "min_s": 28.0,
+       "max_s": 297.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Setup R dependencies",
+       "about": "Installs the R packages the stage needs (devtools, arrow, dplyr, data.table and others), from a cache when it can",
+       "source": "config",
+       "median_s": 40.0,
+       "min_s": 40.0,
+       "max_s": 203.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Download Opta data (opta-latest)",
+       "about": "Downloads the Opta tables this stage reads (match stats, player stats, fixtures, catalog, skills and xMetrics) from the opta-latest release in the pannadata repo",
+       "source": "config",
+       "median_s": 24.0,
+       "min_s": 20.0,
+       "max_s": 26.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Download caches (predictions-cache, blog-latest)",
+       "about": "Downloads the saved Opta rating results (03_splints, 04_rapm, 05_spm, 07_seasonal_ratings), the tuned decay settings and the as-of skill SPM from the predictions-cache release, and the per-season game logs from blog-latest; each tried three times, and a missing required one fails the job",
+       "source": "config",
+       "median_s": 9.0,
+       "min_s": 7.0,
+       "max_s": 19.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Bring in earlier stages' outputs",
+       "about": "Downloads the files the earlier stages saved as run artifacts",
+       "source": "config",
+       "median_s": 9.0,
+       "min_s": 7.0,
+       "max_s": 29.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Put handed-over files back in place",
+       "about": "Moves those files into the cache folders the stage reads",
+       "source": "config",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Stage 02 (peak memory and time measured)",
+       "about": "Runs skills step 02 (02_estimate_skills.R): decay-weighted skill estimates, one row per player per season, saved as 02_skill_features.rds",
+       "source": "config",
+       "median_s": 358.0,
+       "min_s": 232.0,
+       "max_s": 377.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Pass outputs on",
+       "about": "Saves this stage's output files as a run artifact (kept 7 days) for the later stages",
+       "source": "config",
+       "median_s": 4.0,
+       "min_s": 4.0,
+       "max_s": 5.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Post Setup R dependencies",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 1.0,
+       "min_s": 0.0,
+       "max_s": 1.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Post Checkout repository",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Complete job",
+       "about": "GitHub closes the job and cleans up the machine",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 3,
+       "of": 3
+      }
+     ],
+     "stages": {},
+     "stage_notes": {},
+     "stage_about": {}
+    },
+    {
+     "name": "s03",
+     "about": "Stage 03: the skill SPM (after stages 01, 04c and 02)",
+     "legs": 1,
+     "median_s": 326.0,
+     "min_s": 231.0,
+     "max_s": 590.0,
+     "leg_median_s": 326.0,
+     "slowest_leg_median_s": 326.0,
+     "runs_seen": 3,
+     "steps": [
+      {
+       "name": "Set up job",
+       "about": "GitHub starts the machine and downloads the actions this job uses",
+       "source": "builtin",
+       "median_s": 3.0,
+       "min_s": 2.0,
+       "max_s": 3.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Checkout repository",
+       "about": "Downloads this repo's code onto the machine",
+       "source": "config",
+       "median_s": 1.0,
+       "min_s": 1.0,
+       "max_s": 3.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Setup R",
+       "about": "Installs R 4.5.0",
+       "source": "config",
+       "median_s": 55.0,
+       "min_s": 31.0,
+       "max_s": 72.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Setup R dependencies",
+       "about": "Installs the R packages the stage needs (devtools, arrow, dplyr, data.table and others), from a cache when it can",
+       "source": "config",
+       "median_s": 54.0,
+       "min_s": 44.0,
+       "max_s": 246.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Download Opta data (opta-latest)",
+       "about": "Downloads the Opta tables this stage reads (match stats, player stats, fixtures, catalog, skills and xMetrics) from the opta-latest release in the pannadata repo",
+       "source": "config",
+       "median_s": 18.0,
+       "min_s": 16.0,
+       "max_s": 20.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Download caches (predictions-cache, blog-latest)",
+       "about": "Downloads the saved Opta rating results (03_splints, 04_rapm, 05_spm, 07_seasonal_ratings), the tuned decay settings and the as-of skill SPM from the predictions-cache release, and the per-season game logs from blog-latest; each tried three times, and a missing required one fails the job",
+       "source": "config",
+       "median_s": 6.0,
+       "min_s": 6.0,
+       "max_s": 9.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Bring in earlier stages' outputs",
+       "about": "Downloads the files the earlier stages saved as run artifacts",
+       "source": "config",
+       "median_s": 11.0,
+       "min_s": 11.0,
+       "max_s": 29.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Put handed-over files back in place",
+       "about": "Moves those files into the cache folders the stage reads",
+       "source": "config",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 1.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Stage 03 (peak memory and time measured)",
+       "about": "Runs skills step 03 (03_skill_spm.R): fits the SPM on the skill features against the decayed RAPM target, saved as 03_skill_spm.rds and its as-of version",
+       "source": "config",
+       "median_s": 166.0,
+       "min_s": 109.0,
+       "max_s": 201.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Pass outputs on",
+       "about": "Saves this stage's output files as a run artifact (kept 7 days) for the later stages",
+       "source": "config",
+       "median_s": 5.0,
+       "min_s": 3.0,
+       "max_s": 5.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Post Setup R dependencies",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 1.0,
+       "min_s": 0.0,
+       "max_s": 1.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Post Checkout repository",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 1.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Complete job",
+       "about": "GitHub closes the job and cleans up the machine",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 3,
+       "of": 3
+      }
+     ],
+     "stages": {},
+     "stage_notes": {},
+     "stage_about": {}
+    },
+    {
+     "name": "s06",
+     "about": "Stage 06: the seasonal skill ratings (after stage 03)",
+     "legs": 1,
+     "median_s": 954.0,
+     "min_s": 859.0,
+     "max_s": 1013.0,
+     "leg_median_s": 954.0,
+     "slowest_leg_median_s": 954.0,
+     "runs_seen": 3,
+     "steps": [
+      {
+       "name": "Set up job",
+       "about": "GitHub starts the machine and downloads the actions this job uses",
+       "source": "builtin",
+       "median_s": 2.0,
+       "min_s": 1.0,
+       "max_s": 4.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Checkout repository",
+       "about": "Downloads this repo's code onto the machine",
+       "source": "config",
+       "median_s": 2.0,
+       "min_s": 1.0,
+       "max_s": 2.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Setup R",
+       "about": "Installs R 4.5.0",
+       "source": "config",
+       "median_s": 42.0,
+       "min_s": 34.0,
+       "max_s": 55.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Setup R dependencies",
+       "about": "Installs the R packages the stage needs (devtools, arrow, dplyr, data.table and others), from a cache when it can",
+       "source": "config",
+       "median_s": 63.0,
+       "min_s": 52.0,
+       "max_s": 76.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Download Opta data (opta-latest)",
+       "about": "Downloads the Opta tables this stage reads (match stats, player stats, fixtures, catalog, skills and xMetrics) from the opta-latest release in the pannadata repo",
+       "source": "config",
+       "median_s": 22.0,
+       "min_s": 19.0,
+       "max_s": 25.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Download caches (predictions-cache, blog-latest)",
+       "about": "Downloads the saved Opta rating results (03_splints, 04_rapm, 05_spm, 07_seasonal_ratings), the tuned decay settings and the as-of skill SPM from the predictions-cache release, and the per-season game logs from blog-latest; each tried three times, and a missing required one fails the job",
+       "source": "config",
+       "median_s": 8.0,
+       "min_s": 7.0,
+       "max_s": 8.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Bring in earlier stages' outputs",
+       "about": "Downloads the files the earlier stages saved as run artifacts",
+       "source": "config",
+       "median_s": 13.0,
+       "min_s": 7.0,
+       "max_s": 15.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Put handed-over files back in place",
+       "about": "Moves those files into the cache folders the stage reads",
+       "source": "config",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 1.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Stage 06 (peak memory and time measured)",
+       "about": "Runs skills step 06 (06_seasonal_skill_ratings.R): fits seasonal RAPM with the skill SPM as its prior, giving 06_seasonal_ratings.rds and the PSR league offsets",
+       "source": "config",
+       "median_s": 814.0,
+       "min_s": 711.0,
+       "max_s": 824.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Pass outputs on",
+       "about": "Saves this stage's output files as a run artifact (kept 7 days) for the later stages",
+       "source": "config",
+       "median_s": 2.0,
+       "min_s": 2.0,
+       "max_s": 3.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Post Setup R dependencies",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 1.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Post Checkout repository",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Complete job",
+       "about": "GitHub closes the job and cleans up the machine",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 1.0,
+       "n": 3,
+       "of": 3
+      }
+     ],
+     "stages": {},
+     "stage_notes": {},
+     "stage_about": {}
+    },
+    {
+     "name": "publish",
+     "about": "Compares the new tables with the published ones and uploads them if the comparison passes",
+     "legs": 1,
+     "median_s": 148.0,
+     "min_s": 96.0,
+     "max_s": 611.0,
+     "leg_median_s": 148.0,
+     "slowest_leg_median_s": 148.0,
+     "runs_seen": 3,
+     "steps": [
+      {
+       "name": "Set up job",
+       "about": "GitHub starts the machine and downloads the actions this job uses",
+       "source": "builtin",
+       "median_s": 5.0,
+       "min_s": 2.0,
+       "max_s": 6.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Checkout repository",
+       "about": "Downloads this repo's code onto the machine",
+       "source": "config",
+       "median_s": 4.0,
+       "min_s": 2.0,
+       "max_s": 5.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Setup R",
+       "about": "Installs R 4.5.0",
+       "source": "config",
+       "median_s": 68.0,
+       "min_s": 31.0,
+       "max_s": 317.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Setup R dependencies",
+       "about": "Installs the R packages the check and the upload need, from a cache when it can",
+       "source": "config",
+       "median_s": 45.0,
+       "min_s": 41.0,
+       "max_s": 45.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Bring in the new tables",
+       "about": "Downloads the stage 03 and stage 06 outputs saved by the earlier jobs",
+       "source": "config",
+       "median_s": 4.0,
+       "min_s": 2.0,
+       "max_s": 5.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Download the published copies",
+       "about": "Downloads the current 06_seasonal_ratings.rds, psr_league_offsets.parquet, 03_skill_spm.rds and 03_skill_spm_asof.rds from predictions-cache to compare against",
+       "source": "config",
+       "median_s": 6.0,
+       "min_s": 3.0,
+       "max_s": 8.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Refuse if an input was republished during this run",
+       "about": "Checks whether any input on predictions-cache (such as the daily Opta rating caches) was republished after this chain started; fails a publishing run if so, and only warns otherwise",
+       "source": "config",
+       "median_s": 1.0,
+       "min_s": 0.0,
+       "max_s": 1.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Coverage gate against the published copies",
+       "about": "Fails if a new table has under 95% of the published rows, loses a season or most of a column's values, or keeps under 99% of the published players",
+       "source": "config",
+       "median_s": 4.0,
+       "min_s": 4.0,
+       "max_s": 5.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Publish to predictions-cache (safe upload)",
+       "about": "On scheduled runs on main: uploads the four tables to predictions-cache through a temporary name, verifying before the swap, never overwriting directly",
+       "source": "config",
+       "median_s": 214.0,
+       "min_s": 214.0,
+       "max_s": 214.0,
+       "n": 1,
+       "of": 3
+      },
+      {
+       "name": "Say when nothing was uploaded",
+       "about": "Only when the run did not publish (not main, or not scheduled): says so on the run's summary page",
+       "source": "config",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 2,
+       "of": 3
+      },
+      {
+       "name": "Post Setup R dependencies",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 5.0,
+       "min_s": 4.0,
+       "max_s": 6.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Post Checkout repository",
+       "about": "Clean-up for an earlier step (saves caches, removes credentials)",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 3,
+       "of": 3
+      },
+      {
+       "name": "Complete job",
+       "about": "GitHub closes the job and cleans up the machine",
+       "source": "builtin",
+       "median_s": 0.0,
+       "min_s": 0.0,
+       "max_s": 0.0,
+       "n": 3,
+       "of": 3
+      }
+     ],
+     "stages": {},
+     "stage_notes": {},
+     "stage_about": {}
+    }
+   ],
+   "phases": [
+    {
+     "jobs": [
+      "s04c",
+      "s01"
+     ],
+     "median_s": 741.0,
+     "min_s": 685.0,
+     "max_s": 992.0,
+     "slowest": "s01",
+     "parallel": true
+    },
+    {
+     "jobs": [
+      "s02"
+     ],
+     "median_s": 573.0,
+     "min_s": 353.0,
+     "max_s": 907.0,
+     "slowest": "s02",
+     "parallel": false
+    },
+    {
+     "jobs": [
+      "s03"
+     ],
+     "median_s": 326.0,
+     "min_s": 231.0,
+     "max_s": 590.0,
+     "slowest": "s03",
+     "parallel": false
+    },
+    {
+     "jobs": [
+      "s06"
+     ],
+     "median_s": 954.0,
+     "min_s": 859.0,
+     "max_s": 1013.0,
+     "slowest": "s06",
+     "parallel": false
+    },
+    {
+     "jobs": [
+      "publish"
+     ],
+     "median_s": 148.0,
+     "min_s": 96.0,
+     "max_s": 611.0,
+     "slowest": "publish",
+     "parallel": false
+    }
+   ],
+   "critical_path": [
+    "s01",
+    "s02",
+    "s03",
+    "s06",
+    "publish"
+   ],
+   "slowest_steps": [
+    {
+     "job": "s06",
+     "step": "Stage 06 (peak memory and time measured)",
+     "about": "Runs skills step 06 (06_seasonal_skill_ratings.R): fits seasonal RAPM with the skill SPM as its prior, giving 06_seasonal_ratings.rds and the PSR league offsets",
+     "median_s": 814.0
+    },
+    {
+     "job": "s01",
+     "step": "Stage 01 (peak memory and time measured)",
+     "about": "Runs skills steps 01 and 01c (data-raw/estimated-skills/run_skills_pipeline.R): each player's per-90 match stats, then each club's goalkeeper style as of each season, timed with /usr/bin/time so peak memory is recorded",
+     "median_s": 553.0
+    },
+    {
+     "job": "s02",
+     "step": "Stage 02 (peak memory and time measured)",
+     "about": "Runs skills step 02 (02_estimate_skills.R): decay-weighted skill estimates, one row per player per season, saved as 02_skill_features.rds",
+     "median_s": 358.0
+    },
+    {
+     "job": "s01",
+     "step": "Setup R dependencies",
+     "about": "Installs the R packages the stage needs (devtools, arrow, dplyr, data.table and others), from a cache when it can",
+     "median_s": 182.0
+    },
+    {
+     "job": "s03",
+     "step": "Stage 03 (peak memory and time measured)",
+     "about": "Runs skills step 03 (03_skill_spm.R): fits the SPM on the skill features against the decayed RAPM target, saved as 03_skill_spm.rds and its as-of version",
+     "median_s": 166.0
+    }
+   ]
   }
  ],
- "warnings": []
+ "warnings": [
+  "[Skills Seasonal Build] only 3 qualifying run(s), wanted 5"
+ ]
 }

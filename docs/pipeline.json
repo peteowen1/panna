@@ -1,7 +1,7 @@
 {
   "repo": "peteowen1/panna",
   "title": "panna pipeline",
-  "about": "How the football ratings and match predictions get built on GitHub Actions: two workflows, both started by the daily Opta scrape in the pannadata repo. The Predictions Pipeline builds the match predictions and the blog's game logs and publishes them; the Opta RAPM/SPM Pipeline refits the player ratings and publishes them. The pannadata repo's pipeline guide covers the scrape before these and the blog data build after them. Each workflow is timed on its own; runs are not stitched across repos.",
+  "about": "How the football ratings and match predictions get built on GitHub Actions: four workflows. Three are started by the daily Opta scrape in the pannadata repo: the Predictions Pipeline builds the match predictions and the blog's game logs and publishes them; the Opta RAPM/SPM Pipeline refits the player ratings and publishes them; the EPV/WPA Model Training workflow scores shots and passes and publishes the xMetrics files. The Skills Seasonal Build runs weekly on its own and publishes the skill ratings tables. The pannadata repo's pipeline guide covers the scrape before these and the blog data build after them. Each workflow is timed on its own; runs are not stitched across repos.",
   "runs": 5,
   "pipelines": [
     {
@@ -133,6 +133,177 @@
           },
           "stage_notes": {
             "the stages of the rating pipeline": "Each stage runs from its Step header line to the next one; the last runs to the end of the step."
+          }
+        }
+      ]
+    },
+    {
+      "name": "EPV/WPA Model Training",
+      "workflow": "epv-pipeline.yml",
+      "about": "Despite the name, the runs counted here do not retrain any model. They score every player's shots and passes with the models already published (xG and xPass), and publish the results as opta_xmetrics.parquet and opta_xmetrics_bymatch.parquet. Retraining the EPV, xG, xPass and win-probability models is only done by hand (those training steps are skipped in these runs). Counted: runs on main started by the daily scrape or the weekly schedule, at least 30 minutes long.",
+      "triggers": "The pannadata repo's daily Opta scrape sends opta-scrape-complete when it finishes (the same message starts the other two panna workflows); a weekly schedule (Monday 5am Sydney time in summer) is the backstop. It starts nothing itself: the Opta RAPM/SPM Pipeline refuses to run if opta_xmetrics.parquet is more than 14 days old, and the game logs read opta_xmetrics_bymatch.parquet.",
+      "select": {
+        "events": [
+          "repository_dispatch",
+          "schedule"
+        ],
+        "branch": "main",
+        "require_jobs": [
+          "^epv-pipeline$"
+        ],
+        "min_seconds": 1800
+      },
+      "jobs": [
+        {
+          "name": "epv-pipeline",
+          "match": "^epv-pipeline$",
+          "about": "One job: download the Opta events, score every league-season with the published models, combine and publish the xMetrics files",
+          "steps": {
+            "Publish gate (R026)": "Checks the branch: only main or dev may publish; on any other branch the run builds but uploads nothing",
+            "Checkout repository": "Downloads this repo's code onto the machine",
+            "Setup R": "Installs R",
+            "Setup R dependencies": "Installs the R packages the scripts need, from a cache when it can",
+            "Fetch versebus.sh (pannadata data-bus helpers)": "Only when models are retrained: downloads the helper script that uploads model files safely",
+            "Download Opta event data": "Downloads the lineups, fixtures, shot events and catalog, then every per-league events file, from the opta-latest release in the pannadata repo (each events file retried once); a failed events file is recorded and fails the run at the end",
+            "Train EPV models": "Only when started by hand without xmetrics_only: retrains the xG, xGOT, xPass and EPV models (data-raw/epv/01_train_epv_models.R); skipped in the runs counted here",
+            "Upload models (immediately after training)": "Only after a retrain: uploads the new model files to the models release at once; skipped in the runs counted here",
+            "Calculate player xMetrics": "Runs data-raw/epv/03_calculate_player_xmetrics.R with the published xG and xPass models over every league-season, then 04_export_xmetrics.R and 04b_export_xmetrics_bymatch.R, which combine the results and upload opta_xmetrics.parquet and opta_xmetrics_bymatch.parquet to opta-latest; fails if either file was not produced",
+            "Train WP model": "Only when asked for by hand: trains the win-probability model (data-raw/epv/05_train_wp_model.R); skipped in the runs counted here",
+            "Upload trained models": "Uploads any retrained model files to the models release; in these runs nothing was retrained, so it has nothing to send",
+            "Fail if a league-season was dropped from the xMetrics": "Ends the run red, after the upload, if any league-season failed to score or any events file failed to download"
+          },
+          "log": {
+            "headers": [
+              {
+                "regex": "── (?P<name>Step [1-4]: (?:Load Trained Models|Discover Available Seasons|Process League-Seasons|Summary)|Export (?:per-match )?xMetrics to GitHub Releases) ─",
+                "label": "the stages of the xMetrics calculation"
+              }
+            ],
+            "about": {
+              "Step 1: Load Trained Models": "Loads the published xG and xPass models from the pannamodels release",
+              "Step 2: Discover Available Seasons": "Lists the league-seasons that have Opta events",
+              "Step 3: Process League-Seasons": "For each league-season, scores every shot and pass and adds up each player's xG, xA and xPass, saving one file per league-season",
+              "Step 4: Summary": "Prints the totals and the top scorers by xG as a sense check",
+              "Export xMetrics to GitHub Releases": "Combines every league-season into opta_xmetrics.parquet and uploads it to opta-latest",
+              "Export per-match xMetrics to GitHub Releases": "Combines every league-season into opta_xmetrics_bymatch.parquet (about 3.5 million player-matches) and uploads it to opta-latest"
+            }
+          },
+          "stage_notes": {
+            "the stages of the xMetrics calculation": "Each stage runs from its header line to the next one; the last runs to the end of its step."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Skills Seasonal Build",
+      "workflow": "skills-seasonal.yml",
+      "about": "Rebuilds the player skills chain on a runner (it used to be run by hand): match stats, the recency-weighted RAPM target, skill features, the skill SPM and the seasonal skill ratings, then checks the new tables against the published ones and publishes them to the predictions-cache release (which the Predictions Pipeline downloads as required input). Each stage is its own job on a fresh machine, passing files on as run artifacts. Counted: weekly scheduled runs on main (only three exist so far, so fewer than 5 runs back this guide).",
+      "triggers": "GitHub's own schedule, set for Monday 3pm Sydney time in summer (4am UTC); it can also be started by hand. It starts nothing itself: the Predictions Pipeline reads the 06_seasonal_ratings.rds and psr_league_offsets.parquet it publishes.",
+      "select": {
+        "events": [
+          "schedule"
+        ],
+        "branch": "main",
+        "require_jobs": [
+          "^s01$",
+          "^s04c$",
+          "^s02$",
+          "^s03$",
+          "^s06$",
+          "^publish$"
+        ]
+      },
+      "jobs": [
+        {
+          "name": "s01",
+          "match": "^s01$",
+          "about": "Stage 01: rebuilds the per-match stats and the keeper style table",
+          "steps": {
+            "Checkout repository": "Downloads this repo's code onto the machine",
+            "Setup R": "Installs R 4.5.0",
+            "Setup R dependencies": "Installs the R packages the stage needs (devtools, arrow, dplyr, data.table and others), from a cache when it can",
+            "Download Opta data (opta-latest)": "Downloads the Opta tables this stage reads (match stats, player stats, fixtures, catalog, skills and xMetrics) from the opta-latest release in the pannadata repo",
+            "Download caches (predictions-cache, blog-latest)": "Downloads the saved Opta rating results (03_splints, 04_rapm, 05_spm, 07_seasonal_ratings), the tuned decay settings and the as-of skill SPM from the predictions-cache release, and the per-season game logs from blog-latest; each tried three times, and a missing required one fails the job",
+            "Pass outputs on": "Saves this stage's output files as a run artifact (kept 7 days) for the later stages",
+            "re:^Stage 01 ": "Runs skills steps 01 and 01c (data-raw/estimated-skills/run_skills_pipeline.R): each player's per-90 match stats, then each club's goalkeeper style as of each season, timed with /usr/bin/time so peak memory is recorded"
+          }
+        },
+        {
+          "name": "s04c",
+          "match": "^s04c$",
+          "about": "Stage 04c: the recency-weighted RAPM target (runs alongside stage 01)",
+          "steps": {
+            "Checkout repository": "Downloads this repo's code onto the machine",
+            "Setup R": "Installs R 4.5.0",
+            "Setup R dependencies": "Installs the R packages the stage needs (devtools, arrow, dplyr, data.table and others), from a cache when it can",
+            "Download Opta data (opta-latest)": "Downloads the Opta tables this stage reads (match stats, player stats, fixtures, catalog, skills and xMetrics) from the opta-latest release in the pannadata repo",
+            "Download caches (predictions-cache, blog-latest)": "Downloads the saved Opta rating results (03_splints, 04_rapm, 05_spm, 07_seasonal_ratings), the tuned decay settings and the as-of skill SPM from the predictions-cache release, and the per-season game logs from blog-latest; each tried three times, and a missing required one fails the job",
+            "Pass outputs on": "Saves this stage's output files as a run artifact (kept 7 days) for the later stages",
+            "re:^Stage 04c ": "Runs data-raw/player-ratings-opta/04c_rapm_decayed.R: a RAPM fit that weights recent matches more, to be the target the skill SPM learns from"
+          }
+        },
+        {
+          "name": "s02",
+          "match": "^s02$",
+          "about": "Stage 02: the skill features (after stage 01)",
+          "steps": {
+            "Checkout repository": "Downloads this repo's code onto the machine",
+            "Setup R": "Installs R 4.5.0",
+            "Setup R dependencies": "Installs the R packages the stage needs (devtools, arrow, dplyr, data.table and others), from a cache when it can",
+            "Download Opta data (opta-latest)": "Downloads the Opta tables this stage reads (match stats, player stats, fixtures, catalog, skills and xMetrics) from the opta-latest release in the pannadata repo",
+            "Download caches (predictions-cache, blog-latest)": "Downloads the saved Opta rating results (03_splints, 04_rapm, 05_spm, 07_seasonal_ratings), the tuned decay settings and the as-of skill SPM from the predictions-cache release, and the per-season game logs from blog-latest; each tried three times, and a missing required one fails the job",
+            "Bring in earlier stages' outputs": "Downloads the files the earlier stages saved as run artifacts",
+            "Put handed-over files back in place": "Moves those files into the cache folders the stage reads",
+            "Pass outputs on": "Saves this stage's output files as a run artifact (kept 7 days) for the later stages",
+            "re:^Stage 02 ": "Runs skills step 02 (02_estimate_skills.R): decay-weighted skill estimates, one row per player per season, saved as 02_skill_features.rds"
+          }
+        },
+        {
+          "name": "s03",
+          "match": "^s03$",
+          "about": "Stage 03: the skill SPM (after stages 01, 04c and 02)",
+          "steps": {
+            "Checkout repository": "Downloads this repo's code onto the machine",
+            "Setup R": "Installs R 4.5.0",
+            "Setup R dependencies": "Installs the R packages the stage needs (devtools, arrow, dplyr, data.table and others), from a cache when it can",
+            "Download Opta data (opta-latest)": "Downloads the Opta tables this stage reads (match stats, player stats, fixtures, catalog, skills and xMetrics) from the opta-latest release in the pannadata repo",
+            "Download caches (predictions-cache, blog-latest)": "Downloads the saved Opta rating results (03_splints, 04_rapm, 05_spm, 07_seasonal_ratings), the tuned decay settings and the as-of skill SPM from the predictions-cache release, and the per-season game logs from blog-latest; each tried three times, and a missing required one fails the job",
+            "Bring in earlier stages' outputs": "Downloads the files the earlier stages saved as run artifacts",
+            "Put handed-over files back in place": "Moves those files into the cache folders the stage reads",
+            "Pass outputs on": "Saves this stage's output files as a run artifact (kept 7 days) for the later stages",
+            "re:^Stage 03 ": "Runs skills step 03 (03_skill_spm.R): fits the SPM on the skill features against the decayed RAPM target, saved as 03_skill_spm.rds and its as-of version"
+          }
+        },
+        {
+          "name": "s06",
+          "match": "^s06$",
+          "about": "Stage 06: the seasonal skill ratings (after stage 03)",
+          "steps": {
+            "Checkout repository": "Downloads this repo's code onto the machine",
+            "Setup R": "Installs R 4.5.0",
+            "Setup R dependencies": "Installs the R packages the stage needs (devtools, arrow, dplyr, data.table and others), from a cache when it can",
+            "Download Opta data (opta-latest)": "Downloads the Opta tables this stage reads (match stats, player stats, fixtures, catalog, skills and xMetrics) from the opta-latest release in the pannadata repo",
+            "Download caches (predictions-cache, blog-latest)": "Downloads the saved Opta rating results (03_splints, 04_rapm, 05_spm, 07_seasonal_ratings), the tuned decay settings and the as-of skill SPM from the predictions-cache release, and the per-season game logs from blog-latest; each tried three times, and a missing required one fails the job",
+            "Bring in earlier stages' outputs": "Downloads the files the earlier stages saved as run artifacts",
+            "Put handed-over files back in place": "Moves those files into the cache folders the stage reads",
+            "Pass outputs on": "Saves this stage's output files as a run artifact (kept 7 days) for the later stages",
+            "re:^Stage 06 ": "Runs skills step 06 (06_seasonal_skill_ratings.R): fits seasonal RAPM with the skill SPM as its prior, giving 06_seasonal_ratings.rds and the PSR league offsets"
+          }
+        },
+        {
+          "name": "publish",
+          "match": "^publish$",
+          "about": "Compares the new tables with the published ones and uploads them if the comparison passes",
+          "steps": {
+            "Checkout repository": "Downloads this repo's code onto the machine",
+            "Setup R": "Installs R 4.5.0",
+            "Setup R dependencies": "Installs the R packages the check and the upload need, from a cache when it can",
+            "Bring in the new tables": "Downloads the stage 03 and stage 06 outputs saved by the earlier jobs",
+            "Download the published copies": "Downloads the current 06_seasonal_ratings.rds, psr_league_offsets.parquet, 03_skill_spm.rds and 03_skill_spm_asof.rds from predictions-cache to compare against",
+            "Refuse if an input was republished during this run": "Checks whether any input on predictions-cache (such as the daily Opta rating caches) was republished after this chain started; fails a publishing run if so, and only warns otherwise",
+            "Coverage gate against the published copies": "Fails if a new table has under 95% of the published rows, loses a season or most of a column's values, or keeps under 99% of the published players",
+            "Publish to predictions-cache (safe upload)": "On scheduled runs on main: uploads the four tables to predictions-cache through a temporary name, verifying before the swap, never overwriting directly",
+            "Say when nothing was uploaded": "Only when the run did not publish (not main, or not scheduled): says so on the run's summary page"
           }
         }
       ]
