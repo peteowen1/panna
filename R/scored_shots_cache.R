@@ -143,13 +143,17 @@ score_spadl_shots <- function(spadl, events, xg_model, season, shot_lookup = NUL
     cli::cli_alert_warning("spadl$is_penalty missing (stale cache?) - deriving from raw events")
     pen_evt <- events$type_id %in% c(13L, 14L, 15L, 16L) &
       grepl('[{,]"9":', events$qualifier_json)
+    # Match on the second as well as the minute (as #526 did), so a rebound by the
+    # penalty taker in the same minute is not flagged as a second penalty.
+    pen_sec <- if ("second" %in% names(events)) events$second[pen_evt] else rep(0L, sum(pen_evt))
     pen_keys <- paste(events$match_id[pen_evt], events$player_id[pen_evt],
-                      events$minute[pen_evt], sep = "_")
+                      events$minute[pen_evt], pen_sec, sep = "_")
     spadl$is_penalty <- 0L
     shot_idx <- which(spadl$action_type == "shot")
     if (length(pen_keys) > 0 && length(shot_idx) > 0) {
       spadl_keys <- paste(spadl$match_id[shot_idx], spadl$player_id[shot_idx],
-                          floor(spadl$time_seconds[shot_idx] / 60), sep = "_")
+                          floor(spadl$time_seconds[shot_idx] / 60),
+                          floor(spadl$time_seconds[shot_idx] %% 60), sep = "_")
       spadl$is_penalty[shot_idx[spadl_keys %in% pen_keys]] <- 1L
     }
   }

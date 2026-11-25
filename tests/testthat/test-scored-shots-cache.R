@@ -100,6 +100,10 @@ test_that("score_spadl_shots derives is_penalty from events on a stale SPADL", {
     add_xg_to_spadl = function(spadl_actions, ...) { spadl_actions$xg <- 0.1; spadl_actions })
   out <- suppressMessages(score_spadl_shots(spadl, .toy_events(), list(), "2024-2025"))
   expect_equal(out$is_penalty, c(1L, 0L))
+  # A rebound by the penalty taker in the same minute (10:30, penalty at 10:05) is not a penalty.
+  reb <- spadl; reb$time_seconds <- c(10 * 60 + 5, 10 * 60 + 30)
+  out2 <- suppressMessages(score_spadl_shots(reb, .toy_events(), list(), "2024-2025"))
+  expect_equal(out2$is_penalty, c(1L, 0L))
 })
 
 test_that("a cached league-season is reused only under an unchanged key", {
