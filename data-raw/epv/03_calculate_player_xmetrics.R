@@ -48,7 +48,39 @@ cli_h2("Step 1: Load Trained Models")
 
 xg_model <- load_xg_model()
 xpass_model <- load_xpass_model()
-xgot_model <- load_xgot_model()   # NULL until goalmouth-enabled model ships
+# xGOT v3.2 (asset `xgot_model_v3`, MODELS.md row 49), the same model the shot table
+# (pannadata SHOT_MODELS=context) and 10b price shots with, so xgot_faced / gsaa /
+# goals_minus_xgot agree with the per-shot xgot (panna#523). The bare
+# load_xgot_model() returns the 24 Sep pack (`xgot_model`), which scored the same
+# shots differently (Hull 2-0, 23 Nov: 1.77 vs 1.91). Pinned by md5 like
+# ci_fetch_models.R: a republish to the epv release must be a deliberate change here.
+# A debug/test driver can set xgot_model_override first (config override pattern).
+.XGOT_V3_MD5 <- "4709ead1"
+.xgot_v3_url <- "https://github.com/peteowen1/pannamodels/releases/download/epv/xgot_model_v3.rds"
+.load_pinned_xgot_v3 <- function(md5 = .XGOT_V3_MD5, url = .xgot_v3_url) {
+  dest <- file.path(tempdir(), "xgot_model_v3.rds")
+  ok <- FALSE
+  for (i in 1:3) {
+    ok <- tryCatch({
+      utils::download.file(url, dest, mode = "wb", quiet = TRUE)
+      file.exists(dest)
+    }, error = function(e) FALSE, warning = function(w) FALSE)
+    if (ok) break
+    Sys.sleep(10 * i)
+  }
+  if (!ok) cli::cli_abort("xgot_model_v3.rds download failed from {url}")
+  got <- substr(unname(tools::md5sum(dest)), 1, 8)
+  if (!identical(got, md5)) {
+    cli::cli_abort(c(
+      "xgot_model_v3.rds md5 {got} but 03_calculate_player_xmetrics.R pins {md5}.",
+      "i" = "If xGOT was deliberately republished, update .XGOT_V3_MD5 and MODELS.md."))
+  }
+  load_xgot_model(dest)
+}
+xgot_model <- if (exists("xgot_model_override")) xgot_model_override else .load_pinned_xgot_v3()
+# v3.x reads pre-shot context (events) and each shooter's earlier foot shots in every
+# league; loaded once, as in 10b.
+xgot_foot_history <- if (!is.null(xgot_model) && .needs_shot_context(xgot_model)) .load_shot_foot_history()
 # xDuel: expected duel/aerial/tackle win prob → "duels won above expected" features
 # (replace the *_success ratios in PSR/PSV). NULL until 01b_train_duel_model.R run.
 duel_model <- tryCatch(load_duel_model(), error = function(e) {
@@ -237,7 +269,8 @@ for (league in names(league_seasons)) {
                                            names(shot_ev)))
           spadl <- add_xgot_to_spadl(spadl, xgot_model,
                                      as.data.frame(shot_ev)[, lk_cols],
-                                     events = events)
+                                     season = season, events = events,
+                                     foot_history = xgot_foot_history)
         } else if (!is.null(shot_ev)) {
           cli_alert_warning("  Skipping xGOT for {label}: shot_events lack goalmouth coords (run backfill + re-upload)")
         }
