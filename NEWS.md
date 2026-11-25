@@ -1,4 +1,4 @@
-# panna (development)
+# panna 0.3.133
 
 - RAPM step 1 takes penalties from SPADL's `is_penalty`, so they leave the non-penalty xG target
   (panna#521, #526). The old detector expected a JSON array and found 0 penalties in 2.19M shots;
