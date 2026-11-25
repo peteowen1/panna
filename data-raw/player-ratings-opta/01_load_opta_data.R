@@ -135,6 +135,11 @@ for (.t in .BIG_TABLES) dir.create(file.path(stage_dir, .t), recursive = TRUE, s
 all_period_ends <- list()  # exact second-precision period boundaries (Opta type_id == 30)
 all_player_timing <- list()  # per-(match, player) on/off times derived from chains
 all_match_xg <- list()
+# Shots and penalties scored, summed over every league-season: the guard after the
+# loop stops the step when no penalty is found at all (panna#521: the old detector
+# found 0 of 2,185,707 for years, and every penalty sat in npxG unnoticed).
+n_shots_total <- 0L
+n_pen_total <- 0L
 
 # Coverage ledger. The per-season handler below logs a failure and CONTINUES,
 # which is deliberate (one bad league-season must not kill a 40-minute run) but
@@ -356,17 +361,21 @@ for (league in leagues) {
       }
 
       {
-        # Detect penalties from raw events (qualifier 9)
-        # Uses (match_id, player_id, minute, second) composite key to avoid
-        # collisions when a player has multiple shots in the same minute
-        spadl$is_penalty <- 0L
-        if (!is.null(raw_events) && nrow(raw_events) > 0) {
-          # Match qualifier 9 as a standalone value in the JSON array.
-          # Handles both string ("9") and bare numeric (9) formats.
-          # Anchored regex avoids false positives from "19", "90", "109", etc.
-          has_pen_qualifier <- grepl(
-            '(^|[,\\[])\\s*"?9"?\\s*(,|\\]|$)', raw_events$qualifier_json
-          )
+        # Penalties. SPADL already carries is_penalty (qualifier 9, parsed from
+        # the qualifier object's key in R/spadl_conversion), the flag the EPV job
+        # uses. Step 1 used to re-detect from raw events with a regex written for
+        # a JSON array; the qualifiers are an object ({"9":...}), so it matched
+        # nothing: 0 penalties in 2,185,707 shots across 349 league-seasons (run
+        # 44910064488), and every penalty stayed in npxG at the model's xG
+        # (panna#505, #513). The raw-events path below is kept only for a SPADL
+        # cache that predates the column, with the same key-anchored pattern
+        # SPADL uses. It matches on (match_id, player_id, minute, second) so two
+        # shots by one player in the same minute do not collide.
+        .spadl_has_pen <- "is_penalty" %in% names(spadl)
+        spadl$is_penalty <- if (.spadl_has_pen) as.integer(spadl$is_penalty %in% c(1L, TRUE)) else 0L
+        if (!.spadl_has_pen && !is.null(raw_events) && nrow(raw_events) > 0) {
+          message(sprintf("    Note: SPADL has no is_penalty for %s %s (stale cache?), deriving from raw events", league, season))
+          has_pen_qualifier <- grepl('[{,]"9":', raw_events$qualifier_json)
           pen_mask <- raw_events$type_id %in% c(13L, 14L, 15L, 16L) & has_pen_qualifier
           if (sum(pen_mask) > 0) {
             raw_second <- if ("second" %in% names(raw_events)) {
@@ -483,6 +492,10 @@ for (league in leagues) {
 
         message(sprintf("    SPADL: %d shots scored, %d penalties",
                         nrow(shots_df), sum(shots_df$is_penalty)))
+        # Plain <-: this is tryCatch's expression, evaluated in the script's own
+        # environment (unlike the error handler below, a function, which needs <<-).
+        n_shots_total <- n_shots_total + nrow(shots_df)
+        n_pen_total <- n_pen_total + sum(shots_df$is_penalty)
       }
 
     }, error = function(e) {
@@ -500,6 +513,16 @@ for (league in leagues) {
   # OPT #1: free this league's full-season frames before the next league.
   rm(lg_lineups, lg_events, lg_stats, lg_xmetrics, lg_match_events)
   gc(verbose = FALSE)
+}
+
+# panna#521 guard. Penalties are about 1.2% of shots (26,556 of 2,189,740 on
+# 25 Nov 2026), so a run that scores thousands of shots and finds none has lost
+# the penalty flag again and would put every penalty back into npxG.
+message(sprintf("  Penalties found: %d of %d shots (%.2f%%)", n_pen_total, n_shots_total,
+                100 * n_pen_total / max(n_shots_total, 1L)))
+if (n_shots_total >= 5000L && n_pen_total == 0L) {
+  stop(sprintf("Step 1 scored %d shots and found 0 penalties: the penalty flag is missing (panna#521), so npxG would include every penalty.",
+               n_shots_total))
 }
 
 # 6. Combine All Data ----
