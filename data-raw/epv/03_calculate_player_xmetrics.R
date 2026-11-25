@@ -77,7 +77,7 @@ xpass_model <- load_xpass_model()
   }
   load_xgot_model(dest)
 }
-xgot_model <- if (exists("xgot_model_override", inherits = FALSE)) xgot_model_override else .load_pinned_xgot_v3()
+xgot_model <- if (exists("xgot_model_override")) xgot_model_override else .load_pinned_xgot_v3()
 # v3.x reads pre-shot context (events) and each shooter's earlier foot shots in every
 # league; loaded once, as in 10b.
 xgot_foot_history <- if (!is.null(xgot_model) && .needs_shot_context(xgot_model)) .load_shot_foot_history()
