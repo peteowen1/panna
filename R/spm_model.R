@@ -597,6 +597,80 @@ calculate_spm_blend <- function(player_features, model_glmnet, model_xgb,
 }
 
 
+#' Rescale SPM to a target spread for display (panna#168)
+#'
+#' SPM predictions are heavily compressed: the elastic net is scored at
+#' \code{lambda.min} against a modest-spread RAPM target, and the 50/50 blend
+#' with XGBoost flattens it further. This is a purely linear display transform
+#' that stretches (or shrinks) SPM about its weighted mean so its weighted
+#' standard deviation equals \code{target_sd}. Player order is preserved
+#' exactly, the mean is unchanged, and any skew is kept (it is a rescale, not a
+#' quantile map).
+#'
+#' It is meant to be written to a \emph{separate} column (e.g. \code{spm_display}).
+#' Do not feed the result to the xRAPM prior path: the Bayesian shrinkage
+#' there is calibrated against the raw \code{spm}.
+#'
+#' Give either \code{target_sd} directly or \code{target} (e.g. the RAPM the
+#' model was trained on), whose weighted sd is used.
+#'
+#' @param spm Numeric vector of SPM values. \code{NA}s are passed through.
+#' @param target Optional numeric vector (same length as \code{spm}) whose
+#'   weighted sd defines the target spread. Ignored when \code{target_sd} is given.
+#' @param target_sd Optional positive number, the sd to scale to.
+#' @param weights Optional non-negative weights (e.g. minutes) used for the
+#'   mean and sd of \code{spm}, and of \code{target}. Default equal weights.
+#'
+#' @return Numeric vector the same length as \code{spm}, with attribute
+#'   \code{"scale"} holding the multiplier applied about the weighted mean.
+#' @family spm
+#' @export
+calibrate_spm_variance <- function(spm, target = NULL, target_sd = NULL,
+                                   weights = NULL) {
+  if (!is.numeric(spm)) {
+    cli::cli_abort("{.arg spm} must be numeric.")
+  }
+  if (is.null(weights)) weights <- rep(1, length(spm))
+  if (length(weights) != length(spm)) {
+    cli::cli_abort("{.arg weights} must be the same length as {.arg spm}.")
+  }
+  if (anyNA(weights) || any(weights < 0)) {
+    cli::cli_abort("{.arg weights} must be non-negative with no {.val NA}.")
+  }
+
+  wtd_moments <- function(x, w) {
+    ok <- is.finite(x) & w > 0
+    if (sum(ok) < 2) return(c(mean = NA_real_, sd = NA_real_))
+    x <- x[ok]; w <- w[ok] / sum(w[ok])
+    m <- sum(w * x)
+    c(mean = m, sd = sqrt(sum(w * (x - m)^2)))
+  }
+
+  if (is.null(target_sd)) {
+    if (is.null(target)) {
+      cli::cli_abort("Give either {.arg target_sd} or {.arg target}.")
+    }
+    if (length(target) != length(spm)) {
+      cli::cli_abort("{.arg target} must be the same length as {.arg spm}.")
+    }
+    target_sd <- wtd_moments(as.numeric(target), weights)[["sd"]]
+  }
+  if (length(target_sd) != 1L || !is.finite(target_sd) || target_sd <= 0) {
+    cli::cli_abort("The target sd must be a single positive finite number.")
+  }
+
+  mom <- wtd_moments(spm, weights)
+  if (!is.finite(mom[["sd"]]) || mom[["sd"]] <= 0) {
+    cli::cli_abort("{.arg spm} has no spread to rescale (sd is zero or undefined).")
+  }
+
+  scale <- target_sd / mom[["sd"]]
+  out <- mom[["mean"]] + (spm - mom[["mean"]]) * scale
+  attr(out, "scale") <- scale
+  out
+}
+
+
 #' Extract SPM coefficients
 #'
 #' Gets feature weights from fitted SPM model.
