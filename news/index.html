@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.132</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.133</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,13 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.133" id="panna-03133">panna 0.3.133<a class="anchor" aria-label="anchor" href="#panna-03133"></a></h2>
+<ul><li>RAPM step 1 takes penalties from SPADL’s <code>is_penalty</code>, so they leave the non-penalty xG target (panna#521, <a href="https://github.com/peteowen1/panna/issues/526" class="external-link">#526</a>). The old detector expected a JSON array and found 0 penalties in 2.19M shots; step 1 now also stops when 5,000+ shots score 0 penalties. Moves every RAPM-descended rating (xRAPM rank agreement 0.9868 against a control build); ships with a rebuilt SPM panel and legacy prior, per pannaverse <code>docs/plans/PANNA521-ROLLOUT.md</code>.</li>
+<li>Keeper GSAA, <code>xgot_faced</code> and <code>goals_minus_xgot</code> in the xmetrics table use the md5-pinned xGOT v3.2, as the shot table and 10b do (panna#523, <a href="https://github.com/peteowen1/panna/issues/524" class="external-link">#524</a>). <code>placement_added</code>/<code>xgot_placement</code> still subtract the September xG until panna#466.</li>
+<li>Opta RAPM step 1 and the EPV xMetrics job score shots through one function, <code>score_spadl_shots()</code> (<code>R/scored_shots_cache.R</code>), instead of two copies (issue <a href="https://github.com/peteowen1/panna/issues/505" class="external-link">#505</a>). The EPV job writes <code>data-raw/cache/epv/opta_scored_shots.parquet</code>, one row per shot with a <code>cache_key</code> per league-season (hash of the events, the shot lookup, the xG model and <code>SCORED_SHOTS_VERSION</code>). RAPM step 1 reuses a league-season only when that key equals the key recomputed from the events it loaded; anything else (no file, no entry, a changed event file or xG model) converts and scores locally as before. Nothing publishes or downloads the file yet, so until a workflow does, every league-season is a local conversion.</li>
+<li>Structural WP: the <code>red_home</code> monotone constraint is -1, not +1 (panna#511). <code>red_home</code> is home reds minus away reds, so the +1 constraint could not be met and the live model ignores red cards. Takes effect when the model is retrained (05d) and republished.</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.132" id="panna-03132">panna 0.3.132<a class="anchor" aria-label="anchor" href="#panna-03132"></a></h2>
 <ul><li>New exported <code><a href="../reference/calibrate_spm_variance.html">calibrate_spm_variance()</a></code> (panna#168): an order-preserving linear rescale of SPM to a target sd (a vector such as RAPM, or a number), about the weighted mean, for a separate display column such as <code>spm_display</code>. SPM is compressed at every grain (season sd 0.025 against PSV 0.06-0.07); this is the issue’s cheapest knob. It is not wired into any pipeline or export, so no published number changes, and the xRAPM prior still reads the raw <code>spm</code>. Lambda below <code>lambda.min</code> and a glmnet-only or match-grain-trained SPM for per-match display are not done.</li>

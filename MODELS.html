@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.132</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.133</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -177,11 +177,11 @@
 <td>✅ both releases, as xG v5.2 (159 on-target direct corners dropped)</td>
 </tr><tr><td>
 <strong>Structural WP</strong> (asset <code>wp_structural_model.rds</code>, pannamodels <code>epv</code>)</td>
-<td><strong>2026-11-10</strong></td>
+<td><strong>2026-11-26</strong></td>
 <td align="right">
-<strong>54,058</strong> (md5 2a190fac)</td>
+<strong>54,222</strong> (md5 d4c55ee4)</td>
 <td>asset only</td>
-<td>✅ md5 checked by re-download 2026-11-17. Pinned in <code>data-raw/match-predictions-opta/ci_fetch_models.R</code> (<code>.wps_md5_pin</code>, panna#484): a republish must update the pin there and this row together, or the weekly run stops</td>
+<td>panna#511: retrained with the <code>red_home</code> constraint -1 (05d, all leagues; test log loss 0.48605 vs 0.48823 for the 2026-11-10 model, 2a190fac, which ignored red cards). Pinned in <code>data-raw/match-predictions-opta/ci_fetch_models.R</code> (<code>.wps_md5_pin</code>, panna#484): a republish must update the pin there and this row together, or the weekly run stops</td>
 </tr><tr><td>xG v5.1 / xGOT v3.1 (previous)</td>
 <td>2026-09-29</td>
 <td align="right">786,631 (c2bfd8b8) / 875,984 (7137d9f1)</td>
@@ -217,9 +217,8 @@
 <td>EPV (for the WP <code>epv</code> feature)</td>
 <td>already passes explicit <code>path = "data-raw/cache/epv"</code> ✓</td>
 </tr><tr><td><code>03_calculate_player_xmetrics.R</code></td>
-<td>xG</td>
-<td>
-<code><a href="reference/load_xg_model.html">load_xg_model()</a></code> (stable model, default OK)</td>
+<td>xG, xGOT</td>
+<td>xG: <code><a href="reference/load_xg_model.html">load_xg_model()</a></code> (stable model, default OK). xGOT: xGOT v3.2 (<code>xgot_model_v3</code>, md5 4709ead1), downloaded from pannamodels <code>epv</code> and md5-pinned in the script (panna#523); <code>xgot_model_override</code> set first replaces it. <code>xgot_faced</code> / <code>gsaa</code> / <code>goals_minus_xgot</code> (xGOT only) agree with the shot table and 10b. <code>placement_added</code> / <code>xgot_placement</code> are xGOT minus xG, and xG here is still the September model, so they mix v3.2 xGOT with old xG until panna#466 moves this step to xG v5.2</td>
 </tr></tbody></table><p><strong>Rule of thumb:</strong> for anything that <em>exports</em> EPV/WPA to the blog, pass explicit <code>epv_model_override</code>/<code>wp_model_override</code>. Never rely on the silent default for the iterating (EPV/WP) models.</p>
 </div>
 <div class="section level2">
