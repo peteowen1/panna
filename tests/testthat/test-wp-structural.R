@@ -60,6 +60,29 @@ test_that("train/predict: possession POV, monotone in lead and strength, agnosti
   expect_true(pt[1] <= pt[2] && pt[2] <= pt[3])
 })
 
+test_that("a home red card lowers the home win chance (panna#511: red_home = home reds - away reds)", {
+  skip_if_not_installed("xgboost")
+  # Second-half red cards that really cost the carded side: a red for home (red_card_diff
+  # +1) makes an away win likely, a red for away (-1) a home win.
+  set.seed(7)
+  d <- wps_fx(n_match = 400L)
+  red <- data.table::data.table(match_id = unique(d$match_id))[
+    , red := sample(c(-1L, 0L, 1L), .N, replace = TRUE, prob = c(0.25, 0.5, 0.25))]
+  d <- red[d, on = "match_id"]
+  d[, red_card_diff := data.table::fifelse(is_second_half == 1L, red, 0L)]
+  res_h <- d[, .(r = data.table::fifelse(red[1] == 1L, 0, data.table::fifelse(red[1] == -1L, 1,
+              data.table::fifelse(is_home[1] == 1L, wp_label[1], 1 - wp_label[1])))), by = match_id]
+  d <- res_h[d, on = "match_id"][, wp_label := data.table::fifelse(is_home == 1L, r, 1 - r)][, c("r", "red") := NULL]
+  m <- suppressMessages(train_wp_structural(d, use_possession = FALSE, nrounds = 60L, nfolds = 3L))
+  probe <- data.table::data.table(match_id = "p", team_id = "H", time_remaining = 0.3,
+                                  score_diff = 0, red_card_diff = c(-1L, 0L, 1L),
+                                  is_second_half = 1L, is_extra_time = 0L, is_home = 1L,
+                                  epv = 0, elo_diff = 0)
+  p <- predict_wp(m, probe)
+  expect_true(p[1] >= p[2] && p[2] >= p[3])   # never rises with more home reds
+  expect_gt(p[1] - p[3], 0.1)                 # and the model actually uses the feature
+})
+
 test_that("use_possession adds home_has_ball; a published-style model refuses team_agnostic", {
   skip_if_not_installed("xgboost")
   d <- wps_fx(n_match = 120L)

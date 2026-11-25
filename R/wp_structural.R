@@ -203,9 +203,11 @@ train_wp_structural <- function(wp_features, use_possession = TRUE,
   feature_names <- c(.WP_STRUCTURAL_BASE, if (isTRUE(use_possession)) "home_has_ball", extra_features)
   # Home frame label: the possession-POV wp_label flipped for away rows.
   y <- data.table::fifelse(dt$is_home == 1L, dt$wp_label, 1 - dt$wp_label)
-  # More home goals, more away red cards (red_home > 0 = away down to fewer),
-  # and a stronger home side must never LOWER the home win chance.
-  mono <- c(time_remaining = 0L, m_home = 1L, red_home = 1L, is_second_half = 0L,
+  # More home goals and a stronger home side must never LOWER the home win chance;
+  # more home red cards must never RAISE it. red_home is red_card_diff, home reds
+  # minus away reds (R/wp_model.R), so red_home > 0 = HOME down to fewer: -1L.
+  # It was +1L (panna#511), which no split could satisfy, so the model ignored reds.
+  mono <- c(time_remaining = 0L, m_home = 1L, red_home = -1L, is_second_half = 0L,
             is_extra_time = 0L, elo_diff = 1L, home_has_ball = 0L,
             stats::setNames(rep(0L, length(extra_features)), extra_features))[feature_names]
   params <- list(booster = "gbtree", objective = "binary:logistic", eval_metric = "logloss",
