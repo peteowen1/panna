@@ -1,3 +1,17 @@
+# panna (development)
+
+- RAPM step 1 takes penalties from SPADL's `is_penalty`, so they leave the non-penalty xG target
+  (panna#521, #526). The old detector expected a JSON array and found 0 penalties in 2.19M shots;
+  step 1 now also stops when 5,000+ shots score 0 penalties. Moves every RAPM-descended rating
+  (xRAPM rank agreement 0.9868 against a control build); ships with a rebuilt SPM panel and legacy
+  prior, per pannaverse `docs/plans/PANNA521-ROLLOUT.md`.
+- Keeper GSAA, `xgot_faced` and `goals_minus_xgot` in the xmetrics table use the md5-pinned xGOT
+  v3.2, as the shot table and 10b do (panna#523, #524). `placement_added`/`xgot_placement` still
+  subtract the September xG until panna#466.
+- Structural WP: the `red_home` monotone constraint is -1, not +1 (panna#511). `red_home` is home
+  reds minus away reds, so the +1 constraint could not be met and the live model ignores red cards.
+  Takes effect when the model is retrained (05d) and republished.
+
 # panna 0.3.132
 
 - New exported `calibrate_spm_variance()` (panna#168): an order-preserving linear rescale of SPM to a
