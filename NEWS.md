@@ -6,6 +6,9 @@
   0.06-0.07); this is the issue's cheapest knob. It is not wired into any pipeline or export, so no
   published number changes, and the xRAPM prior still reads the raw `spm`. Lambda below
   `lambda.min` and a glmnet-only or match-grain-trained SPM for per-match display are not done.
+- `pack_publish_game_logs.R` writes the current-season alias `game_logs.parquet` only when the pack
+  includes the newest season. A past-seasons-only republish (`GL_SEASONS` without 2026-27) would
+  have pointed the alias at 2025-26; caught on the 25 Nov dry run, before the 22-season republish.
 
 # panna 0.3.131
 
