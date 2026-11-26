@@ -168,8 +168,12 @@ OPTA_TYPE_NAMES <- c(
   "79" = "Unknown",                       # n~10.3k; non-located
   "80" = "Unknown",                       # n~89k; was "Chance Missed" (that is 60); located x~12 (verify)
   "81" = "Unknown",                       # n~15.7k; located x~64 (verify)
-  "83" = "Att One on One",                # n~798k; maps to take_on; located x~39 (verify - not in public sources)
-  "84" = "Unknown",                       # n~10.8k; non-located; carries rich qualifiers
+  "83" = "Att One on One",                # n~798k; maps to take_on; located x~39. DISPUTED: football-docs
+                                          # opta-truth.json says "Attempted tackle"; on EPL it sits inside the
+                                          # OTHER team's possession (see OPTA_REFERENCE.md, 2026-11-27)
+  "84" = "Deleted After Review",          # n~10.8k; non-located. Every row carries q436 (pre-review type);
+                                          # EPL 2023-26: 283 rows, q436 = 16 (Goal) on 139 = VAR-cancelled goals
+                                          # (football-docs opta-truth.json, community-checked; checked 2026-11-27)
   "90" = "Injury Stoppage",               # qualifier 41 (injury); (0, 0), names the injured player; 2025+ feeds
   "91" = "Injury Resume"                  # play restarting after 90; (0, 0)
 )
