@@ -75,7 +75,7 @@ possession**: the event just before is an opponent pass on 10,493 and the event 
 opponent pass on 9,625. When a type-3 take-on shares its second, 98.2% are by the other team
 with mirrored x (sum 99.9). That is a defender who went for the ball and missed, not an
 attacker's one-on-one. Not relabelled in code yet: the `take_on` mapping changes EPV credit, so it
-needs a decision (panna issue filed 2026-11-27). The box-score stat `attOneOnOne` (`spm_opta.R`)
+needs a decision ([panna#532](https://github.com/peteowen1/panna/issues/532)). The box-score stat `attOneOnOne` (`spm_opta.R`)
 is a separate Opta stat and is not affected.
 
 ## Qualifier IDs (`qualifierId`)
