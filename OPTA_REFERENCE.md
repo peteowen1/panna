@@ -54,7 +54,12 @@ Clearance". This exact set of corrections independently cost `inthegame-blog` a 
 same wrong labels.
 
 `75/76/79/80/81/84`: genuinely not in any public F24 reference; named "Unknown" deliberately
-rather than guessed. See `spadl_conversion.R`'s header comment for per-code corpus frequency if
+rather than guessed. Lead for 84 (26 Nov 2026, not confirmed): the community-maintained
+`data/opta-truth.json` in github.com/withqwerty/football-docs labels it "Deleted after review",
+said to be checked by hand against the Stats Perform F24 appendices; panna's corpus has it at ~10.8k
+a season, without a pitch location but with goalmouth qualifiers 102/103 and keeper-position qualifiers 230/231. Keep it
+"Unknown" in code until an official source or a match-level check confirms it
+(pannaverse `docs/reviews/football-docs-mcp-2026-11-26.md`). See `spadl_conversion.R`'s header comment for per-code corpus frequency if
 you're trying to pin one down.
 
 ## Qualifier IDs (`qualifierId`)
@@ -132,20 +137,26 @@ and a follow-up question: can a blocked shot's real location be recovered at all
   here as a recoverable signal for anyone who later wants a "how save-like was this block"
   feature elsewhere (e.g. EPV credit, a defensive-blocking rating).
 
-### Confirmed — empirically, 2026-07-23 (panna#175 / inthegame-blog#489)
+### Confirmed — empirically, 2026-11-26 (panna#175; corrects the 2026-07-23 entry)
 
-- **231** | **Goal-mouth y for Miss shots specifically** | q102 (goal-mouth y) is reliable for
-  on-target-ish shots (Post/Saved/Goal) but scatters far outside the goal frame for genuine
-  misses (median offset ~9 units vs the confirmed on-target range). q231 validated via a natural
-  experiment: Post-hit shots (type 14) MUST cross the line at the known post positions
-  (45.2/54.8) — sampled q231 values landed almost exactly there (45.0, 55.0). Confirmed at
-  production scale: on 3.27M shots, q231 for Miss shots has median=50.0, 1-99% range
-  43.8-56.1 (std 2.5) — tightly inside the frame, vs q102's own median=50.2, 1-99% range
-  2.2-98.3 (std 14.1) for the same population. `pannadata`'s scraper + `backfill_goalmouth.py`
-  now source Miss-shot `goalmouth_y` from q231 (falling back to q102 when q231 is absent, ~13-30%
-  of misses). **No working z/height (q103) replacement exists for misses** — q230 correlates
-  -0.33 with shot distance (a confidence/tracking-quality signature, not a coordinate), q147 is
-  too sparse (~13.5% presence) to rely on. That half remains genuinely open.
+- **230 / 231** | **Goalkeeper x / y position** (football-docs `opta-truth.json`: `gkX` / `gkY`;
+  community-checked, not vendor-confirmed). NOT the shot's goal-line crossing point. On 147,120
+  shot events (types 13-16, local `events_consolidated/events_EPL.parquet`): q230 sits at a goal
+  line (<= 12 or >= 88) on 98.8-99.8% of every shot type; q231 is median 50.0, sd 2.5-3.4 for
+  every type, whatever happened to the shot; on **Goals**, where q102 is certainly the crossing
+  point, q231 correlates -0.05 with it (identical on 0.5% of 14,744). Where a keeper stands fits
+  all of that; a shot coordinate fits none of it.
+- **102** | **Goal-mouth y for every shot type, misses included.** Misses spread wide on q102
+  (sd 13.65 on EPL) because misses go wide; that was never a scaling error.
+- History: 2026-07-23 to 2026-11-26 the scraper and `backfill_goalmouth.py` read Miss-shot
+  `goalmouth_y` from q231, on a "Post shots land on the posts" sample of a few values and on q231
+  being "tightly inside the frame" for misses, which is the symptom, not evidence. Result: 74.6%
+  of 1,375,032 unblocked misses inside the posts, 36.6% inside the frame (impossible for a miss).
+  Reverted to q102 (pannadata, 26 Nov); `backfill_goalmouth.py` overwrites Miss `goalmouth_y`
+  from q102 on every daily run, which repairs the published rows. xGOT was unaffected (on-target
+  shots only).
+- **No working z/height (q103) replacement for misses is known**; q147 is too sparse (~13.5%
+  presence). That half of panna#175 remains open.
 
 ### Unconfirmed — do not guess, do the work first
 
@@ -172,8 +183,8 @@ and a follow-up question: can a blocked shot's real location be recovered at all
 - **Zone/coordinate qualifiers 55/56/102/103/230**: the prior version of this doc listed
   these as start/end coordinate qualifiers, but they conflict with 140/141 (confirmed above,
   and the qualifiers actually consumed by production code for end coordinates). Not re-verified
-  this session — treat the prior claims here as unverified, not wrong-but-unconfirmed. (231's
-  specific role as a Miss-shot goal-mouth y-coordinate IS now confirmed — see above.)
+  this session — treat the prior claims here as unverified, not wrong-but-unconfirmed. (102 is
+  now confirmed as goal-mouth y and 230/231 as the keeper's x/y — see above.)
 
 ### Outcome Field
 
