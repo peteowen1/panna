@@ -201,6 +201,17 @@ jobs:
             fi
           done
 
+          # Issue #505: scored shots from the EPV job, read by step 1 at its
+          # default path. Optional: a miss means step 1 converts every
+          # league-season locally, as before.
+          mkdir -p data-raw/cache/epv
+          if gh release download predictions-cache --repo peteowen1/pannadata \
+               --pattern opta_scored_shots.parquet --dir data-raw/cache/epv --clobber; then
+            echo "  Downloaded opta_scored_shots.parquet ($(stat -c %s data-raw/cache/epv/opta_scored_shots.parquet) bytes)"
+          else
+            echo "::warning title=No scored-shots cache::opta_scored_shots.parquet not downloaded from predictions-cache; step 1 converts every league-season"
+          fi
+
           echo ""
           echo "Downloading pre-trained models..."
           MODELS_DOWNLOADED=0

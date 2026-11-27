@@ -1,3 +1,10 @@
+# panna (development version)
+
+- The EPV job publishes its scored-shots cache, `opta_scored_shots.parquet`, to the
+  `predictions-cache` release, and the Opta RAPM job downloads it before step 1 (issue #505). Step 1
+  reuses a league-season only when its key matches, as before, so a missing or stale file just
+  means local conversion. Not `opta-latest`, which `pb_download_opta()` downloads whole.
+
 # panna 0.3.134
 
 - EPV credit: an Opta type 83 (a defender's missed tackle) is no longer an action (panna#532, #533).

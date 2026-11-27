@@ -350,8 +350,8 @@ for (league in names(league_seasons)) {
 
 # 4b. Scored-shots table for Opta RAPM step 1 (issue #505) ----
 # RAPM step 1 reuses an entry only when its key still matches the events it has
-# loaded; see R/scored_shots_cache.R. Local file only: publishing it to the
-# opta-latest release is a workflow step (see NEWS).
+# loaded; see R/scored_shots_cache.R. epv-pipeline.yml publishes this file to
+# the predictions-cache release; opta-pipeline.yml downloads it for step 1.
 if (length(scored_shot_rows) > 0) {
   scored_shots_path <- file.path("data-raw", "cache", "epv", "opta_scored_shots.parquet")
   write_scored_shots(scored_shot_rows, scored_shots_path)
