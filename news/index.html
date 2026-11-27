@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.133</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.134</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -39,6 +39,11 @@
       <small>Source: <a href="https://github.com/peteowen1/panna/blob/main/NEWS.md" class="external-link"><code>NEWS.md</code></a></small>
     </div>
 
+    <div class="section level2">
+<h2 class="pkg-version" data-toc-text="0.3.134" id="panna-03134">panna 0.3.134<a class="anchor" aria-label="anchor" href="#panna-03134"></a></h2>
+<ul><li>EPV credit: an Opta type 83 (a defender’s missed tackle) is no longer an action (panna#532, <a href="https://github.com/peteowen1/panna/issues/533" class="external-link">#533</a>). It used to reach SPADL as a <code>take_on</code>, so the defending team held the ball for one row. That charged the attacker’s action before it a turnover that never happened (2,405 actions, mean -0.0101, EPL 2026-27) and paid the attacker after it as if he had won the ball back (+21.5 EPV). <code><a href="../reference/attach_missed_tackles.html">attach_missed_tackles()</a></code> now makes the defender the duel loser (<code>opponent_player_id</code>, <code>opponent_from_83</code>) of the attacking team’s next action within 3 s and drops the row. <code><a href="../reference/assign_epv_credit.html">assign_epv_credit()</a></code> moves half of that action’s positive credit to him as blame. This is zero-sum like other duels, applies to every action type including shots, and a loss is not shared. Per-player EPV moves a median 0.056 (rank agreement 0.9963, 246 EPL players). The EPV model is not retrained: it still learned 83 as <code>take_on</code>. A SPADL cache built before this version is rebuilt.</li>
+<li>R-CMD-check and pkgdown use <code>GITHUB_TOKEN</code>, not <code>WORKFLOW_PAT</code>; they only install the public pannamodels.</li>
+</ul></div>
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.3.133" id="panna-03133">panna 0.3.133<a class="anchor" aria-label="anchor" href="#panna-03133"></a></h2>
 <ul><li>RAPM step 1 takes penalties from SPADL’s <code>is_penalty</code>, so they leave the non-penalty xG target (panna#521, <a href="https://github.com/peteowen1/panna/issues/526" class="external-link">#526</a>). The old detector expected a JSON array and found 0 penalties in 2.19M shots; step 1 now also stops when 5,000+ shots score 0 penalties. Moves every RAPM-descended rating (xRAPM rank agreement 0.9868 against a control build); ships with a rebuilt SPM panel and legacy prior, per pannaverse <code>docs/plans/PANNA521-ROLLOUT.md</code>.</li>

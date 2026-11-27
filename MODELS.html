@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="index.html">panna</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.133</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.3.134</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -118,11 +118,13 @@
 <td align="right">5,212,066</td>
 <td><code>C:/dev/_model-backups/2026-09-23/</code></td>
 <td>rollback copy</td>
-</tr><tr><td>xPass</td>
-<td>2026-06-18</td>
-<td align="right">6,319,289</td>
-<td>same bytes</td>
-<td>yes</td>
+</tr><tr><td>
+<strong>xPass</strong> (asset <code>xpass_model.rds</code>, pannamodels <code>epv</code>)</td>
+<td><strong>2026-04-07</strong></td>
+<td align="right">
+<strong>6,360,629</strong> (sha256 687c96d5)</td>
+<td>—</td>
+<td>⚠ <strong>releases differ</strong> (checked 2026-11-27). Every production loader (<code>03_calculate_player_xmetrics.R</code>, <code>10b</code>, <code>10c</code>) calls <code><a href="reference/load_xpass_model.html">load_xpass_model()</a></code>, which reads pannamodels <code>epv</code> first; the 25 Nov EPV run 45648229961 and predictions run 45676255256 both log “Loaded xPass model from pannamodels”. pannadata <code>models</code> holds a different file (2026-07-05, 6,273,105 bytes, sha256 013051e6) that only the local fallback and <code>opta-pipeline.yml</code>’s download use. The 6,319,289 / 2026-06-18 figure this row used to give matches neither release</td>
 </tr><tr><td>duel</td>
 <td>2026-06-24</td>
 <td align="right">368,305</td>
