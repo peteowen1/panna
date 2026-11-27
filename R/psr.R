@@ -1807,10 +1807,18 @@ PSR_ROLE8_LEVELS <- c("GK", "CB", "FB", "DM", "CM", "AM", "W", "ST")
 #' Calibrate PSR by each player's pos10 minutes mix (panna#216)
 #'
 #' factor(player) = sum over buckets of share x the position's \code{pos10}
-#' factor. A player with no mix row gets the GK factor if his
-#' \code{primary_position} is GK and 1 otherwise (1 is the minutes-weighted
-#' mean factor). The number of such rows is returned as attribute
-#' \code{psr_pos10_fallback} so callers can log it.
+#' factor. Shares in a position with no factor (\code{OTHER}) are dropped, as
+#' 99b drops rows with no resolvable role.
+#'
+#' A player with no mix row (no prior minutes in a known position) gets the
+#' factor of his broad \code{primary_position} group: the mean of the
+#' \code{pos10} factors inside that group (GK; CB/FB/WB = DEF; DM/CM/AM/WM =
+#' MID; W/ST = FWD, as \code{.role16_to_broad()}), weighted by every player's
+#' shares in \code{role_mix} (the plain mean of the group's factors when nobody
+#' in \code{role_mix} plays that group). So a debut centre-back lands near the
+#' defenders' factor rather than the all-position 1, and a keeper gets the GK
+#' factor. Unknown \code{primary_position}: factor 1. The count
+#' is returned as attribute \code{psr_pos10_fallback}, so callers can log it.
 #'
 #' @param dt PSR table with \code{player_id} (and the \code{by} columns).
 #' @param calibration Calibration table with \code{axis == "pos10"} rows.
@@ -1833,20 +1841,63 @@ PSR_ROLE8_LEVELS <- c("GK", "CB", "FB", "DM", "CM", "AM", "W", "ST")
   if (nrow(dt) == 0) return(dt)
   m <- data.table::as.data.table(role_mix)[, c(by, "pos10", "share"), with = FALSE]
   m[, f := ok$factor[match(pos10, ok$level)]]
+  m <- m[!is.na(f) & is.finite(share) & share > 0]
   pf <- m[, .(.pf = sum(share * f) / sum(share)), by = by]
   key_dt <- do.call(paste, c(lapply(by, function(b) as.character(dt[[b]])), sep = "\r"))
   key_pf <- do.call(paste, c(lapply(by, function(b) as.character(pf[[b]])), sep = "\r"))
   f <- pf$.pf[match(key_dt, key_pf)]
   n_fb <- sum(is.na(f))
   if (n_fb) {
-    gk <- if ("primary_position" %in% names(dt)) dt$primary_position %in% "GK" else rep(FALSE, nrow(dt))
-    f[is.na(f)] <- ifelse(gk[is.na(f)], ok$factor[ok$level == "GK"], 1)
+    broad <- c(GK = "GK", CB = "DEF", FB = "DEF", WB = "DEF", DM = "MID", CM = "MID",
+               AM = "MID", WM = "MID", W = "FWD", ST = "FWD")
+    m[, .broad := unname(broad[pos10])]
+    gf <- m[, .(gf = sum(share * f) / sum(share)), by = .broad]
+    # A group nobody in role_mix plays (e.g. no keeper in a small table): the
+    # plain mean of its factors, so a keeper still gets the GK factor.
+    g0 <- data.table::data.table(.broad = unname(broad[ok$level]), f = ok$factor)[
+      , .(gf0 = mean(f)), by = .broad]
+    pp <- if ("primary_position" %in% names(dt)) as.character(dt$primary_position) else
+      rep(NA_character_, nrow(dt))
+    fb <- gf$gf[match(pp[is.na(f)], gf$.broad)]
+    fb[is.na(fb)] <- g0$gf0[match(pp[is.na(f)][is.na(fb)], g0$.broad)]
+    fb[is.na(fb)] <- 1
+    f[is.na(f)] <- fb
   }
   for (col in intersect(c("psr_raw", "psr", "osr", "dsr"), names(dt))) {
     data.table::set(dt, j = col, value = dt[[col]] * f)
   }
   data.table::setattr(dt, "psr_pos10_fallback", n_fb)
   dt[]
+}
+
+#' Read 99b's pos10 factors as calibration rows (panna#216)
+#'
+#' \code{99b_fit_position_calibration.R} writes one row per position
+#' (\code{bucket, slope, se, factor}). This turns that file into
+#' \code{apply_psr_calibration()} rows with \code{axis = "pos10"}, so a dry
+#' build can run a factor set before anyone copies it into the shipped
+#' \code{psr_calibration.csv}. The values are read from the file, never typed.
+#'
+#' @param path CSV written by 99b with \code{PSR_99B_GRAIN=pos10}.
+#' @return data.table(axis, level, factor, slope, se, n_obs).
+#' @keywords internal
+#' @noRd
+.psr_pos10_calibration_from_99b <- function(path) {
+  if (!file.exists(path)) cli::cli_abort("pos10 factor file not found: {.file {path}}")
+  x <- data.table::fread(path)
+  if (!all(c("bucket", "factor") %in% names(x))) {
+    cli::cli_abort("{.file {path}} is not a 99b factor file (needs {.field bucket} and {.field factor}).")
+  }
+  miss <- setdiff(PSR_POS10_LEVELS, x$bucket)
+  if (length(miss)) {
+    cli::cli_abort(c("{.file {path}} has no factor for: {.val {miss}}.",
+                     "i" = "Was 99b run with PSR_99B_GRAIN=pos10?"))
+  }
+  data.table::data.table(axis = "pos10", level = as.character(x$bucket),
+                         factor = as.numeric(x$factor),
+                         slope = if ("slope" %in% names(x)) as.numeric(x$slope) else NA_real_,
+                         se = if ("se" %in% names(x)) as.numeric(x$se) else NA_real_,
+                         n_obs = NA_integer_)
 }
 
 # The 10 CALIBRATION positions (panna#216, Pete 2026-11-05). Not the same as the

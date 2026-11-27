@@ -2293,9 +2293,51 @@ test_that("apply_psr_calibration with role_mix uses each player's minutes mix", 
                                 pos10 = c("W", "ST", "CB", "GK"),
                                 share = c(0.75, 0.25, 1, 1))
   out <- apply_psr_calibration(dt, .cal216(), role_mix = mix)
-  expect_equal(out$psr, c(0.75 * 1.2 + 0.25 * 1.5, 0.75, 0.8, 1))
+  # "new" (MID, no mix, no MID in anyone's mix): plain mean of the 4 MID factors
+  expect_equal(out$psr, c(0.75 * 1.2 + 0.25 * 1.5, 0.75, 0.8, (1.15 + 1.05 + 1.1 + 1.05) / 4))
   expect_equal(out$osr + out$dsr, out$psr)
-  expect_equal(attr(out, "psr_pos10_fallback"), 1L)  # "new": no mix, factor 1
+  expect_equal(attr(out, "psr_pos10_fallback"), 1L)
+})
+
+test_that("a player with no mix gets his broad group's share-weighted factor", {
+  dt <- data.table::data.table(player_id = c("b", "c", "d", "new"),
+                               primary_position = c("DEF", "DEF", "DEF", "DEF"),
+                               psr = 1, osr = 0.5, dsr = 0.5)
+  # Population in DEF: 2 CB shares, 1 FB share -> (2 x 0.75 + 0.7) / 3
+  mix <- data.table::data.table(player_id = c("b", "c", "d"), pos10 = c("CB", "CB", "FB"), share = 1)
+  out <- apply_psr_calibration(dt, .cal216(), role_mix = mix)
+  expect_equal(out$psr[4], (2 * 0.75 + 0.7) / 3)
+  expect_equal(attr(out, "psr_pos10_fallback"), 1L)
+})
+
+test_that("pos10 drops OTHER shares rather than diluting the factor", {
+  dt <- data.table::data.table(player_id = "a", primary_position = "DEF", psr = 1, osr = 0.5, dsr = 0.5)
+  mix <- data.table::data.table(player_id = "a", pos10 = c("CB", "OTHER"), share = c(0.5, 0.5))
+  expect_equal(apply_psr_calibration(dt, .cal216(), role_mix = mix)$psr, 0.75)
+})
+
+test_that("with role_mix the 4-bucket factor is NOT also applied (no double scaling)", {
+  cal <- rbind(.cal216(), data.table::data.table(axis = "position", level = c("GK", "DEF"),
+                                                 factor = c(0.5, 2)), fill = TRUE)
+  dt <- data.table::data.table(player_id = c("k", "c"), primary_position = c("GK", "DEF"),
+                               psr = 1, osr = 0.5, dsr = 0.5)
+  mix <- data.table::data.table(player_id = c("k", "c"), pos10 = c("GK", "CB"), share = 1)
+  expect_equal(apply_psr_calibration(dt, cal, role_mix = mix)$psr, c(0.8, 0.75))
+})
+
+test_that(".psr_pos10_calibration_from_99b reads 99b's file, and refuses a partial one", {
+  f <- withr::local_tempfile(fileext = ".csv")
+  data.table::fwrite(data.table::data.table(bucket = PSR_POS10_LEVELS, slope = 1,
+                                            se = 0.05, factor = seq_along(PSR_POS10_LEVELS) / 10), f)
+  cal <- .psr_pos10_calibration_from_99b(f)
+  expect_equal(unique(cal$axis), "pos10")
+  expect_equal(cal$factor[cal$level == "CB"], 0.2)
+  dt <- data.table::data.table(player_id = "a", psr = 1, osr = 0.5, dsr = 0.5)
+  mix <- data.table::data.table(player_id = "a", pos10 = "ST", share = 1)
+  expect_equal(apply_psr_calibration(dt, cal, role_mix = mix)$psr, 1.0)
+  data.table::fwrite(data.table::data.table(bucket = c("CB", "FB"), factor = 1), f)
+  expect_error(.psr_pos10_calibration_from_99b(f), "no factor for")
+  expect_error(.psr_pos10_calibration_from_99b(file.path(tempdir(), "nope.csv")), "not found")
 })
 
 test_that("role_mix fallback gives a keeper with no mix the GK factor, not 1", {

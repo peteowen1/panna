@@ -31,6 +31,18 @@ psr_baseline <- Sys.getenv("PSR_BASELINE", "raw")
 if (!psr_baseline %in% c("raw", "skill")) stop("PSR_BASELINE must be 'raw' or 'skill', not '", psr_baseline, "'")
 if (is.null(.psr_position_means) && psr_baseline == "skill") stop("PSR_BASELINE=skill needs position normalisation on")
 cat(sprintf("PSR position baseline: %s\n", psr_baseline))
+# PSR_CALIBRATION_GRAIN=pos10 (panna#216): each player-season is calibrated by that season's
+# minutes mix of the 10 position factors in PSR_POS10_FACTORS (a 99b pos10 output) INSTEAD of
+# the shipped 4-group factors. Dormant: default "position" is unchanged; see 08b.
+psr_cal_grain <- Sys.getenv("PSR_CALIBRATION_GRAIN", "position")
+if (!psr_cal_grain %in% c("position", "pos10")) {
+  stop("PSR_CALIBRATION_GRAIN must be 'position' or 'pos10', not '", psr_cal_grain, "'")
+}
+.psr_cal_pos10 <- if (psr_cal_grain == "pos10") {
+  if (!nzchar(Sys.getenv("PSR_POS10_FACTORS"))) stop("PSR_CALIBRATION_GRAIN=pos10 needs PSR_POS10_FACTORS (a 99b pos10 csv)")
+  .psr_pos10_calibration_from_99b(Sys.getenv("PSR_POS10_FACTORS"))
+} else NULL
+cat(sprintf("PSR position calibration grain: %s\n", psr_cal_grain))
 
 # extract_season_end_year() is defined in R/utils.R
 
@@ -176,6 +188,8 @@ psr_primary_league <- local({
               nrow(pl), data.table::uniqueN(pl$league), n_before - nrow(pl)))
   pl
 })
+# The season's pos10 minutes mix, built while the match rows are still here (panna#216).
+.psr_pos10_mix <- if (!is.null(.psr_cal_pos10)) .pos10_mix_by_season(ms_narrow) else NULL
 rm(ms_narrow); invisible(gc(verbose = FALSE))
 
 # Filter bad xG data (same threshold as Opta pipeline)
@@ -827,9 +841,21 @@ if (!is.null(seasonal_psr) && nrow(seasonal_psr) > 0) {
     }
 
     .gk_before <- .psr_keeper_top20_share(seasonal_psr)
-    seasonal_psr <- as.data.frame(
-      apply_psr_calibration(seasonal_psr, .pos_cal)
-    )
+    if (is.null(.psr_cal_pos10)) {
+      seasonal_psr <- as.data.frame(
+        apply_psr_calibration(seasonal_psr, .pos_cal)
+      )
+    } else {
+      # pos10 rows only, so the season axis stays off here too (see above).
+      .cal10 <- apply_psr_calibration(seasonal_psr, .psr_cal_pos10, role_mix = .psr_pos10_mix,
+                                      role_mix_by = c("player_id", "season_end_year"))
+      .n_fb <- attr(.cal10, "psr_pos10_fallback")
+      cat(sprintf("  pos10 calibration: %s of %s player-seasons had no season mix (broad-group factor)\n",
+                  format(if (is.null(.n_fb)) NA else .n_fb, big.mark = ","),
+                  format(nrow(.cal10), big.mark = ",")))
+      seasonal_psr <- as.data.frame(.cal10)
+      rm(.cal10, .n_fb)
+    }
     .gk_after <- .psr_keeper_top20_share(seasonal_psr)
 
     if (is.null(.gk_after) || nrow(.gk_after) == 0L) {

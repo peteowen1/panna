@@ -45,6 +45,23 @@ psr_baseline <- Sys.getenv("PSR_BASELINE", "raw")
 if (!psr_baseline %in% c("raw", "skill")) stop("PSR_BASELINE must be 'raw' or 'skill', not '", psr_baseline, "'")
 if (is.null(.psr_position_means) && psr_baseline == "skill") stop("PSR_BASELINE=skill needs position normalisation on")
 message(sprintf("  PSR position baseline: %s", psr_baseline))
+# PSR_CALIBRATION_GRAIN=pos10 (panna#216): calibrate each player by his as-at minutes mix of the
+# 10 position factors in PSR_POS10_FACTORS (a 99b pos10 output), INSTEAD of the shipped 4-group
+# factors; never both. Dormant: the default "position" is unchanged, and pos10 has no shipped
+# factor set until Pete picks one after the walk (DECISIONS 2026-11-19).
+psr_cal_grain <- Sys.getenv("PSR_CALIBRATION_GRAIN", "position")
+if (!psr_cal_grain %in% c("position", "pos10")) {
+  stop("PSR_CALIBRATION_GRAIN must be 'position' or 'pos10', not '", psr_cal_grain, "'")
+}
+.psr_cal_pos10 <- if (psr_cal_grain == "pos10") {
+  if (!nzchar(Sys.getenv("PSR_POS10_FACTORS"))) stop("PSR_CALIBRATION_GRAIN=pos10 needs PSR_POS10_FACTORS (a 99b pos10 csv)")
+  .psr_pos10_calibration_from_99b(Sys.getenv("PSR_POS10_FACTORS"))
+} else NULL
+.pos10_fallback <- data.table::data.table(snapshot_date = as.Date(character(0)), n = integer(0),
+                                          rows = integer(0), share_90s = numeric(0))
+message(sprintf("  PSR position calibration grain: %s%s", psr_cal_grain,
+                if (is.null(.psr_cal_pos10)) "" else
+                  paste0(" (", paste(.psr_cal_pos10$level, .psr_cal_pos10$factor, collapse = ", "), ")")))
 if (psr_target == "goals") {
   cat("Note: xG coefficients not found, using goal-diff PSR instead.\n")
   cat("Re-run step 07 after fixing splint xG columns for xG-based PSR.\n\n")
@@ -857,7 +874,19 @@ for (i in seq_along(snapshot_dates)) {
   # matches exist. apply_psr_calibration() no-ops that axis when the column is
   # absent.
   psr <- data.table::as.data.table(psr)
-  if (!psr_raw_mode) psr <- apply_psr_calibration(psr)
+  if (!psr_raw_mode && is.null(.psr_cal_pos10)) psr <- apply_psr_calibration(psr)
+  if (!psr_raw_mode && !is.null(.psr_cal_pos10)) {
+    .mix_d <- .pos10_mix_asof(.role8_src, as_of = d)
+    psr <- apply_psr_calibration(psr, .psr_cal_pos10, role_mix = .mix_d)
+    .n_fb <- attr(psr, "psr_pos10_fallback")
+    if (is.null(.n_fb)) stop("pos10 calibration lost its fallback count; check apply_psr_calibration()")
+    .w <- suppressWarnings(as.numeric(psr$weighted_90s)); .w[is.na(.w)] <- 0
+    .no_mix <- !psr$player_id %in% .mix_d$player_id
+    rm(.mix_d)
+    .pos10_fallback <- rbind(.pos10_fallback, data.table::data.table(
+      snapshot_date = d, n = as.integer(.n_fb), rows = nrow(psr),
+      share_90s = if (sum(.w) > 0) sum(.w[.no_mix]) / sum(.w) else NA_real_))
+  }
 
   psr[, snapshot_date := d]
   psr_slim <- psr[, .(snapshot_date, player_id, player_name,
@@ -891,6 +920,14 @@ if (length(.role8_other_rate)) {
          "their own position. Check that position_side survived to .role8_src.",
          call. = FALSE)
   }
+}
+if (nrow(.pos10_fallback)) {
+  # Players with no prior minutes in a known position get their broad group's factor
+  # (.calibrate_psr_pos10()); say how many, and how much of the workload they carry.
+  cat(sprintf("\npos10 calibration fallback (no as-at mix, broad-group factor): %s of %s rows over %d dates; mean %.2f%% of weighted 90s per date (max %.2f%%)\n",
+              format(sum(.pos10_fallback$n), big.mark = ","), format(sum(.pos10_fallback$rows), big.mark = ","),
+              nrow(.pos10_fallback), 100 * mean(.pos10_fallback$share_90s, na.rm = TRUE),
+              100 * max(.pos10_fallback$share_90s, na.rm = TRUE)))
 }
 cat(sprintf("\nCompleted: %d / %d dates (%.0fs, %.1f sec/date)\n",
             n_success, length(snapshot_dates),
