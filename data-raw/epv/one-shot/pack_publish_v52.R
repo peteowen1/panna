@@ -9,6 +9,7 @@
 # Step 1 (always): download what is published now to C:/dev/_model-backups/2026-10-06/
 #   with md5s, so a rollback is re-uploading those files.
 # Step 2: dry run unless PACK_PUBLISH=1.
+if (!identical(Sys.getenv("ALLOW_ONE_SHOT"), "1")) stop("Archived one-shot (panna#506): re-running it overwrites the LIVE model assets. Set ALLOW_ONE_SHOT=1 only to repeat this exact publish on purpose.")
 suppressMessages(devtools::load_all(quiet = TRUE))
 new <- c(xg_model_v5.rds   = "data-raw/cache/epv/xg-vnext/xg_model_v5_2.rds",
          xgot_model_v3.rds = "data-raw/cache/epv/xg-vnext/xgot_model_v3_2.rds")
@@ -32,7 +33,7 @@ for (d in DEST) {
   cat("backup", out, ":", nrow(md), "files\n"); print(md)
 }
 writeLines(c("# Model backups before the xG v5.2 release (2026-10-06): xG v5.1 / xGOT v3.1 as published 2026-09-29",
-             "Taken by panna data-raw/epv/pack_publish_v52.R. Rollback: re-upload these files to the same",
+             "Taken by panna data-raw/epv/one-shot/pack_publish_v52.R. Rollback: re-upload these files to the same",
              "release with vb_publish(..., carry_forward = TRUE). Not executed: each overwrites a live asset."),
            file.path(BAK, "README.md"))
 
