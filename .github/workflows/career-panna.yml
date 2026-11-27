@@ -54,8 +54,17 @@ concurrency:
 jobs:
   career-panna:
     runs-on: ubuntu-latest
+    # WORKFLOW_PAT lives in the cross-repo Environment (main/dev only); other refs get none and fall back to github.token.
+    environment: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && 'cross-repo' || '' }}
     timeout-minutes: 90
     steps:
+      - name: Require WORKFLOW_PAT on main/dev
+        # main/dev read it from the cross-repo Environment; fail here, not at the first cross-repo write.
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+        env:
+          PAT: ${{ secrets.WORKFLOW_PAT }}
+        run: test -n "$PAT" || { echo "::error title=No WORKFLOW_PAT::set it in the cross-repo Environment"; exit 1; }
+
       - name: Publish gate
         run: |
           if [ "$PANNA_PUBLISH_DISABLED" = "true" ]; then
@@ -143,7 +152,7 @@ jobs:
       - name: Rank check and publish
         if: env.UPLOAD == 'true' && env.PANNA_PUBLISH_DISABLED != 'true'
         env:
-          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT || github.token }}
           MIN_SPEARMAN: "0.95"
           SPEARMAN: ${{ steps.compare.outputs.spearman }}
           ROWS_NEW: ${{ steps.compare.outputs.rows_new }}

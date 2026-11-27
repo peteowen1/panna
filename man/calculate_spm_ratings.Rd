@@ -22,6 +22,7 @@ Applies SPM model to predict RAPM for all players with features.
 \seealso{
 Other spm: 
 \code{\link{calculate_spm_ratings_xgb}()},
+\code{\link{calibrate_spm_variance}()},
 \code{\link{fit_spm_model}()},
 \code{\link{get_spm_feature_importance}()}
 }

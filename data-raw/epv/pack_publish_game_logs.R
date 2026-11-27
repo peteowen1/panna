@@ -28,11 +28,16 @@
 #       GL_NO_NG_SEASONS  seasons allowed to have no net goals (default "2007-2008")
 suppressMessages(devtools::load_all(quiet = TRUE))
 C <- Sys.getenv("GL_PACK_DIR", "data-raw/cache-predictions-opta")
-SEASONS <- strsplit(trimws(Sys.getenv("GL_SEASONS", paste(
+DEFAULT_SEASONS <- strsplit(paste(
   "1999-2000 2001-2002 2003-2004 2005-2006 2007-2008 2009-2010 2010-2011 2011-2012",
   "2012-2013 2013-2014 2014-2015 2015-2016 2016-2017 2017-2018 2018-2019 2019-2020",
-  "2020-2021 2021-2022 2022-2023 2023-2024 2024-2025 2025-2026 2026-2027"))), "\\s+")[[1]]
+  "2020-2021 2021-2022 2022-2023 2023-2024 2024-2025 2025-2026 2026-2027"), "\\s+")[[1]]
+SEASONS <- strsplit(trimws(Sys.getenv("GL_SEASONS", paste(DEFAULT_SEASONS, collapse = " "))), "\\s+")[[1]]
 SEASONS <- sort(unique(SEASONS))  # the alias below takes the LAST, i.e. newest, season
+# game_logs.parquet on blog-latest is the CURRENT season. Write it only when this
+# pack includes that season: a past-seasons-only republish (GL_SEASONS without
+# 2026-27) would otherwise point it at 2025-26 (caught on the 25 Nov dry run).
+WRITE_ALIAS <- identical(tail(SEASONS, 1), tail(DEFAULT_SEASONS, 1))
 cat(sprintf("Packing %d season(s) from %s: %s\n", length(SEASONS), C, paste(SEASONS, collapse = " ")))
 src <- file.path(C, sprintf("game_logs_%s.parquet", SEASONS))
 if (!all(file.exists(src))) stop("missing game logs: ", paste(basename(src)[!file.exists(src)], collapse = ", "))
@@ -136,19 +141,34 @@ stage <- file.path(tempdir(), "gl-pack"); dir.create(stage, showWarnings = FALSE
 paths <- file.path(stage, basename(src))
 for (i in seq_along(src)) {
   add <- setdiff(fill_cols[[i]], names(arrow::open_dataset(src[i])))
-  if (length(add)) {
+  # 10b ranks piero_percentile over the leagues one run builds, and the rebuild
+  # builds each season in parts by league, so a part's value is a rank within
+  # that part (panna#507). This is the first place the season is whole: redo it.
+  gl <- data.table::as.data.table(arrow::read_parquet(src[i]))
+  before <- data.table::copy(gl$piero_percentile)  # := below updates the column in place
+  recompute_piero_percentile(gl)
+  n_pp <- if (is.null(before)) 0L else sum(!(is.na(before) & is.na(gl$piero_percentile)) &
+                                           (is.na(before) | is.na(gl$piero_percentile) |
+                                              abs(before - gl$piero_percentile) > 1e-9))
+  if (length(add) || n_pp > 0L) {
     # No PSV before 2013-14 / no net goals in that season, by design: write the
     # columns as NA so the blog sees one schema. Fabricated columns, all NA, said so.
-    gl <- data.table::as.data.table(arrow::read_parquet(src[i]))
     for (cc in add) data.table::set(gl, j = cc, value = if (cc %in% CHAR_COLS) NA_character_ else NA_real_)
     arrow::write_parquet(gl, paths[i])
-    cat(sprintf("  %s: added %d all-NA column(s): %s\n", basename(src[i]), length(add), paste(add, collapse = ", ")))
+    if (length(add)) cat(sprintf("  %s: added %d all-NA column(s): %s\n", basename(src[i]), length(add), paste(add, collapse = ", ")))
+    if (n_pp > 0L) cat(sprintf("  %s: piero_percentile recomputed season-wide on %d of %d rows\n", basename(src[i]), n_pp, nrow(gl)))
   } else {
     stopifnot(file.copy(src[i], paths[i], overwrite = TRUE))
   }
+  rm(gl, before)
 }
-alias <- file.path(stage, "game_logs.parquet"); stopifnot(file.copy(paths[length(paths)], alias, overwrite = TRUE))
-paths <- c(paths, alias)
+if (WRITE_ALIAS) {
+  alias <- file.path(stage, "game_logs.parquet"); stopifnot(file.copy(paths[length(paths)], alias, overwrite = TRUE))
+  paths <- c(paths, alias)
+} else {
+  cat(sprintf("game_logs.parquet (current-season alias) NOT written: newest packed season is %s, not %s\n",
+              tail(SEASONS, 1), tail(DEFAULT_SEASONS, 1)))
+}
 bd_paths <- file.path(stage, basename(bd_src)); stopifnot(all(file.copy(bd_src, bd_paths, overwrite = TRUE)))
 paths <- c(paths, bd_paths)
 pl_paths <- file.path(stage, basename(pl_src)); stopifnot(all(file.copy(pl_src, pl_paths, overwrite = TRUE)))

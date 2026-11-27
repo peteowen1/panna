@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}  # public repos only; read-only installs, so no cross-repo PAT on PR code
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

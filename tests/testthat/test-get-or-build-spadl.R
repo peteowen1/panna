@@ -164,7 +164,7 @@ test_that("get_or_build_spadl rebuilds a cache that holds a now-excluded event t
     match_id = c("m1", "m1"), action_id = 1:2, original_event_id = c("e1", "e2"),
     player_id = c("p1", "p2"), action_type = c("pass", "other"),
     start_x = c(50, 0), start_y = c(50, 0), result = "success",
-    opta_type_id = c(1L, 90L), stringsAsFactors = FALSE)
+    opta_type_id = c(1L, 90L), opponent_from_83 = FALSE, stringsAsFactors = FALSE)
   saveRDS(stale, file.path(tmp_cache, "spadl_TEST_2024-2025.rds"))
   rebuild_count <- 0L
   fresh <- stale[1, ]
@@ -177,4 +177,24 @@ test_that("get_or_build_spadl rebuilds a cache that holds a now-excluded event t
   # The rebuilt cache is clean, so the next call is a plain hit.
   get_or_build_spadl(data.frame(match_id = "m1"), "TEST", "2024-2025", cache_dir = tmp_cache)
   expect_equal(rebuild_count, 1L)
+})
+
+test_that("get_or_build_spadl rebuilds a cache built before missed tackles became duel blame (panna#532)", {
+  tmp_cache <- withr::local_tempdir()
+  stale <- data.frame(
+    match_id = "m1", action_id = 1:2, original_event_id = c("e1", "e2"),
+    player_id = c("p1", "q1"), action_type = c("pass", "take_on"),
+    start_x = c(50, 40), start_y = 50, result = c("success", "fail"),
+    opta_type_id = c(1L, 83L), stringsAsFactors = FALSE)
+  saveRDS(stale, file.path(tmp_cache, "spadl_TEST_2024-2025.rds"))
+  rebuild_count <- 0L
+  fresh <- transform(stale[1, ], opponent_from_83 = FALSE)
+  testthat::local_mocked_bindings(
+    convert_opta_to_spadl = function(events) { rebuild_count <<- rebuild_count + 1L; fresh }
+  )
+  result <- get_or_build_spadl(data.frame(match_id = "m1"), "TEST", "2024-2025", cache_dir = tmp_cache)
+  expect_equal(rebuild_count, 1L)
+  expect_false(any(result$opta_type_id %in% 83L))
+  get_or_build_spadl(data.frame(match_id = "m1"), "TEST", "2024-2025", cache_dir = tmp_cache)
+  expect_equal(rebuild_count, 1L)                                  # the rebuilt cache is a plain hit
 })

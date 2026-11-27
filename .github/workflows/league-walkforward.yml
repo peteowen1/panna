@@ -41,16 +41,32 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
   R_KEEP_PKG_SOURCE: yes
   WF_HORIZON: ${{ inputs.horizon || 'month' }}
+
+# download-artifact pulls another run's match-dataset; off main/dev that is github.token,
+# whose restricted default grants no actions scope.
+permissions:
+  contents: read
+  actions: read
 
 jobs:
   plan:
     runs-on: ubuntu-latest
+    # WORKFLOW_PAT lives in the cross-repo Environment (main/dev only); other refs get none and fall back to github.token.
+    environment: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && 'cross-repo' || '' }}
+    env:
+      GITHUB_PAT: ${{ secrets.WORKFLOW_PAT || github.token }}
     outputs:
       seasons: ${{ steps.m.outputs.seasons }}
     steps:
+      - name: Require WORKFLOW_PAT on main/dev
+        # main/dev read it from the cross-repo Environment; fail here, not at the first cross-repo write.
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+        env:
+          PAT: ${{ secrets.WORKFLOW_PAT }}
+        run: test -n "$PAT" || { echo "::error title=No WORKFLOW_PAT::set it in the cross-repo Environment"; exit 1; }
+
       - id: m
         env:
           SEASONS: ${{ inputs.seasons }}
@@ -62,12 +78,23 @@ jobs:
   backfill:
     needs: plan
     runs-on: ubuntu-latest
+    # WORKFLOW_PAT lives in the cross-repo Environment (main/dev only); other refs get none and fall back to github.token.
+    environment: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && 'cross-repo' || '' }}
+    env:
+      GITHUB_PAT: ${{ secrets.WORKFLOW_PAT || github.token }}
     timeout-minutes: 300
     strategy:
       fail-fast: false
       matrix:
         season: ${{ fromJson(needs.plan.outputs.seasons) }}
     steps:
+      - name: Require WORKFLOW_PAT on main/dev
+        # main/dev read it from the cross-repo Environment; fail here, not at the first cross-repo write.
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+        env:
+          PAT: ${{ secrets.WORKFLOW_PAT }}
+        run: test -n "$PAT" || { echo "::error title=No WORKFLOW_PAT::set it in the cross-repo Environment"; exit 1; }
+
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -99,7 +126,7 @@ jobs:
         with:
           name: match-dataset
           run-id: ${{ inputs.source_run_id }}
-          github-token: ${{ secrets.WORKFLOW_PAT }}
+          github-token: ${{ secrets.WORKFLOW_PAT || github.token }}
           path: md
 
       - name: Refit monthly and predict
@@ -121,8 +148,19 @@ jobs:
   combine:
     needs: backfill
     runs-on: ubuntu-latest
+    # WORKFLOW_PAT lives in the cross-repo Environment (main/dev only); other refs get none and fall back to github.token.
+    environment: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && 'cross-repo' || '' }}
+    env:
+      GITHUB_PAT: ${{ secrets.WORKFLOW_PAT || github.token }}
     timeout-minutes: 30
     steps:
+      - name: Require WORKFLOW_PAT on main/dev
+        # main/dev read it from the cross-repo Environment; fail here, not at the first cross-repo write.
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+        env:
+          PAT: ${{ secrets.WORKFLOW_PAT }}
+        run: test -n "$PAT" || { echo "::error title=No WORKFLOW_PAT::set it in the cross-repo Environment"; exit 1; }
+
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -156,12 +194,12 @@ jobs:
         with:
           name: match-dataset
           run-id: ${{ inputs.source_run_id }}
-          github-token: ${{ secrets.WORKFLOW_PAT }}
+          github-token: ${{ secrets.WORKFLOW_PAT || github.token }}
           path: md
 
       - name: Combine, check coverage, publish
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
           LEAGUE: ${{ inputs.league }}
           SEASONS: ${{ inputs.seasons }}
           SOURCE_RUN: ${{ inputs.source_run_id }}

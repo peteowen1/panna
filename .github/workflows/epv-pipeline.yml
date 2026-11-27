@@ -46,7 +46,6 @@ on:
         default: true
 
 env:
-  GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
   R_KEEP_PKG_SOURCE: yes
   # R026: only main and dev may publish. Scheduled and repository_dispatch runs
   # use the default branch (main). A workflow_dispatch from any other branch
@@ -108,6 +107,10 @@ concurrency:
 jobs:
   epv-pipeline:
     runs-on: ubuntu-latest
+    # WORKFLOW_PAT lives in the cross-repo Environment (main/dev only); other refs get none and fall back to github.token.
+    environment: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && 'cross-repo' || '' }}
+    env:
+      GITHUB_PAT: ${{ secrets.WORKFLOW_PAT || github.token }}
     # Sized for BOTH paths (review catch — 150 covered only xmetrics_only):
     # xmetrics_only runs took 112 min on 2026-07-18, and a full manual
     # retrain = training (~75-90 min) + the same export tail ≈ 190-200 min.
@@ -119,6 +122,13 @@ jobs:
       contents: write
 
     steps:
+      - name: Require WORKFLOW_PAT on main/dev
+        # main/dev read it from the cross-repo Environment; fail here, not at the first cross-repo write.
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+        env:
+          PAT: ${{ secrets.WORKFLOW_PAT }}
+        run: test -n "$PAT" || { echo "::error title=No WORKFLOW_PAT::set it in the cross-repo Environment"; exit 1; }
+
       - name: Publish gate (R026)
         run: |
           if [ "$PANNA_PUBLISH_DISABLED" = "true" ]; then
@@ -165,7 +175,7 @@ jobs:
         # xmetrics_only runs), so the weekly cron gains no new failure mode.
         if: ${{ env.XMETRICS_ONLY != 'true' || env.TRAIN_WP == 'true' }}
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
         run: |
           set -euo pipefail
           gh api -H "Accept: application/vnd.github.raw" \
@@ -175,7 +185,7 @@ jobs:
 
       - name: Download Opta event data
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
         run: |
           OPTA_DIR="${{ runner.temp }}/pannadata/opta"
           mkdir -p "$OPTA_DIR"
@@ -250,7 +260,7 @@ jobs:
         # handles the WP model.
         if: ${{ env.WP_ONLY != 'true' && env.XMETRICS_ONLY != 'true' && env.PANNA_PUBLISH_DISABLED != 'true' }}
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
         run: |
           set -euo pipefail
           source "$RUNNER_TEMP/versebus.sh"
@@ -343,7 +353,7 @@ jobs:
       - name: Upload trained models
         if: ${{ env.PANNA_PUBLISH_DISABLED != 'true' }}
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
         run: |
           set -euo pipefail
           echo "Uploading trained models to models release..."
@@ -448,6 +458,29 @@ jobs:
 
           echo ""
           echo "=== EPV Pipeline Complete ==="
+
+      # Issue #505: the scored shots step 03 wrote go to predictions-cache (Pete,
+      # 2026-11-27: not opta-latest, which pb_download_opta() pulls whole), so
+      # Opta RAPM step 1 reuses them instead of converting every league-season.
+      # A cache file, not data: RAPM checks each league-season's key against
+      # its own events and converts locally on any mismatch or miss, so a stale
+      # or partial file costs time, never correctness.
+      - name: Publish scored-shots cache (predictions-cache)
+        if: success() && env.EXPORT_XMETRICS == 'true' && env.PANNA_PUBLISH_DISABLED != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
+        run: |
+          set -euo pipefail
+          F=data-raw/cache/epv/opta_scored_shots.parquet
+          if [ ! -s "$F" ]; then
+            echo "::warning title=No scored-shots cache::$F was not written; RAPM step 1 keeps the previous file"
+            exit 0
+          fi
+          Rscript -e "x <- arrow::read_parquet('$F', col_select = c('league', 'season')); cat(sprintf('scored shots: %s rows, %d league-seasons\n', format(nrow(x), big.mark = ','), nrow(unique(x))))"
+          gh release upload predictions-cache "$F" --repo peteowen1/pannadata --clobber
+          gh release view predictions-cache --repo peteowen1/pannadata --json assets \
+            --jq '.assets[] | select(.name=="opta_scored_shots.parquet") | "uploaded \(.name) \(.size) bytes \(.updatedAt)"' |
+            grep . || { echo "::error::opta_scored_shots.parquet not on predictions-cache after upload"; exit 1; }
 
       # Pete 2026-10-12 (review R057): a league-season that FAILED (not "no
       # data") is published around -- the consolidated xMetrics still ship --

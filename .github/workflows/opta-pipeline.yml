@@ -43,7 +43,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
   R_KEEP_PKG_SOURCE: yes
   # R026: only main and dev may publish. Scheduled and repository_dispatch runs
   # use the default branch (main). A workflow_dispatch from any other branch
@@ -76,6 +75,10 @@ jobs:
     # two at pre-#389/#390 commits); the last green run, 40083634071, was on 24.04. Likely
     # the glibc MALLOC_* tuning above behaving differently on 26.04 (unconfirmed).
     runs-on: ubuntu-24.04
+    # WORKFLOW_PAT lives in the cross-repo Environment (main/dev only); other refs get none and fall back to github.token.
+    environment: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && 'cross-repo' || '' }}
+    env:
+      GITHUB_PAT: ${{ secrets.WORKFLOW_PAT || github.token }}
     # Bumped from 60 to 120 because step 01 now builds SPADL on-the-fly from
     # raw events (~35 min for ~51K matches × 15 leagues). Previous 60-min
     # cap killed step 03 with steps 04-09 still to run. Empirical breakdown:
@@ -91,6 +94,13 @@ jobs:
       contents: write
 
     steps:
+      - name: Require WORKFLOW_PAT on main/dev
+        # main/dev read it from the cross-repo Environment; fail here, not at the first cross-repo write.
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+        env:
+          PAT: ${{ secrets.WORKFLOW_PAT }}
+        run: test -n "$PAT" || { echo "::error title=No WORKFLOW_PAT::set it in the cross-repo Environment"; exit 1; }
+
       - name: Publish gate (R026)
         run: |
           if [ "$PANNA_PUBLISH_DISABLED" = "true" ]; then
@@ -108,7 +118,7 @@ jobs:
 
       - name: Verify opta_xmetrics freshness
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
           INPUT_START_STEP: ${{ inputs.start_step }}
         run: |
           set -euo pipefail
@@ -174,7 +184,7 @@ jobs:
 
       - name: Download Opta data
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
         run: |
           OPTA_DIR="${{ runner.temp }}/pannadata/opta"
           MODELS_DIR="${{ runner.temp }}/pannadata/opta/models"
@@ -190,6 +200,17 @@ jobs:
               echo "  Skipped $f (not found)"
             fi
           done
+
+          # Issue #505: scored shots from the EPV job, read by step 1 at its
+          # default path. Optional: a miss means step 1 converts every
+          # league-season locally, as before.
+          mkdir -p data-raw/cache/epv
+          if gh release download predictions-cache --repo peteowen1/pannadata \
+               --pattern opta_scored_shots.parquet --dir data-raw/cache/epv --clobber; then
+            echo "  Downloaded opta_scored_shots.parquet ($(stat -c %s data-raw/cache/epv/opta_scored_shots.parquet) bytes)"
+          else
+            echo "::warning title=No scored-shots cache::opta_scored_shots.parquet not downloaded from predictions-cache; step 1 converts every league-season"
+          fi
 
           echo ""
           echo "Downloading pre-trained models..."
@@ -240,7 +261,7 @@ jobs:
 
       - name: Download SPM panel (Wave-4 S6 prior)
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
         run: |
           # Step 05's S6 override (spm_use_panel, default TRUE) HARD-aborts
           # without cache-opta/spm_panel.rds, and the panel cannot be built
@@ -277,7 +298,7 @@ jobs:
       - name: Download intermediate caches (resume mode)
         if: inputs.start_step != '' && inputs.start_step != '1'
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
           INPUT_START_STEP: ${{ inputs.start_step }}
         run: |
           # Resume from step N requires caches from steps 1..(N-1) to be present.
@@ -345,7 +366,7 @@ jobs:
           INPUT_FORCE_REBUILD_FROM: ${{ inputs.force_rebuild_from }}
           INPUT_START_STEP: ${{ inputs.start_step }}
           INPUT_UPLOAD_RATINGS: ${{ env.PANNA_PUBLISH_DISABLED == 'true' && 'false' || inputs.upload_ratings }}
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
           HB_UPLOAD_CACHES: ${{ env.PANNA_PUBLISH_DISABLED == 'true' && 'false' || inputs.upload_caches }}
         run: |
           # --- memory tracer (diagnostic, no pipeline logic) -----------------
@@ -505,7 +526,7 @@ jobs:
         # start_step resume uses) and only on main or dev.
         if: success() && github.event.inputs.upload_caches != 'false' && env.PANNA_PUBLISH_DISABLED != 'true'
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
         run: |
           CACHE_DIR="data-raw/cache-opta"
 

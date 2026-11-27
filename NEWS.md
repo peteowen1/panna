@@ -1,3 +1,85 @@
+# panna (development version)
+
+- The EPV job publishes its scored-shots cache, `opta_scored_shots.parquet`, to the
+  `predictions-cache` release, and the Opta RAPM job downloads it before step 1 (issue #505). Step 1
+  reuses a league-season only when its key matches, as before, so a missing or stale file just
+  means local conversion. Not `opta-latest`, which `pb_download_opta()` downloads whole.
+
+# panna 0.3.134
+
+- EPV credit: an Opta type 83 (a defender's missed tackle) is no longer an action (panna#532, #533).
+  It used to reach SPADL as a `take_on`, so the defending team held the ball for one row. That
+  charged the attacker's action before it a turnover that never happened (2,405 actions, mean
+  -0.0101, EPL 2026-27) and paid the attacker after it as if he had won the ball back (+21.5 EPV).
+  `attach_missed_tackles()` now makes the defender the duel loser (`opponent_player_id`,
+  `opponent_from_83`) of the attacking team's next action within 3 s and drops the row.
+  `assign_epv_credit()` moves half of that action's positive credit to him as blame. This is
+  zero-sum like other duels, applies to every action type including shots, and a loss is not
+  shared. Per-player EPV moves a median 0.056 (rank agreement 0.9963, 246 EPL players). The EPV
+  model is not retrained: it still learned 83 as `take_on`. A SPADL cache built before this
+  version is rebuilt.
+- R-CMD-check and pkgdown use `GITHUB_TOKEN`, not `WORKFLOW_PAT`; they only install the public
+  pannamodels.
+
+# panna 0.3.133
+
+- RAPM step 1 takes penalties from SPADL's `is_penalty`, so they leave the non-penalty xG target
+  (panna#521, #526). The old detector expected a JSON array and found 0 penalties in 2.19M shots;
+  step 1 now also stops when 5,000+ shots score 0 penalties. Moves every RAPM-descended rating
+  (xRAPM rank agreement 0.9868 against a control build); ships with a rebuilt SPM panel and legacy
+  prior, per pannaverse `docs/plans/PANNA521-ROLLOUT.md`.
+- Keeper GSAA, `xgot_faced` and `goals_minus_xgot` in the xmetrics table use the md5-pinned xGOT
+  v3.2, as the shot table and 10b do (panna#523, #524). `placement_added`/`xgot_placement` still
+  subtract the September xG until panna#466.
+- Opta RAPM step 1 and the EPV xMetrics job score shots through one function, `score_spadl_shots()`
+  (`R/scored_shots_cache.R`), instead of two copies (issue #505). The EPV job writes
+  `data-raw/cache/epv/opta_scored_shots.parquet`, one row per shot with a `cache_key` per league-season
+  (hash of the events, the shot lookup, the xG model and `SCORED_SHOTS_VERSION`). RAPM step 1 reuses a
+  league-season only when that key equals the key recomputed from the events it loaded; anything else
+  (no file, no entry, a changed event file or xG model) converts and scores locally as before.
+  Nothing publishes or downloads the file yet, so until a workflow does, every league-season is a
+  local conversion.
+- Structural WP: the `red_home` monotone constraint is -1, not +1 (panna#511). `red_home` is home
+  reds minus away reds, so the +1 constraint could not be met and the live model ignores red cards.
+  Takes effect when the model is retrained (05d) and republished.
+
+# panna 0.3.132
+
+- New exported `calibrate_spm_variance()` (panna#168): an order-preserving linear rescale of SPM to a
+  target sd (a vector such as RAPM, or a number), about the weighted mean, for a separate display
+  column such as `spm_display`. SPM is compressed at every grain (season sd 0.025 against PSV
+  0.06-0.07); this is the issue's cheapest knob. It is not wired into any pipeline or export, so no
+  published number changes, and the xRAPM prior still reads the raw `spm`. Lambda below
+  `lambda.min` and a glmnet-only or match-grain-trained SPM for per-match display are not done.
+- `pack_publish_game_logs.R` writes the current-season alias `game_logs.parquet` only when the pack
+  includes the newest season. A past-seasons-only republish (`GL_SEASONS` without 2026-27) would
+  have pointed the alias at 2025-26; caught on the 25 Nov dry run, before the 22-season republish.
+
+# panna 0.3.131
+
+- Live PSV constants now carry the PSV league offset (panna#516). 10b adds `psv_league_offset` to
+  game-log PSV after centring and calibration, and `07c_build_live_psv_constants.R` did not, so
+  live PSV on match pages sat `-offset` away from the game logs (Scottish Premiership starters
+  +0.11 a game, A-League +0.12, Premier League -0.02). 07c now subtracts each league's offset from
+  K (`psr` in full, `osr`/`dsr` half each) through the new internal
+  `.psv_live_fold_league_offsets()`, and stops if `psr_league_offsets.parquet` is missing.
+  `inst/extdata/psv_live_constants.csv` is the build CI published to pannadata `blog-latest` on
+  19 Nov with the same step applied (61,229 player-games behind it, against 16,075 in the
+  hand-built file it replaces).
+- `piero_percentile` in the published game logs is now a season-wide rank. 10b ranks over the
+  leagues one run builds and the rebuild builds each season in parts by league, so each player was
+  ranked within his part (2023-2024: 1,956 of 11,347 players carried more than one percentile, up
+  to 87 points off). `pack_publish_game_logs.R` now recomputes it on each whole season file before
+  publishing, through the new internal `recompute_piero_percentile()` (panna#507).
+
+# panna 0.3.130
+
+- WPA net ledger, own goals (panna#273, #514): `wpa_build_ledger()` gives 25% of the
+  scoring side's gain to its last player on the ball before the own goal, in the same half
+  (`own_goal_credit`, role `own_goal_setup`, in `wpa_own`), and moves 25% of the own-goal
+  scorer's blame to his team's pool (`own_goal_relief`). Team totals are unchanged; both at
+  0 reproduce the old ledger. Brighton 5-0 Palace: Groß 0.029 -> 0.076, Canvot -0.201 -> -0.159.
+
 # panna 0.3.129
 
 - The weekly PSR job publishes `psv_live_constants.csv` (blog-latest) and step 08 publishes
