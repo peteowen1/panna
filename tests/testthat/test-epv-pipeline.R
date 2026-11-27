@@ -693,6 +693,25 @@ test_that("assign_epv_credit splits turnover credit correctly", {
   }
 })
 
+test_that("a missed tackle's defender takes half the attacker's gain as blame, never a payment (panna#532)", {
+  spadl <- data.frame(
+    match_id = "m1", action_id = 1:4, period_id = 1L, time_seconds = c(10, 20, 30, 40),
+    team_id = 101, player_id = c("a1", "a2", "a3", "a4"), player_name = c("A1", "A2", "A3", "A4"),
+    action_type = "pass", result = "success", start_x = 60, start_y = 50, end_x = 65, end_y = 50,
+    epv = 0.03, epv_delta = c(0.02, -0.01, 0.04, 0.01),
+    possession_change = FALSE,
+    opponent_player_id = c("d1", "d2", "d3", NA), opponent_player_name = c("D1", "D2", "D3", NA),
+    opponent_from_83 = c(TRUE, TRUE, FALSE, FALSE),
+    stringsAsFactors = FALSE)
+  r <- assign_epv_credit(spadl, xpass_model = NULL)
+  expect_equal(r$player_credit[1], 0.01, tolerance = 1e-12)      # attacker keeps half of +0.02
+  expect_equal(r$opponent_credit[1], -0.01, tolerance = 1e-12)   # defender who missed: blame
+  expect_equal(r$player_credit[2], -0.01, tolerance = 1e-12)     # a loss is not shared
+  expect_true(is.na(r$opponent_credit[2]))                        # the defender is never paid
+  expect_equal(r$player_credit[3], 0.02, tolerance = 1e-12)      # an ordinary merged duel: old rule
+  expect_equal(r$opponent_credit[3], -0.02, tolerance = 1e-12)
+})
+
 
 # =============================================================================
 # Tests for player EPV aggregation (epv_model.R)
