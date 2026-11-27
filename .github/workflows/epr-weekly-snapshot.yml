@@ -59,6 +59,8 @@ jobs:
 
     permissions:
       contents: write
+      # gh run download of a game-logs-rebuild run's artifacts (branch dry runs use github.token, not the PAT)
+      actions: read
 
     steps:
       - name: Require WORKFLOW_PAT on main/dev
