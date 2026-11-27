@@ -1,3 +1,19 @@
+# panna 0.3.134
+
+- EPV credit: an Opta type 83 (a defender's missed tackle) is no longer an action (panna#532, #533).
+  It used to reach SPADL as a `take_on`, so the defending team held the ball for one row. That
+  charged the attacker's action before it a turnover that never happened (2,405 actions, mean
+  -0.0101, EPL 2026-27) and paid the attacker after it as if he had won the ball back (+21.5 EPV).
+  `attach_missed_tackles()` now makes the defender the duel loser (`opponent_player_id`,
+  `opponent_from_83`) of the attacking team's next action within 3 s and drops the row.
+  `assign_epv_credit()` moves half of that action's positive credit to him as blame. This is
+  zero-sum like other duels, applies to every action type including shots, and a loss is not
+  shared. Per-player EPV moves a median 0.056 (rank agreement 0.9963, 246 EPL players). The EPV
+  model is not retrained: it still learned 83 as `take_on`. A SPADL cache built before this
+  version is rebuilt.
+- R-CMD-check and pkgdown use `GITHUB_TOKEN`, not `WORKFLOW_PAT`; they only install the public
+  pannamodels.
+
 # panna 0.3.133
 
 - RAPM step 1 takes penalties from SPADL's `is_penalty`, so they leave the non-penalty xG target
