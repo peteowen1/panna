@@ -39,8 +39,8 @@ file, not this copy.
 | 18 | Player Off | 50 | Dispossessed | 73 | Other Ball Contact |
 | 19 | Player On | 51 | Error | 74 | Blocked Pass |
 | 20 | Player Retired | 52 | Keeper Pick-up | 75, 76, 79, 80, 81 | Unknown (see note) |
-| 21 | Player Returns | 53 | Cross Not Claimed | 83 | Att One on One (**disputed**, see note) |
-| 22 | Player Becomes Goalkeeper | 54 | Smother | 84 | Deleted After Review |
+| 21 | Player Returns | 53 | Cross Not Claimed | 83 | Attempted (missed) tackle; dropped in SPADL, see note |
+| 22 | Player Becomes Goalkeeper | 54 | Smother | 84 | Deleted After Review (community label) |
 | 23 | Goalkeeper Becomes Player | | | | |
 | 24 | Condition Change | | | | |
 | 25 | Official Change | | | | |
@@ -67,15 +67,19 @@ these are mostly VAR-cancelled goals. They sit at (0, 0) and carry the cancelled
 (102/103) and keeper-position (230/231) qualifiers. Compare type 43 (Deleted Event): all 42,902
 rows carry q144 (`deletedEventType`), commonly 83, 61 and 1.
 
-**83 is disputed** (2026-11-27). Code calls it "Att One on One" and SPADL maps it to `take_on`
-(`action_type[type_id == 83L] <- "take_on"` in `spadl_conversion.R`); opta-truth.json says **"Attempted tackle"**, and the EPL rows agree
-with that. On 2024-25 and 2025-26 (19,112 type-83 rows): median x 39.6 (the actor's own half;
+**83 is a defender's missed tackle** (decided 2026-11-27, [panna#532](https://github.com/peteowen1/panna/issues/532)).
+Older code called it "Att One on One" and SPADL mapped it to `take_on`; opta-truth.json says
+**"Attempted tackle"**, and the EPL rows agree with that. On 2024-25 and 2025-26 (19,112 type-83 rows): median x 39.6 (the actor's own half;
 type-3 take-ons sit at 66.0), outcome 1 on only 10.7%, and it sits **inside the other team's
 possession**: the event just before is an opponent pass on 10,493 and the event just after an
 opponent pass on 9,625. When a type-3 take-on shares its second, 98.2% are by the other team
 with mirrored x (sum 99.9). That is a defender who went for the ball and missed, not an
-attacker's one-on-one. Not relabelled in code yet: the `take_on` mapping changes EPV credit, so it
-needs a decision ([panna#532](https://github.com/peteowen1/panna/issues/532)). The box-score stat `attOneOnOne` (`spm_opta.R`)
+attacker's one-on-one. Since panna 0.3.134 SPADL drops every 83 row:
+`attach_missed_tackles()` (`spadl_conversion.R`) makes the defender the duel loser
+(`opponent_player_id`, `opponent_from_83`) of the attacking team's next action within 3 s, and
+`assign_epv_credit()` moves half of that action's positive credit to him as blame. Its outcome is
+ignored: outcome 1 is not a won ball (the defender's team has the next event on 16.5% of outcome-1
+rows vs 15.6% of outcome-0 rows, EPL 2025-26). The box-score stat `attOneOnOne` (`spm_opta.R`)
 is a separate Opta stat and is not affected.
 
 ## Qualifier IDs (`qualifierId`)

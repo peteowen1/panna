@@ -46,7 +46,7 @@ OPTA_ACTION_MAP <- list(
   keeper_claim = 11L,     # Claim (GK catches cross)
   keeper_punch = 41L,
   # 1v1 challenges and skill moves
-  one_on_one = 83L,       # Att One on One
+  one_on_one = 83L,       # a defender's missed tackle (opta-truth "Attempted tackle"), panna#532
   good_skill = 42L        # Good Skill (skillful play)
 )
 
@@ -1152,7 +1152,7 @@ attach_missed_tackles <- function(dt, window = 3, look_ahead = 5L) {
   n_none <- sum(is.na(target)); n_taken <- length(idx) - length(t_rows) - n_none
   cli::cli_alert_info(paste0("Missed tackles (type 83): {length(idx)} rows, {length(t_rows)} attached as duel ",
                              "losers, {n_none} with no attacker action within {window}s, {n_taken} whose ",
-                             "attacker action already had a duel loser; all dropped"))
+                             "attacker action was already taken (an earlier 83 or a merged duel); all dropped"))
   dt <- dt[!(opta_type_id %in% 83L)]
   dt[, action_id := seq_len(.N), by = match_id]
   dt
