@@ -257,6 +257,7 @@ utils::globalVariables(c(
   "epv_model",
   "epv_total",
   "opponent_credit",
+  "opponent_from_83",
   "event_id",
   "expected_xg",
   "feature",

@@ -262,8 +262,11 @@ get_or_build_spadl <- function(events, league, season,
     missing_cols <- setdiff(required_cols, names(spadl))
     # A cache built before a type joined OPTA_NON_GAMEPLAY_TYPES still carries
     # it, and nothing downstream would notice (2026-09-25: injury markers 90/91).
+    # A cache built before panna#532 still carries type-83 missed tackles as
+    # take_on actions and lacks opponent_from_83: rebuild it too.
     excluded_present <- "opta_type_id" %in% names(spadl) &&
-      any(spadl$opta_type_id %in% OPTA_NON_GAMEPLAY_TYPES)
+      (any(spadl$opta_type_id %in% c(OPTA_NON_GAMEPLAY_TYPES, 83L)) ||
+         !"opponent_from_83" %in% names(spadl))
     if (excluded_present) {
       cli::cli_alert_info("SPADL cache {.file {basename(cache_path)}} holds event types now excluded as non-play; rebuilding.")
     }
@@ -501,6 +504,10 @@ convert_opta_to_spadl <- function(opta_events, normalize_direction = FALSE) {
   # (so receiver points to correct next action, not deleted duel loser)
   dt <- merge_duel_rows(dt)
 
+  # Missed tackles (type 83) become duel blame on the attacker's next action,
+  # never an action of their own (panna#532)
+  dt <- attach_missed_tackles(dt)
+
   # Re-sequence action_id after duel merging
   data.table::setorder(dt, match_id, period_id, time_seconds)
   dt[, action_id := seq_len(.N), by = match_id]
@@ -529,7 +536,7 @@ convert_opta_to_spadl <- function(opta_events, normalize_direction = FALSE) {
                   "opponent_player_id", "opponent_player_name")
 
   # Include qualifier-derived columns if available
-  optional_cols <- c("is_own_goal", "is_big_chance", "is_penalty")
+  optional_cols <- c("is_own_goal", "is_big_chance", "is_penalty", "opponent_from_83")
   available_optional <- optional_cols[optional_cols %in% names(dt)]
   result_cols <- c(base_cols, available_optional)
   dt <- dt[, ..result_cols]
@@ -627,7 +634,11 @@ map_opta_action_type <- function(type_id, qualifiers = NULL) {
 
   # 1v1 situations and skill moves (similar to take_on)
   action_type[type_id == 42L] <- "take_on"       # Good Skill
-  action_type[type_id == 83L] <- "take_on"       # Att One on One
+  # Type 83 is a defender's missed tackle, not a dribble (panna#532). The rows never
+  # reach EPV as actions: attach_missed_tackles() blames the defender as the loser of
+  # the attacker's next action and drops the row, so the mapping here only matters
+  # inside merge_duel_rows(), which keeps 83 out of duel pairing.
+  action_type[type_id == 83L] <- "take_on"
 
   # Additional ball touch type
   action_type[type_id == 54L] <- "ball_touch"    # Ball Touch (alternate)
@@ -966,8 +977,13 @@ merge_duel_rows <- function(dt) {
     next_result = shift(result, 1, type = "lead"),
     next_player_id = shift(player_id, 1, type = "lead"),
     next_player_name = shift(player_name, 1, type = "lead"),
-    next_start_x = shift(start_x, 1, type = "lead")
+    next_start_x = shift(start_x, 1, type = "lead"),
+    next_opta_type_id = shift(opta_type_id, 1, type = "lead")
   )]
+  # A missed tackle (type 83, panna#532) is never one side of a duel pair: paired
+  # with the attacker's same-second take-on, the tie rule below would crown the
+  # missed tackle the winner and drop the attacker's row.
+  not_83 <- !(dt$opta_type_id %in% 83L) & !(dt$next_opta_type_id %in% 83L)
 
   # Calculate x_sum for location-based duel detection
   dt[, x_sum := start_x + next_start_x]
@@ -1005,6 +1021,7 @@ merge_duel_rows <- function(dt) {
 
   # Combined duel detection
   dt[, is_duel_pair := is_same_type_duel | is_cross_type_duel]
+  dt[!not_83, `:=`(is_duel_pair = FALSE, is_same_type_duel = FALSE, is_cross_type_duel = FALSE)]
 
   # Mark which row in pair is winner vs loser
   # Winner: result == "success", Loser: result == "fail"
@@ -1077,6 +1094,7 @@ merge_duel_rows <- function(dt) {
   helper_cols <- c("next_match_id", "next_period_id", "next_time",
                    "next_action_type", "next_team_id_duel", "next_result",
                    "next_player_id", "next_player_name", "next_start_x",
+                   "next_opta_type_id",
                    "x_sum", "is_same_type_duel", "is_cross_type_duel",
                    "is_duel_pair", "is_winner", "is_loser")
   dt[, (helper_cols) := NULL]
@@ -1089,5 +1107,53 @@ merge_duel_rows <- function(dt) {
     dt[, action_id := seq_len(.N), by = match_id]
   }
 
+  dt
+}
+
+
+#' Turn Missed Tackles Into Duel Blame
+#'
+#' Opta type 83 is a defender's missed tackle: the attacking team keeps the ball
+#' (panna#532, decided 2026-11-27). Kept as an action it would hand the defending
+#' team the ball for one row, so the passer just before it is blamed for a
+#' turnover that never happened. Instead the defender is attached as the duel
+#' loser (\code{opponent_player_id}, flagged \code{opponent_from_83}) of the
+#' attacker's next action, and the type-83 row is dropped. The blame itself is
+#' applied in \code{assign_epv_credit()}.
+#'
+#' @param dt SPADL data.table after \code{merge_duel_rows()}.
+#' @param window Seconds to look ahead for the attacker's next action.
+#' @param look_ahead Rows to look ahead.
+#' @return \code{dt} without type-83 rows, with \code{opponent_from_83}.
+#' @keywords internal
+attach_missed_tackles <- function(dt, window = 3, look_ahead = 5L) {
+  if (!"opponent_from_83" %in% names(dt)) dt[, opponent_from_83 := FALSE]
+  if (!"opta_type_id" %in% names(dt)) return(dt)
+  data.table::setorder(dt, match_id, period_id, time_seconds)
+  idx <- which(dt$opta_type_id == 83L)
+  if (!length(idx)) return(dt)
+  n <- nrow(dt)
+  target <- rep(NA_integer_, length(idx))
+  for (k in seq_len(look_ahead)) {
+    cand <- idx + k
+    ok <- is.na(target) & cand <= n
+    c2 <- cand[ok]; i2 <- idx[ok]
+    hit <- dt$match_id[c2] == dt$match_id[i2] & dt$period_id[c2] == dt$period_id[i2] &
+      dt$team_id[c2] != dt$team_id[i2] & !(dt$opta_type_id[c2] %in% 83L) &
+      (dt$time_seconds[c2] - dt$time_seconds[i2]) <= window
+    target[which(ok)[hit]] <- c2[hit]
+  }
+  # One defender per attacking action (the first), and never over an existing duel loser
+  free <- !is.na(target) & !duplicated(target) & is.na(dt$opponent_player_id[target])
+  t_rows <- target[free]; d_rows <- idx[free]
+  dt[t_rows, `:=`(opponent_player_id = dt$player_id[d_rows],
+                  opponent_player_name = dt$player_name[d_rows],
+                  opponent_from_83 = TRUE)]
+  n_none <- sum(is.na(target)); n_taken <- length(idx) - length(t_rows) - n_none
+  cli::cli_alert_info(paste0("Missed tackles (type 83): {length(idx)} rows, {length(t_rows)} attached as duel ",
+                             "losers, {n_none} with no attacker action within {window}s, {n_taken} whose ",
+                             "attacker action already had a duel loser; all dropped"))
+  dt <- dt[!(opta_type_id %in% 83L)]
+  dt[, action_id := seq_len(.N), by = match_id]
   dt
 }

@@ -82,3 +82,44 @@ test_that("Opta injury markers (90/91) and 'failed to block' (69) never reach SP
   expect_false(any(spadl$opta_type_id %in% c(69L, 90L, 91L)))
   expect_setequal(spadl$original_event_id, c(1, 5))
 })
+
+test_that("a missed tackle (Opta 83) is duel blame on the attacker's next action, never a turnover (panna#532)", {
+  # Palace v Forest 2026-27 at 6:45-6:56: Richards passes, Schlager (Forest) misses a
+  # tackle, Canvot passes on. Palace never lost the ball.
+  events <- data.frame(
+    match_id = "m1", event_id = 1:6,
+    type_id = c(1L, 83L, 1L, 1L, 83L, 1L),
+    team_id = c("t1", "t2", "t1", "t1", "t2", "t2"),
+    player_id = c("p1", "q1", "p2", "p3", "q2", "q3"),
+    player_name = c("Richards", "Schlager", "Canvot", "Mitchell", "Late", "Q3"),
+    minute = c(6L, 6L, 6L, 6L, 20L, 30L), second = c(45L, 54L, 54L, 56L, 0L, 0L),
+    x = c(8.6, 40, 60.1, 62.3, 50, 50), y = 50, end_x = c(60, 40, 62, 70, 50, 60), end_y = 50,
+    outcome = c(1L, 0L, 1L, 1L, 0L, 1L), period_id = 1L,
+    qualifier_json = "{}", stringsAsFactors = FALSE)
+  spadl <- convert_opta_to_spadl(events)
+  expect_false(any(spadl$opta_type_id %in% 83L))                       # both 83 rows dropped
+  canvot <- spadl[spadl$original_event_id == 3, ]
+  expect_equal(canvot$opponent_player_id, "q1")
+  expect_true(canvot$opponent_from_83)
+  richards <- spadl[spadl$original_event_id == 1, ]
+  expect_false(richards$possession_change)                             # no fake turnover
+  expect_equal(richards$receiver_player_id, "p2")
+  # event 5's 83 has no t1 action within 3 s (the next row is its own team's, 10 s on): no blame
+  expect_false(any(spadl$opponent_from_83[spadl$original_event_id == 6]))
+  expect_equal(sum(spadl$opponent_from_83), 1L)
+})
+
+test_that("a missed tackle beside the attacker's same-second take-on is not merged as a duel (panna#532)", {
+  events <- data.frame(
+    match_id = "m1", event_id = 1:3, type_id = c(1L, 83L, 3L),
+    team_id = c("t1", "t2", "t1"), player_id = c("p1", "q1", "p2"),
+    player_name = c("A", "Sangare", "Hickey"), minute = 88L, second = c(1L, 2L, 2L),
+    x = c(60.4, 27.6, 72.4), y = 50, end_x = c(70, 27.6, 74), end_y = 50,
+    outcome = c(1L, 0L, 0L), period_id = 1L, qualifier_json = "{}", stringsAsFactors = FALSE)
+  spadl <- convert_opta_to_spadl(events)
+  hickey <- spadl[spadl$original_event_id == 3, ]
+  expect_equal(nrow(hickey), 1L)                                        # attacker's row survives
+  expect_equal(hickey$action_type, "take_on")
+  expect_equal(hickey$opponent_player_id, "q1")
+  expect_true(hickey$opponent_from_83)
+})
