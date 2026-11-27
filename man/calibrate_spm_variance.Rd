@@ -39,10 +39,10 @@ Give either \code{target_sd} directly or \code{target} (e.g. the RAPM the
 model was trained on), whose weighted sd is used.
 }
 \seealso{
-Other spm:
-\code{\link[=calculate_spm_ratings]{calculate_spm_ratings()}},
-\code{\link[=calculate_spm_ratings_xgb]{calculate_spm_ratings_xgb()}},
-\code{\link[=fit_spm_model]{fit_spm_model()}},
-\code{\link[=get_spm_feature_importance]{get_spm_feature_importance()}}
+Other spm: 
+\code{\link{calculate_spm_ratings}()},
+\code{\link{calculate_spm_ratings_xgb}()},
+\code{\link{fit_spm_model}()},
+\code{\link{get_spm_feature_importance}()}
 }
 \concept{spm}

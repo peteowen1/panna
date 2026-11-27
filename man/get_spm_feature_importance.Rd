@@ -23,6 +23,7 @@ Identifies the most important features in the SPM model.
 Other spm: 
 \code{\link{calculate_spm_ratings}()},
 \code{\link{calculate_spm_ratings_xgb}()},
+\code{\link{calibrate_spm_variance}()},
 \code{\link{fit_spm_model}()}
 }
 \concept{spm}

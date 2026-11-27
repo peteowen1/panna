@@ -61,6 +61,7 @@ influence of noisy low-minute players whose RAPM and per-90 stats are unreliable
 Other spm: 
 \code{\link{calculate_spm_ratings}()},
 \code{\link{calculate_spm_ratings_xgb}()},
+\code{\link{calibrate_spm_variance}()},
 \code{\link{get_spm_feature_importance}()}
 }
 \concept{spm}
