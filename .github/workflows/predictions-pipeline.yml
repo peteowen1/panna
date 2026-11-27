@@ -35,7 +35,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
   R_KEEP_PKG_SOURCE: yes
   # R026: only main and dev may publish. Scheduled and repository_dispatch runs
   # use the default branch (main). A workflow_dispatch from any other branch
@@ -49,6 +48,10 @@ env:
 jobs:
   predict:
     runs-on: ubuntu-latest
+    # WORKFLOW_PAT lives in the cross-repo Environment (main/dev only); other refs get none and fall back to github.token.
+    environment: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && 'cross-repo' || '' }}
+    env:
+      GITHUB_PAT: ${{ secrets.WORKFLOW_PAT || github.token }}
     # Bumped from 75 to 100 after enabling step_10b + step_10c (per-match value
     # metrics + per-action equity). Each iterates SPADL/EPV across 13 blog
     # leagues for the current season; combined add ~15-25 min to the weekly run.
@@ -59,6 +62,13 @@ jobs:
       contents: write
 
     steps:
+      - name: Require WORKFLOW_PAT on main/dev
+        # main/dev read it from the cross-repo Environment; fail here, not at the first cross-repo write.
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+        env:
+          PAT: ${{ secrets.WORKFLOW_PAT }}
+        run: test -n "$PAT" || { echo "::error title=No WORKFLOW_PAT::set it in the cross-repo Environment"; exit 1; }
+
       - name: Publish gate (R026)
         run: |
           if [ "$PANNA_PUBLISH_DISABLED" = "true" ]; then
@@ -103,7 +113,7 @@ jobs:
 
       - name: Download consolidated Opta data
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
         run: |
           OPTA_DIR="${{ runner.temp }}/pannadata/opta"
           mkdir -p "$OPTA_DIR"
@@ -181,7 +191,7 @@ jobs:
 
       - name: Download prediction caches
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
         run: |
           CACHE_OPTA="data-raw/cache-opta"
           CACHE_SKILLS="data-raw/cache-skills"
@@ -311,7 +321,7 @@ jobs:
       - name: Run predictions pipeline
         env:
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
           INPUT_FORCE_REBUILD: ${{ inputs.force_rebuild }}
           INPUT_FORCE_REBUILD_FROM: ${{ inputs.force_rebuild_from }}
           # GHA has no local xmetrics_bymatch/ tree (panna#126) — 10b's PSV
@@ -514,7 +524,7 @@ jobs:
       - name: Trigger blog data build
         if: success() && env.PANNA_PUBLISH_DISABLED != 'true'
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
         run: |
           gh api repos/peteowen1/pannadata/dispatches \
             -f event_type=predictions-complete
@@ -554,7 +564,7 @@ jobs:
         if: success() && inputs.wc_backfill
         timeout-minutes: 60
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
         run: |
           OUT=wc-backfill-work/wc_backfill_predictions.parquet
           # The script stops unless all three tournaments are predicted in full.

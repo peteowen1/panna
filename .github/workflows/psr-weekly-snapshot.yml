@@ -27,7 +27,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
   R_KEEP_PKG_SOURCE: yes
   # R026: only main and dev may publish. Scheduled and repository_dispatch runs
   # use the default branch (main). A workflow_dispatch from any other branch
@@ -38,6 +37,10 @@ env:
 jobs:
   psr-snapshot:
     runs-on: ubuntu-latest
+    # WORKFLOW_PAT lives in the cross-repo Environment (main/dev only); other refs get none and fall back to github.token.
+    environment: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && 'cross-repo' || '' }}
+    env:
+      GITHUB_PAT: ${{ secrets.WORKFLOW_PAT || github.token }}
     # 240, not 135: a FULL rebuild (calibration/model fingerprint change or force_full_rebuild)
     # took 128-131 min on 2026-10-14 and ~105 min on 2026-11-05 (pos10, #216, since parked
     # 2026-11-05). Incremental weekly runs take ~30 min.
@@ -47,6 +50,13 @@ jobs:
       contents: write
 
     steps:
+      - name: Require WORKFLOW_PAT on main/dev
+        # main/dev read it from the cross-repo Environment; fail here, not at the first cross-repo write.
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+        env:
+          PAT: ${{ secrets.WORKFLOW_PAT }}
+        run: test -n "$PAT" || { echo "::error title=No WORKFLOW_PAT::set it in the cross-repo Environment"; exit 1; }
+
       - name: Publish gate (R026)
         run: |
           echo "RUN_START_EPOCH=$(date -u +%s)" >> "$GITHUB_ENV"
@@ -145,7 +155,7 @@ jobs:
 
       - name: Download skills caches
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
         run: |
           CACHE_SKILLS="data-raw/cache-skills"
           mkdir -p "$CACHE_SKILLS"
@@ -184,7 +194,7 @@ jobs:
       - name: Rebuild match stats (skills step 01)
         env:
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
-          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT || github.token }}
         run: |
           cat > /tmp/run_step01.R << 'EOF'
           pannadata_path <- Sys.getenv("PANNADATA_DIR", "../pannadata/data")
@@ -214,7 +224,7 @@ jobs:
       - name: Export weekly PSR snapshots
         env:
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
-          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT || github.token }}
           # Hard-fail 8b if offsets can't be applied (env var, NOT an R flag:
           # 08b is sourced inside a step closure where globalenv flags are
           # invisible — same delivery pattern as PSR_FORCE_FULL_REBUILD).
@@ -276,7 +286,7 @@ jobs:
       # blog's actual stat-value.js and fail the cron loudly on drift.
       - name: Check live-feature lockstep vs blog stat-value.js
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
         run: |
           gh api repos/peteowen1/inthegame-blog/contents/football/stat-value.js \
             --jq '.content' | base64 -d > /tmp/stat-value.js
@@ -285,8 +295,8 @@ jobs:
       - name: Rebuild live-PSV centering constants (07c)
         env:
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
-          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT || github.token }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
           ALLOW_SUBSET_DROP: ${{ inputs.allow_subset_drop && 'true' || 'false' }}
         run: |
           cat > /tmp/run_07c.R << 'EOF'
@@ -340,7 +350,7 @@ jobs:
       - name: Snapshot summary
         if: always()
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
         run: |
           echo "## Weekly PSR Snapshot" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -397,8 +407,8 @@ jobs:
         continue-on-error: true
         timeout-minutes: 45
         env:
-          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT || github.token }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
           PANNADATA_DIR: ${{ runner.temp }}/pannadata
           # Step 02 joins per-match xMetrics; the runner has no local
           # xmetrics_bymatch/ tree, so read the consolidated parquet from
@@ -438,7 +448,7 @@ jobs:
       - name: Report the published skills vintage
         if: always()
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
         run: |
           UPDATED=$(gh release view opta-latest --repo peteowen1/pannadata \
             --json assets -q '.assets[] | select(.name=="opta_skills.parquet") | .updatedAt' 2>/dev/null || echo "")

@@ -46,7 +46,6 @@ on:
         default: true
 
 env:
-  GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
   R_KEEP_PKG_SOURCE: yes
   # R026: only main and dev may publish. Scheduled and repository_dispatch runs
   # use the default branch (main). A workflow_dispatch from any other branch
@@ -108,6 +107,10 @@ concurrency:
 jobs:
   epv-pipeline:
     runs-on: ubuntu-latest
+    # WORKFLOW_PAT lives in the cross-repo Environment (main/dev only); other refs get none and fall back to github.token.
+    environment: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && 'cross-repo' || '' }}
+    env:
+      GITHUB_PAT: ${{ secrets.WORKFLOW_PAT || github.token }}
     # Sized for BOTH paths (review catch — 150 covered only xmetrics_only):
     # xmetrics_only runs took 112 min on 2026-07-18, and a full manual
     # retrain = training (~75-90 min) + the same export tail ≈ 190-200 min.
@@ -119,6 +122,13 @@ jobs:
       contents: write
 
     steps:
+      - name: Require WORKFLOW_PAT on main/dev
+        # main/dev read it from the cross-repo Environment; fail here, not at the first cross-repo write.
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+        env:
+          PAT: ${{ secrets.WORKFLOW_PAT }}
+        run: test -n "$PAT" || { echo "::error title=No WORKFLOW_PAT::set it in the cross-repo Environment"; exit 1; }
+
       - name: Publish gate (R026)
         run: |
           if [ "$PANNA_PUBLISH_DISABLED" = "true" ]; then
@@ -165,7 +175,7 @@ jobs:
         # xmetrics_only runs), so the weekly cron gains no new failure mode.
         if: ${{ env.XMETRICS_ONLY != 'true' || env.TRAIN_WP == 'true' }}
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
         run: |
           set -euo pipefail
           gh api -H "Accept: application/vnd.github.raw" \
@@ -175,7 +185,7 @@ jobs:
 
       - name: Download Opta event data
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
         run: |
           OPTA_DIR="${{ runner.temp }}/pannadata/opta"
           mkdir -p "$OPTA_DIR"
@@ -250,7 +260,7 @@ jobs:
         # handles the WP model.
         if: ${{ env.WP_ONLY != 'true' && env.XMETRICS_ONLY != 'true' && env.PANNA_PUBLISH_DISABLED != 'true' }}
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
         run: |
           set -euo pipefail
           source "$RUNNER_TEMP/versebus.sh"
@@ -343,7 +353,7 @@ jobs:
       - name: Upload trained models
         if: ${{ env.PANNA_PUBLISH_DISABLED != 'true' }}
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
         run: |
           set -euo pipefail
           echo "Uploading trained models to models release..."

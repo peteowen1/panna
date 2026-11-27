@@ -40,7 +40,6 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
   R_KEEP_PKG_SOURCE: yes
   # R026: only main and dev may publish. Scheduled and repository_dispatch runs
   # use the default branch (main). A workflow_dispatch from any other branch
@@ -51,6 +50,10 @@ env:
 jobs:
   epr-snapshot:
     runs-on: ubuntu-latest
+    # WORKFLOW_PAT lives in the cross-repo Environment (main/dev only); other refs get none and fall back to github.token.
+    environment: ${{ (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev') && 'cross-repo' || '' }}
+    env:
+      GITHUB_PAT: ${{ secrets.WORKFLOW_PAT || github.token }}
     # 90: every run is a full rebuild since 2026-11-15 (25-46 min measured in October).
     timeout-minutes: 90
 
@@ -58,6 +61,13 @@ jobs:
       contents: write
 
     steps:
+      - name: Require WORKFLOW_PAT on main/dev
+        # main/dev read it from the cross-repo Environment; fail here, not at the first cross-repo write.
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev'
+        env:
+          PAT: ${{ secrets.WORKFLOW_PAT }}
+        run: test -n "$PAT" || { echo "::error title=No WORKFLOW_PAT::set it in the cross-repo Environment"; exit 1; }
+
       - name: Publish gate (R026)
         run: |
           if [ "$PANNA_PUBLISH_DISABLED" = "true" ]; then
@@ -96,7 +106,7 @@ jobs:
 
       - name: Download inputs
         env:
-          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT || github.token }}
           GAME_LOGS_RUN_ID: ${{ inputs.game_logs_run_id }}
         run: |
           # build_epr_weekly.R uses hardcoded RELATIVE paths (cwd = repo root):
@@ -210,7 +220,7 @@ jobs:
         # unifying pipeline uploads onto vb_publish).
         env:
           EPR_FORCE_FULL_REBUILD: ${{ (inputs.force_full_rebuild == true || inputs.game_logs_run_id != '') && '1' || '' }}
-          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT }}
+          GITHUB_PAT: ${{ secrets.WORKFLOW_PAT || github.token }}
         run: |
           Rscript data-raw/match-predictions-opta/build_epr_weekly.R
 
