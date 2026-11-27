@@ -1149,8 +1149,10 @@ attach_missed_tackles <- function(dt, window = 3, look_ahead = 5L) {
   dt[t_rows, `:=`(opponent_player_id = dt$player_id[d_rows],
                   opponent_player_name = dt$player_name[d_rows],
                   opponent_from_83 = TRUE)]
+  n_none <- sum(is.na(target)); n_taken <- length(idx) - length(t_rows) - n_none
   cli::cli_alert_info(paste0("Missed tackles (type 83): {length(idx)} rows, {length(t_rows)} attached as duel ",
-                             "losers, {length(idx) - length(t_rows)} with no attacker action within {window}s; all dropped"))
+                             "losers, {n_none} with no attacker action within {window}s, {n_taken} whose ",
+                             "attacker action already had a duel loser; all dropped"))
   dt <- dt[!(opta_type_id %in% 83L)]
   dt[, action_id := seq_len(.N), by = match_id]
   dt
