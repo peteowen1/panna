@@ -44,6 +44,12 @@ env:
   R_KEEP_PKG_SOURCE: yes
   WF_HORIZON: ${{ inputs.horizon || 'month' }}
 
+# download-artifact pulls another run's match-dataset; off main/dev that is github.token,
+# whose restricted default grants no actions scope.
+permissions:
+  contents: read
+  actions: read
+
 jobs:
   plan:
     runs-on: ubuntu-latest
