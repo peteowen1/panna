@@ -38,9 +38,9 @@ file, not this copy.
 | 17 | Card | 49 | Ball Recovery | 72 | Caught Offside |
 | 18 | Player Off | 50 | Dispossessed | 73 | Other Ball Contact |
 | 19 | Player On | 51 | Error | 74 | Blocked Pass |
-| 20 | Player Retired | 52 | Keeper Pick-up | 75, 76, 79, 80, 81, 84 | Unknown (see note) |
-| 21 | Player Returns | 53 | Cross Not Claimed | 83 | Att One on One |
-| 22 | Player Becomes Goalkeeper | 54 | Smother | | |
+| 20 | Player Retired | 52 | Keeper Pick-up | 75, 76, 79, 80, 81 | Unknown (see note) |
+| 21 | Player Returns | 53 | Cross Not Claimed | 83 | Attempted (missed) tackle; dropped in SPADL, see note |
+| 22 | Player Becomes Goalkeeper | 54 | Smother | 84 | Deleted After Review (community label) |
 | 23 | Goalkeeper Becomes Player | | | | |
 | 24 | Condition Change | | | | |
 | 25 | Official Change | | | | |
@@ -53,14 +53,34 @@ Clearance". This exact set of corrections independently cost `inthegame-blog` a 
 (#414/#419, 2026-07-16) before this doc got fixed — the blog was carrying its own copy of the
 same wrong labels.
 
-`75/76/79/80/81/84`: genuinely not in any public F24 reference; named "Unknown" deliberately
-rather than guessed. Lead for 84 (26 Nov 2026, not confirmed): the community-maintained
-`data/opta-truth.json` in github.com/withqwerty/football-docs labels it "Deleted after review",
-said to be checked by hand against the Stats Perform F24 appendices; panna's corpus has it at ~10.8k
-a season, without a pitch location but with goalmouth qualifiers 102/103 and keeper-position qualifiers 230/231. Keep it
-"Unknown" in code until an official source or a match-level check confirms it
-(pannaverse `docs/reviews/football-docs-mcp-2026-11-26.md`). See `spadl_conversion.R`'s header comment for per-code corpus frequency if
+`75/76/79/80/81`: genuinely not in any public F24 reference; named "Unknown" deliberately
+rather than guessed. See `spadl_conversion.R`'s header comment for per-code corpus frequency if
 you're trying to pin one down.
+
+**84 = Deleted After Review** (confirmed on real rows 2026-11-27; label from the
+community-maintained `data/opta-truth.json` in github.com/withqwerty/football-docs, said to be
+checked by hand against the Stats Perform F24 appendices: community-checked, not
+vendor-confirmed). On EPL 2023-24 to 2025-26 (`events_consolidated/events_EPL.parquet`, 283 type-84
+rows), **every** row carries q436 (`preReviewEventType` in opta-truth.json), and its value is the
+type the event had before the review: 16 (Goal) on 139, 4 (Foul) 41, 2 (Offside Pass) 29, 61 (Ball Touch) 26, 17 (Card) 23. So
+these are mostly VAR-cancelled goals. They sit at (0, 0) and carry the cancelled shot's goalmouth
+(102/103) and keeper-position (230/231) qualifiers. Compare type 43 (Deleted Event): all 42,902
+rows carry q144 (`deletedEventType`), commonly 83, 61 and 1.
+
+**83 is a defender's missed tackle** (decided 2026-11-27, [panna#532](https://github.com/peteowen1/panna/issues/532)).
+Older code called it "Att One on One" and SPADL mapped it to `take_on`; opta-truth.json says
+**"Attempted tackle"**, and the EPL rows agree with that. On 2024-25 and 2025-26 (19,112 type-83 rows): median x 39.6 (the actor's own half;
+type-3 take-ons sit at 66.0), outcome 1 on only 10.7%, and it sits **inside the other team's
+possession**: the event just before is an opponent pass on 10,493 and the event just after an
+opponent pass on 9,625. When a type-3 take-on shares its second, 98.2% are by the other team
+with mirrored x (sum 99.9). That is a defender who went for the ball and missed, not an
+attacker's one-on-one. Since panna 0.3.134 SPADL drops every 83 row:
+`attach_missed_tackles()` (`spadl_conversion.R`) makes the defender the duel loser
+(`opponent_player_id`, `opponent_from_83`) of the attacking team's next action within 3 s, and
+`assign_epv_credit()` moves half of that action's positive credit to him as blame. Its outcome is
+ignored: outcome 1 is not a won ball (the defender's team has the next event on 16.5% of outcome-1
+rows vs 15.6% of outcome-0 rows, EPL 2025-26). The box-score stat `attOneOnOne` (`spm_opta.R`)
+is a separate Opta stat and is not affected.
 
 ## Qualifier IDs (`qualifierId`)
 
@@ -80,7 +100,7 @@ strings, values are the qualifier's payload or null).
 | 15 | Head (body part) | `parse_opta_qualifiers`; independently re-confirmed 2026-07-16 (below) |
 | 140 / 141 | End X / End Y | Used throughout `spadl_conversion.R` and `inthegame-blog`'s worker for pass/shot end coordinates |
 | 23 | Fast break (situation) | `worker/src/index.js`'s shot-situation qualifier handling |
-| 22 / 24 / 25 / 26 | Shot situation family (penalty / setpiece / corner / freekick — exact assignment per `worker/src/index.js`) | same |
+| 22 / 24 / 25 / 26 | Shot situation family. opta-truth.json (community-checked): 22 regular play, 24 set piece, 25 from corner, 26 free kick. Penalty is q9, not 22 | `worker/src/index.js`; `opta_scraper.py` situation block |
 | 31 | Yellow card (base flag — present on every card: plain yellow, second yellow, straight red alike; not a discriminator alone) | Empirical 2026-07-16: 100% across 398 checked card events |
 | 32 | Second yellow (this dismissal was two yellows, not a straight red) | Empirical 2026-07-16: 100% of 41 `secondYellow`-positive players, 0% of 265 plain-yellow |
 | 33 | Red card — straight reds only | Empirical 2026-07-16: only 55.4% of 92 `redCard`-positive players (the rest are second-yellow reds, flagged by q32 instead — see below) |
@@ -137,6 +157,16 @@ and a follow-up question: can a blocked shot's real location be recovered at all
   here as a recoverable signal for anyone who later wants a "how save-like was this block"
   feature elsewhere (e.g. EPV credit, a defensive-blocking rating).
 
+### Confirmed — empirically, 2026-11-27 (foot side)
+
+- **20 = right foot, 72 = left foot** (opta-truth.json `rightFoot` / `leftFoot`). On 19,357 EPL
+  2024-25 + 2025-26 shots joined to `opta_shot_events.parquet` on `(match_id, event_id)`: every
+  `RightFoot` shot carries q20 (9,519) or q21 (88), every `LeftFoot` q72 (6,246), every `Head` q15
+  (3,504); no shot carries two. This settles the old "36 / 72 / 73" doubt: 72 is left, 73 is not used.
+- **21 = other body part.** The scraper (`pannadata/scripts/opta/opta_scraper.py` body-part block,
+  and `heal_shot_events.py`) has no branch for it, so those 88 shots (0.45%) are stored as
+  `RightFoot`. Left as is: an `Other` level would be new to the xG model.
+
 ### Confirmed — empirically, 2026-11-26 (panna#175; corrects the 2026-07-23 entry)
 
 - **230 / 231** | **Goalkeeper x / y position** (football-docs `opta-truth.json`: `gkX` / `gkY`;
@@ -175,11 +205,6 @@ and a follow-up question: can a blocked shot's real location be recovered at all
   the key set: `{15,21,56,138,140,141,167,178,185,189,212,213,233,388,389,397}`). The
   `clearanceOffLine` finding above was confirmed on World Cup data only — treat it as
   competition-scoped, not general, until re-checked on another domestic league.
-- **Left foot / right foot split**: q15=Head is solid (re-confirmed above), but the foot-side
-  IDs are contested across sources — the prior version of this doc claimed 73=left foot
-  (marked "implied", i.e. never actually checked); other code in this ecosystem has used both
-  36 and 72 for foot-side at different points. Don't trust any of these without a dedicated
-  empirical check the same way the four qualifiers above were confirmed.
 - **Zone/coordinate qualifiers 55/56/102/103/230**: the prior version of this doc listed
   these as start/end coordinate qualifiers, but they conflict with 140/141 (confirmed above,
   and the qualifiers actually consumed by production code for end coordinates). Not re-verified

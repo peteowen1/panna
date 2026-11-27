@@ -1205,7 +1205,8 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
   # Note: Don't use abs() - the EPV delta already encodes position value.
   # Positive delta = winner gained value, negative = won but lost value (rare).
   if ("opponent_player_id" %in% names(dt)) {
-    duel_idx <- which(!is.na(dt$opponent_player_id) & !is.na(dt$epv_delta))
+    from_83 <- if ("opponent_from_83" %in% names(dt)) dt$opponent_from_83 %in% TRUE else rep(FALSE, nrow(dt))
+    duel_idx <- which(!is.na(dt$opponent_player_id) & !is.na(dt$epv_delta) & !from_83)
 
     if (length(duel_idx) > 0) {
       # Winner: half the value change (already has player_credit set)
@@ -1216,6 +1217,18 @@ assign_epv_credit <- function(spadl_with_epv, xpass_model = NULL) {
       )]
       cli::cli_alert_info("Applied zero-sum duel credit to {length(duel_idx)} merged duels")
     }
+
+    # Missed tackles (type 83, panna#532): the defender who missed shares, as
+    # blame, half of what the attacker's next action earned (zero-sum, like the
+    # duels above). Only a gain is shared: a missed tackle is never paid.
+    m83 <- which(from_83 & !is.na(dt$player_credit) & dt$player_credit > 0)
+    if (length(m83) > 0) {
+      dt[m83, `:=`(
+        opponent_credit = -player_credit * EPV_TURNOVER_BLAME_SHARE,
+        player_credit = player_credit * (1 - EPV_TURNOVER_BLAME_SHARE)
+      )]
+    }
+    if (any(from_83)) cli::cli_alert_info("Missed-tackle blame on {length(m83)} of {sum(from_83)} attacker actions")
   }
 
   n_turnovers <- sum(dt$possession_change == TRUE, na.rm = TRUE)
