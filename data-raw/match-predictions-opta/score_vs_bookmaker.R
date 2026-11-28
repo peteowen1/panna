@@ -74,8 +74,10 @@ odds <- merge(odds, name_map[, .(AwayTeam = fd, away_team = opta)], by = "AwayTe
 devig <- function(h, d, a) { s <- 1 / h + 1 / d + 1 / a; list(1 / h / s, 1 / d / s, 1 / a / s) }
 odds[, c("kH", "kD", "kA") := devig(PSCH, PSCD, PSCA)]
 odds[, c("mH", "mD", "mA") := devig(AvgCH, AvgCD, AvgCA)]
+# Market average BEFORE closing (collected a day or more ahead): nearer to when we lock.
+odds[, c("eH", "eD", "eA") := devig(AvgH, AvgD, AvgA)]
 
-j <- merge(epl, odds[, .(match_date, home_team, away_team, FTR, kH, kD, kA, mH, mD, mA,
+j <- merge(epl, odds[, .(match_date, home_team, away_team, FTR, kH, kD, kA, mH, mD, mA, eH, eD, eA,
                          margin_pin = 1 / PSCH + 1 / PSCD + 1 / PSCA - 1)],
            by = c("match_date", "home_team", "away_team"))
 in_range <- epl[match_date >= min(odds$match_date) & match_date <= max(odds$match_date)]
@@ -91,7 +93,7 @@ cat(sprintf("Result agrees on all %d joined rows. Pinnacle margin: mean %.3f\n",
 base <- epl[split == "train", .(bH = mean(result == "H"), bD = mean(result == "D"), bA = mean(result == "A"))]
 ll <- function(r, h, d, a) -log(pmax(fifelse(r == "H", h, fifelse(r == "A", a, d)), 1e-6))
 
-score <- function(d, tier, book = c("k", "m")) {
+score <- function(d, tier, book = c("k", "m", "e")) {
   book <- match.arg(book)
   bh <- d[[paste0(book, "H")]]; bd <- d[[paste0(book, "D")]]; ba <- d[[paste0(book, "A")]]
   ok <- !is.na(bh)
@@ -127,7 +129,9 @@ tiers <- function(book) rbindlist(list(
   score(wf, "walk-forward (refit on earlier matches only, made afterwards)", book),
   score(locked[match_id %in% wf$match_id], "same matches, published row (recomputed afterwards)", book)
 ))
-t_pin <- tiers("k"); t_avg <- tiers("m")
+t_pin <- tiers("k"); t_avg <- tiers("m"); t_early <- tiers("e")
+cat("\nAgainst the market-average price before closing:\n"); print(t_early)
+fwrite(t_early, file.path(out_dir, "vs_market_average_before_close.csv"))
 
 
 cat("\nLog loss (how surprised the forecast was by what happened; lower is better).\n")
